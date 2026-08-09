@@ -8,11 +8,24 @@ const result = window.__TSLP_SITE_RESULT__ = {
 	animationFrames: 0,
 	canvasCount: 0,
 	errors: [],
+	domain: null,
 };
 
 function publish() {
 
-	window.parent.postMessage( { type: 'tslp-example-status', result: { ...result } }, window.location.origin );
+	window.parent.postMessage( {
+		type: 'tslp-example-status',
+		result: {
+			...result,
+			errors: [ ...result.errors ],
+			domain: result.domain ? {
+				...result.domain,
+				unsupported: Array.isArray( result.domain.unsupported )
+					? [ ...result.domain.unsupported ]
+					: result.domain.unsupported,
+			} : null,
+		},
+	}, window.location.origin );
 
 }
 
@@ -39,8 +52,15 @@ function observe() {
 
 	result.animationFrames += 1;
 	result.canvasCount = document.querySelectorAll( 'canvas' ).length;
+	result.domain = globalThis.__TSLP_SITE_DOMAIN__ ? {
+		...globalThis.__TSLP_SITE_DOMAIN__,
+		unsupported: Array.isArray( globalThis.__TSLP_SITE_DOMAIN__.unsupported )
+			? [ ...globalThis.__TSLP_SITE_DOMAIN__.unsupported ]
+			: globalThis.__TSLP_SITE_DOMAIN__.unsupported,
+	} : null;
 	const rendererReady = document.querySelector( '.hud-status' )?.textContent.includes( 'rendering' ) === true;
-	const ready = result.compilerFree && rendererReady && result.canvasCount > 0 && result.errors.length === 0;
+	const domainReady = result.domain?.type !== 'vsm' || result.domain.outputBound === true;
+	const ready = result.compilerFree && rendererReady && domainReady && result.canvasCount > 0 && result.errors.length === 0;
 	if ( ready !== result.ready || result.animationFrames === 1 || result.animationFrames % 120 === 0 ) {
 
 		result.ready = ready;

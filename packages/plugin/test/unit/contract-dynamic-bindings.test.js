@@ -367,7 +367,10 @@ test( 'validateArtifact enforces canonical, complete semantic variant families',
 			b: variant( 'b', 'fragment-b' ),
 		},
 	} );
-	assert.ok( collision.errors.some( ( error ) => error.code === 'artifact.renderContextSelector.collision' ) );
+	const selectorCollision = collision.errors.find( ( error ) => error.code === 'artifact.renderContextSelector.collision' );
+	assert.ok( selectorCollision );
+	assert.match( selectorCollision.message, /Divergent fields: fragmentShader/ );
+	assert.match( selectorCollision.message, /"a" and "b"/ );
 
 	const partial = validateArtifact( {
 		...variant( 'a', 'fragment-a' ),

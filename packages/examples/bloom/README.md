@@ -1,11 +1,19 @@
-# bloom (example)
+# Bloom example
 
-Post-processing demo: `RenderPipeline.outputNode = fxaa(bloom(pass(scene, camera)))`. Validates that post-FX TSL chains extract cleanly when a child pass material is `.precompile`d.
+Runnable bloom post-processing example. This package is a thin entry wrapper
+over the canonical `../postprocessing-debug/src/bloom.js` implementation.
 
-## Status
+The Vite config deliberately resolves marker ownership and generated inputs
+against `../postprocessing-debug`, so development capture and production builds
+reuse `../postprocessing-debug/artifacts`. Do not create or copy an artifact
+directory into this wrapper.
 
-Demo scaffold for post-processing coverage. Use it when extending aux capture for `PostProcessing.outputNode` and bloom-style render pipelines.
+The production build uses the compiler-free slim source runtime and validates
+the same material, render-output, and bloom auxiliary artifacts as the debug
+suite.
 
 ```sh
 pnpm dev:bloom
+pnpm --filter examples-bloom build
+pnpm --filter examples-bloom preview
 ```

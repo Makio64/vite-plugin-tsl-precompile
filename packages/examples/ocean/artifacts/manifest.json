@@ -1,0 +1,56 @@
+{
+  "__aux": {
+    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
+      "file": "aux-cube-render-target-f8bd804355c3.json",
+      "shape": "cube-render-target",
+      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
+      "hash": "b8881cdf1e5bb1881394b6cb9a021c28f447c29611152f1cc84721f8a0d832df",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T04:31:12.148Z"
+    },
+    "render-output:0ba7c59f39ff4bdbaf183b9000bb0d83fe7ef8f42cd095e60ba7054df4462646": {
+      "file": "aux-render-output-0ba7c59f39ff.json",
+      "shape": "render-output",
+      "configHash": "0ba7c59f39ff4bdbaf183b9000bb0d83fe7ef8f42cd095e60ba7054df4462646",
+      "hash": "c39e07506833bf2e972ec157b70ebfce9934d3788aaca21c2b880e2476944d4e",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-08-02T04:31:12.295Z"
+    }
+  },
+  "ocean-sky": {
+    "file": "ocean-sky.c34d09654fba.json",
+    "hash": "c34d09654fba752662b59164ec8e3f3f8858f93d0662585e6200758e9dbed183",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "f4d29d02aeab2243abdbc6f141ebf36ad448a2c022d2d593e6e944162296f357",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T12:09:57.408Z"
+  },
+  "ocean-water": {
+    "file": "ocean-water.39f2c8c9059f.json",
+    "hash": "39f2c8c9059fdc9a494d25fa9ad619e8140e6f978af616d51fffb967ffd1f61c",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "f4d29d02aeab2243abdbc6f141ebf36ad448a2c022d2d593e6e944162296f357",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T12:09:57.437Z"
+  }
+}

@@ -1,13 +1,39 @@
 {
   "ok": true,
-  "nonZeroRatio": 0.9711,
-  "diffRatio": 0.9941,
+  "pixelEvidence": {
+    "width": 1280,
+    "height": 800,
+    "pixelCount": 1024000,
+    "sampleCount": 114009,
+    "sampleStep": 3,
+    "backgroundRgb": [
+      16,
+      20.5,
+      17.25
+    ],
+    "opaqueFraction": 1,
+    "contentFraction": 0.8340306467033305,
+    "rgbDeviation": 60.51858085140769,
+    "luminanceMean": 42.07380808180811,
+    "luminanceDeviation": 61.73583774220076,
+    "luminanceRange": 254.99999999999997,
+    "framesCompared": true,
+    "changedFraction": 0.3615767176275557,
+    "meanFrameDelta": 5.510246267107206
+  },
+  "browserFailures": [],
   "pageErrors": [],
   "consoleErrors": [],
   "failures": [],
   "example": "ocean",
   "thresholds": {
-    "minNonZeroRatio": 0.5,
-    "minDiffRatio": 0.05
+    "minRgbDeviation": 4,
+    "minLuminanceDeviation": 2,
+    "minContentFraction": 0.005,
+    "minChangedFraction": 0.001,
+    "minMeanFrameDelta": 0.02
+  },
+  "harness": {
+    "browserFailurePolicySha256": "5da56df5429a83d3d9988f295325f837c48207ea83b632857ea6ceb8e2335046"
   }
 }

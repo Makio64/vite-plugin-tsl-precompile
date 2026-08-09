@@ -17,6 +17,15 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 - `packages/inspector-panel`: inspector UI integration.
 - `packages/site`: docs/site build.
 
+## Consumer Integration Tasks
+
+- When asked to install this project in another application, follow
+  `.agents/skills/integrate-tsl-precompile/SKILL.md`.
+- Start existing applications in compatibility mode, capture real render
+  paths, and verify the production build before proposing slim mode.
+- Keep generated artifacts as generated build inputs; never fabricate or
+  hand-edit their JSON.
+
 ## Change Rules
 
 - Prefer shared contract updates over duplicated lists. `source.kind`, texture-property lists, graph normalization, and artifact validation belong in `@tsl-precompile/contract`.

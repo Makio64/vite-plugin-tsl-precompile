@@ -279,11 +279,11 @@ stable checked prebuilt file.
 
 **What slim mode buys you:** no TSL→WGSL/GLSL compile at first frame (predictable
 cold start), no node-graph traversal per draw, and explicit handling for every
-reachable path. The checked Three r185 gzip-9 regression baselines are 176,256
-bytes for minimal source, 185,490 bytes for advanced source, and 261,600 bytes
-for the prebuilt runtime. Their enforced caps are 184,000, 194,000, and 268,000
-bytes. Those are repository fixtures, not a promise for your scene or a current
-stock-Three comparison; `pnpm analyze:slim` prints the current exact values.
+reachable path. The canonical Three r185 gzip-9 fixture baselines and caps are
+maintained in
+[`packages/runtime/build-tools/slim-budget.json`](packages/runtime/build-tools/slim-budget.json).
+Those are repository fixtures, not a promise for your scene or a current
+stock-Three comparison; `pnpm analyze:slim` recomputes the current exact values.
 
 Slim is the right choice for shipping a tightly-controlled scene where you want predictable runtime behavior. It is the wrong choice if you have a sprawling scene with addons (`WaterMesh`, `Sky`, etc.) you haven't audited — start without slim, get the dev-capture flow working, then enable slim once you know which materials need markers.
 

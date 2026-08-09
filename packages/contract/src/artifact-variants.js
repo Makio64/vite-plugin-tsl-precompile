@@ -10,6 +10,37 @@ const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 	viewportIdentity: 'viewport',
 } );
 
+const VSM_INTERNAL_PASS_SHAPES = new Set( [
+	'shadow-vsm-vertical',
+	'shadow-vsm-horizontal',
+] );
+
+const VSM_INTERNAL_PASS_ROLE_SOURCE_KINDS = new Set( [
+	'depth.texture',
+	'light.shadowBlurSamples',
+	'light.shadowMapSize',
+	'light.shadowRadius',
+] );
+
+const INTERNAL_PASS_SOURCE_CAPTURE_FIELDS = new Set( [
+	'lightIdentity',
+	'lightIndex',
+	'lightUuid',
+	'valueSnapshot',
+] );
+
+const VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT = 12;
+const VARIANT_COLLISION_STRING_DETAIL_LIMIT = 2;
+const VARIANT_COLLISION_STRING_EXCERPT_RADIUS = 32;
+const SHADER_SOURCE_FIELDS = new Set( [ 'vertexShader', 'fragmentShader', 'computeShader' ] );
+const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b)/g;
+const CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN = /\bNodeBuffer_(\d+)(?=\b|Struct\b)/g;
+const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(?:(NodeBuffer_)(\d+)(?=\b|Struct\b)|(buffer)(\d+)\b)/g;
+const CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN = /^NodeBuffer_(\d+)$/;
+const CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN = /^UniformBuffer_(\d+)$/;
+const CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN = /^StorageBuffer_(\d+)$/;
+const CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN = /^nodeUniform\d+$/;
+
 /**
  * Runtime fields that may differ between members of one captured material
  * family. Capture, manifest emission, registry merging, and hydration all use
@@ -257,7 +288,7 @@ function mergeFamilyCandidates( records, candidates ) {
 		// differently. A shared semantic selector plus equivalent payload proves
 		// that this is an alias, so retain the established record and union only
 		// its selectors instead of growing a duplicate family member.
-		const semanticFingerprint = createSemanticVariantFingerprint( payload );
+		const semanticFingerprint = createArtifactVariantSemanticFingerprint( payload );
 		const selectorAlias = [ ...records.entries() ]
 			.sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 )
 			.find( ( [ , authoritative ] ) =>
@@ -269,6 +300,16 @@ function mergeFamilyCandidates( records, candidates ) {
 			mergeFamilySelectors( selectorAlias[ 1 ], payload );
 			canonicalKeyByInputKey.set( variantKey, selectorAlias[ 0 ] );
 			continue;
+
+		}
+		const selectorCollision = [ ...records.entries() ]
+			.sort( ( [ left ], [ right ] ) => left < right ? - 1 : left > right ? 1 : 0 )
+			.find( ( [ , authoritative ] ) =>
+				selectorsOverlap( authoritative.payload.renderContextSelectors, payload.renderContextSelectors )
+			);
+		if ( selectorCollision ) {
+
+			throwVariantSelectorCollision( selectorCollision[ 0 ], selectorCollision[ 1 ].payload, variantKey, payload );
 
 		}
 		addFamilyCandidate( records, payload );
@@ -299,7 +340,7 @@ function prepareFamilyCandidate( candidate ) {
 	else if ( payload.renderContextSelectors !== undefined ) payload.renderContextSelectors = [];
 	return {
 		payload,
-		semanticFingerprint: createSemanticVariantFingerprint( payload ),
+		semanticFingerprint: createArtifactVariantSemanticFingerprint( payload ),
 	};
 
 }
@@ -313,7 +354,7 @@ function addFamilyCandidate( records, candidate ) {
 	if ( selectors.length > 0 ) payload.renderContextSelectors = selectors;
 	else if ( payload.renderContextSelectors !== undefined ) payload.renderContextSelectors = [];
 	const fingerprint = createArtifactVariantPayloadFingerprint( payload );
-	const semanticFingerprint = createSemanticVariantFingerprint( payload );
+	const semanticFingerprint = createArtifactVariantSemanticFingerprint( payload );
 	const existing = records.get( variantKey );
 	if ( ! existing ) {
 
@@ -344,22 +385,12 @@ function mergeFamilySelectors( record, payload ) {
 
 function throwVariantKeyCollision( variantKey, authoritative = null, incoming = null ) {
 
-	const differingFields = authoritative && incoming
-		? ARTIFACT_VARIANT_FIELDS.filter( ( field ) =>
-			field !== 'cacheKey' &&
-			field !== 'variantKey' &&
-			field !== 'renderContextSelectors' &&
-			stableJsonStringify(
-				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( authoritative[ field ] ) ),
-				'artifactVariantCollisionField',
-			) !== stableJsonStringify(
-				remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( incoming[ field ] ) ),
-				'artifactVariantCollisionField',
-			)
-		)
-		: [];
+	const differences = authoritative && incoming
+		? describeArtifactVariantSemanticDifferences( authoritative, incoming )
+		: emptyArtifactVariantSemanticDifferences();
+	const differingFields = differences.fields;
 	const detail = differingFields.length > 0
-		? ` Divergent fields: ${ differingFields.join( ', ' ) }.`
+		? ` Divergent fields: ${ differingFields.join( ', ' ) }.${ formatVariantDifferencePathDetail( differences ) }`
 		: '';
 
 	const explicitVariantKey = authoritative && authoritative.variantKey !== undefined || incoming && incoming.variantKey !== undefined;
@@ -368,21 +399,276 @@ function throwVariantKeyCollision( variantKey, authoritative = null, incoming = 
 		explicitVariantKey ? 'TSLP_ARTIFACT_VARIANT_KEY_COLLISION' : 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',
 		`[tsl-precompile] ${ identityName } ${ JSON.stringify( variantKey ) } identifies divergent artifact variant payloads. ` +
 		`Recapture with the current toolchain; this family cannot be merged safely.${ detail }`,
-		{ variantKey, cacheKey: explicitVariantKey ? authoritative && authoritative.cacheKey : variantKey, differingFields },
+		{
+			variantKey,
+			cacheKey: explicitVariantKey ? authoritative && authoritative.cacheKey : variantKey,
+			differingFields,
+			differingPaths: differences.paths,
+			stringDifferences: differences.stringDifferences,
+			differencesTruncated: differences.truncated,
+			differencePathLimit: VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT,
+		},
 	);
 
 }
 
-function createSemanticVariantFingerprint( artifact ) {
+function throwVariantSelectorCollision( authoritativeVariantKey, authoritative, incomingVariantKey, incoming ) {
+
+	const differences = describeArtifactVariantSemanticDifferences( authoritative, incoming );
+	const sharedSelectors = canonicalSelectors( authoritative.renderContextSelectors )
+		.filter( ( selector ) => canonicalSelectors( incoming.renderContextSelectors ).includes( selector ) );
+	throw new ArtifactVariantFamilyError(
+		'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+		`[tsl-precompile] render-context selector identifies divergent artifact variants ` +
+		`${ JSON.stringify( authoritativeVariantKey ) } and ${ JSON.stringify( incomingVariantKey ) }. ` +
+		`This family cannot be merged safely.${ formatVariantDifferencePathDetail( differences ) }`,
+		{
+			authoritativeVariantKey,
+			incomingVariantKey,
+			selector: sharedSelectors[ 0 ] || null,
+			differingFields: differences.fields,
+			differingPaths: differences.paths,
+			stringDifferences: differences.stringDifferences,
+			differencesTruncated: differences.truncated,
+			differencePathLimit: VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT,
+		},
+	);
+
+}
+
+function emptyArtifactVariantSemanticDifferences() {
+
+	return { fields: [], paths: [], stringDifferences: [], truncated: false };
+
+}
+
+function describeArtifactVariantSemanticDifferences( authoritative, incoming ) {
+
+	const authoritativePayload = createArtifactVariantSemanticPayload( authoritative );
+	const incomingPayload = createArtifactVariantSemanticPayload( incoming );
+	const paths = [];
+	const stringDifferences = [];
+	collectArtifactVariantSemanticDifferencePaths(
+		authoritativePayload,
+		incomingPayload,
+		'',
+		paths,
+		stringDifferences,
+		VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT + 1,
+	);
+	const truncated = paths.length > VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT;
+	const boundedPaths = paths.slice( 0, VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT );
+	const discoveredFields = new Set( [ ...new Set( [
+		...Object.keys( authoritativePayload ),
+		...Object.keys( incomingPayload ),
+	] ) ].filter( ( field ) => artifactVariantSemanticFieldDiffers(
+		authoritativePayload,
+		incomingPayload,
+		field,
+	) ) );
+	const fields = ARTIFACT_VARIANT_FIELDS.filter( ( field ) => discoveredFields.delete( field ) );
+	fields.push( ...[ ...discoveredFields ].sort() );
+	return {
+		fields,
+		paths: boundedPaths,
+		stringDifferences: stringDifferences.filter( ( difference ) => boundedPaths.includes( difference.path ) ),
+		truncated,
+	};
+
+}
+
+function artifactVariantSemanticFieldDiffers( authoritative, incoming, field ) {
+
+	if ( ! Object.hasOwn( authoritative, field ) || ! Object.hasOwn( incoming, field ) ) return true;
+	return stableJsonStringify( authoritative[ field ], 'artifactVariantCollisionField' ) !==
+		stableJsonStringify( incoming[ field ], 'artifactVariantCollisionField' );
+
+}
+
+function collectArtifactVariantSemanticDifferencePaths( authoritative, incoming, path, out, stringDifferences, limit ) {
+
+	if ( out.length >= limit || Object.is( authoritative, incoming ) ) return;
+	const authoritativeObject = authoritative !== null && typeof authoritative === 'object';
+	const incomingObject = incoming !== null && typeof incoming === 'object';
+	if ( ! authoritativeObject || ! incomingObject || Array.isArray( authoritative ) !== Array.isArray( incoming ) ) {
+
+		const differencePath = path || '<root>';
+		out.push( differencePath );
+		if ( typeof authoritative === 'string' && typeof incoming === 'string' ) {
+
+			stringDifferences.push( describeVariantStringDifference( differencePath, authoritative, incoming ) );
+
+		}
+		return;
+
+	}
+	const keys = Array.isArray( authoritative )
+		? Array.from( { length: Math.max( authoritative.length, incoming.length ) }, ( _, index ) => String( index ) )
+		: [ ...new Set( [ ...Object.keys( authoritative ), ...Object.keys( incoming ) ] ) ].sort();
+	for ( const key of keys ) {
+
+		const childPath = appendVariantDifferencePath( path, key, Array.isArray( authoritative ) );
+		if ( ! Object.hasOwn( authoritative, key ) || ! Object.hasOwn( incoming, key ) ) {
+
+			out.push( childPath );
+
+		} else {
+
+			collectArtifactVariantSemanticDifferencePaths( authoritative[ key ], incoming[ key ], childPath, out, stringDifferences, limit );
+
+		}
+		if ( out.length >= limit ) return;
+
+	}
+
+}
+
+function describeVariantStringDifference( path, authoritative, incoming ) {
+
+	const firstDifferenceOffset = firstStringDifferenceOffset( authoritative, incoming );
+	const difference = {
+		path,
+		firstDifferenceOffset,
+		authoritativeLength: authoritative.length,
+		incomingLength: incoming.length,
+	};
+	const authoritativeGeneratedIdentifier = generatedIdentifierNearOffset( authoritative, firstDifferenceOffset );
+	const incomingGeneratedIdentifier = generatedIdentifierNearOffset( incoming, firstDifferenceOffset );
+	if ( authoritativeGeneratedIdentifier || incomingGeneratedIdentifier ) {
+
+		difference.authoritativeGeneratedIdentifier = authoritativeGeneratedIdentifier;
+		difference.incomingGeneratedIdentifier = incomingGeneratedIdentifier;
+
+	}
+	const topLevelField = topLevelVariantDifferenceField( path );
+	if ( SHADER_SOURCE_FIELDS.has( topLevelField ) ) {
+
+		difference.authoritativeExcerpt = stringDifferenceExcerpt( authoritative, firstDifferenceOffset );
+		difference.incomingExcerpt = stringDifferenceExcerpt( incoming, firstDifferenceOffset );
+
+	}
+	return difference;
+
+}
+
+function firstStringDifferenceOffset( left, right ) {
+
+	const length = Math.min( left.length, right.length );
+	let offset = 0;
+	while ( offset < length && left.charCodeAt( offset ) === right.charCodeAt( offset ) ) offset ++;
+	return offset;
+
+}
+
+function generatedIdentifierNearOffset( value, offset ) {
+
+	CAPTURE_GENERATED_IDENTIFIER_PATTERN.lastIndex = 0;
+	let closest = null;
+	let closestDistance = Infinity;
+	for ( const match of value.matchAll( CAPTURE_GENERATED_IDENTIFIER_PATTERN ) ) {
+
+		const start = match.index;
+		const end = start + match[ 0 ].length;
+		const distance = offset < start ? start - offset : offset > end ? offset - end : 0;
+		if ( distance < closestDistance ) {
+
+			closest = match[ 0 ];
+			closestDistance = distance;
+
+		}
+		if ( distance === 0 ) break;
+
+	}
+	return closestDistance <= VARIANT_COLLISION_STRING_EXCERPT_RADIUS ? closest : null;
+
+}
+
+function stringDifferenceExcerpt( value, offset ) {
+
+	const start = Math.max( 0, offset - VARIANT_COLLISION_STRING_EXCERPT_RADIUS );
+	const end = Math.min( value.length, offset + VARIANT_COLLISION_STRING_EXCERPT_RADIUS );
+	return `${ start > 0 ? '…' : '' }${ value.slice( start, end ) }${ end < value.length ? '…' : '' }`;
+
+}
+
+function appendVariantDifferencePath( parent, key, arrayParent ) {
+
+	if ( arrayParent ) return `${ parent }[${ key }]`;
+	if ( /^[A-Za-z_$][0-9A-Za-z_$]*$/.test( key ) ) return parent ? `${ parent }.${ key }` : key;
+	return `${ parent }[${ JSON.stringify( key ) }]`;
+
+}
+
+function topLevelVariantDifferenceField( path ) {
+
+	if ( typeof path !== 'string' || path.length === 0 || path === '<root>' ) return null;
+	const match = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec( path );
+	if ( match ) return match[ 0 ];
+	if ( ! path.startsWith( '[' ) ) return null;
+	try {
+
+		return JSON.parse( path.slice( 1, path.indexOf( ']' ) ) );
+
+	} catch ( _ ) {
+
+		return null;
+
+	}
+
+}
+
+function formatVariantDifferencePathDetail( differences ) {
+
+	if ( differences.paths.length === 0 ) return '';
+	const stringDetail = differences.stringDifferences.slice( 0, VARIANT_COLLISION_STRING_DETAIL_LIMIT )
+		.map( formatVariantStringDifference )
+		.join( '; ' );
+	return ` Divergent semantic paths: ${ differences.paths.join( ', ' ) }${ differences.truncated ? ', …' : '' }.` +
+		( stringDetail ? ` String differences: ${ stringDetail }.` : '' );
+
+}
+
+function formatVariantStringDifference( difference ) {
+
+	const location = `${ difference.path }@${ difference.firstDifferenceOffset }`;
+	if ( difference.authoritativeGeneratedIdentifier || difference.incomingGeneratedIdentifier ) {
+
+		return `${ location } (` +
+			`${ difference.authoritativeGeneratedIdentifier || '<none>' } != ` +
+			`${ difference.incomingGeneratedIdentifier || '<none>' })`;
+
+	}
+	if ( difference.authoritativeExcerpt !== undefined && difference.incomingExcerpt !== undefined ) {
+
+		return `${ location } (${ JSON.stringify( difference.authoritativeExcerpt ) } != ` +
+			`${ JSON.stringify( difference.incomingExcerpt ) })`;
+
+	}
+	return location;
+
+}
+
+/**
+ * Compare independently captured variants by runnable shader/binding meaning.
+ * Capture-session resource identities are canonicalized while their shared
+ * versus distinct topology remains strict.
+ *
+ * @param {?Object} artifact
+ * @return {string}
+ */
+export function createArtifactVariantSemanticFingerprint( artifact ) {
+
+	return stableJsonStringify( createArtifactVariantSemanticPayload( artifact ), 'artifactVariantSemantic' );
+
+}
+
+function createArtifactVariantSemanticPayload( artifact ) {
 
 	const payload = normalizeVariantShaderLanguage( createArtifactVariantPayload( artifact ) );
 	delete payload.cacheKey;
 	delete payload.variantKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify(
-		remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) ),
-		'artifactVariantSemantic',
-	);
+	return remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) );
 
 }
 
@@ -396,8 +682,13 @@ function createSemanticVariantFingerprint( artifact ) {
  */
 function normalizeVariantFingerprintPayload( value ) {
 
+	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
+	const rendererOutput = value?.materialShape === 'render-output';
+	const generatedShaderNodeIds = new Map();
+	const generatedUniformBufferIds = new Map();
+	const generatedStorageBufferIds = new Map();
 	const seen = new Map();
-	const visit = ( current ) => {
+	const visit = ( current, role = null ) => {
 
 		if ( typeof current === 'number' && ! Number.isFinite( current ) ) return null;
 		if ( current === null || typeof current !== 'object' ) return current;
@@ -406,8 +697,16 @@ function normalizeVariantFingerprintPayload( value ) {
 		seen.set( current, clone );
 		if ( Array.isArray( current ) ) {
 
-			for ( const item of current ) clone.push( visit( item ) );
+			for ( const item of current ) clone.push( visit( item, role ) );
 			return clone;
+
+		}
+		if ( role === 'artifact' ) for ( const field of SHADER_SOURCE_FIELDS ) {
+
+			if ( typeof current[ field ] === 'string' ) collectCaptureGeneratedShaderNodeIds(
+				current[ field ],
+				generatedShaderNodeIds,
+			);
 
 		}
 		const liveFrameSource = typeof current.kind === 'string' && (
@@ -424,8 +723,73 @@ function normalizeVariantFingerprintPayload( value ) {
 		);
 		const liveRendererTargetTextureSource = current.kind === 'artifact.texture' &&
 			current.renderTargetSelector?.schema === RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA;
+		const internalPassRoleSource = vsmInternalPass && VSM_INTERNAL_PASS_ROLE_SOURCE_KINDS.has( current.kind );
 		for ( const key of Object.keys( current ) ) {
 
+			// VSM's private blur programs are shared by every non-point light.
+			// The internal-pass descriptor addresses these values and textures by
+			// semantic role, and the replay binder overlays the active LightShadow
+			// before drawing. Captured light identity and fallback values therefore
+			// prove extraction ownership but cannot distinguish runnable programs.
+			// Keep the authoritative evidence in the artifact; omit it only from
+			// family fingerprints so directional and spot captures can alias the
+			// same backend program and selector.
+			if ( vsmInternalPass && current === value && key === 'lightIdentities' ) continue;
+			if ( internalPassRoleSource && INTERNAL_PASS_SOURCE_CAPTURE_FIELDS.has( key ) ) continue;
+			// Three names buffer uniforms from Node.id, a module-global counter:
+			// WGSL emits NodeBuffer_<id>, while WebGL fallback emits both
+			// NodeBuffer_<id> and buffer<id> for the same node. Preserve the
+			// shared-vs-distinct node topology in one namespace, but remove the
+			// capture-order number from fingerprints. Durable shader bytes remain
+			// untouched because this visitor always writes into its clone.
+			if ( role === 'artifact' && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
+
+				clone[ key ] = normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds );
+				continue;
+
+			}
+			if ( key === 'name' && typeof current[ key ] === 'string' ) {
+
+				// RenderPipeline can reuse a compiled render-output shader while the
+				// current builder's generated nodeUniform ordinal has moved. The
+				// exposure writer is addressed by its source kind and byte offset;
+				// keep the durable name, but do not split an otherwise identical
+				// renderer-output family on this stale compiler-cache label.
+				if ( rendererOutput && role === 'uniform-plan-slots' &&
+					current.source?.kind === 'renderer.toneMappingExposure' &&
+					CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN.test( current[ key ] ) ) {
+
+					clone[ key ] = '<capture-generated-render-output-exposure-slot>';
+					continue;
+
+				}
+
+				if ( ( role === 'binding-descriptors' && current.kind === 'uniform-buffer' ) || role === 'uniform-buffer-ref' ) {
+
+					clone[ key ] = normalizeCaptureGeneratedUniformBufferName(
+						current[ key ],
+						generatedUniformBufferIds,
+						generatedShaderNodeIds,
+					);
+					continue;
+
+				}
+				if ( ( role === 'binding-descriptors' && current.kind === 'storage-buffer' ) ||
+					role === 'storage-buffer-entry' || role === 'storage-buffer-ref' ) {
+
+					clone[ key ] = normalizeCaptureGeneratedStorageBufferName( current[ key ], generatedStorageBufferIds );
+					continue;
+
+				}
+
+			}
+			if ( role === 'dynamic-bindings' && key === 'binding' &&
+				current.target === 'storage-buffer' && typeof current[ key ] === 'string' ) {
+
+				clone[ key ] = normalizeCaptureGeneratedStorageBufferName( current[ key ], generatedStorageBufferIds );
+				continue;
+
+			}
 			if ( liveFrameSource && key === 'valueSnapshot' ) continue;
 			if ( livePMREMTextureSource && (
 				key === 'imageSrc' ||
@@ -461,7 +825,7 @@ function normalizeVariantFingerprintPayload( value ) {
 
 			} else {
 
-				clone[ key ] = visit( current[ key ] );
+				clone[ key ] = visit( current[ key ], variantFingerprintChildRole( role, current, key ) );
 
 			}
 
@@ -469,7 +833,108 @@ function normalizeVariantFingerprintPayload( value ) {
 		return clone;
 
 	};
-	return visit( value );
+	return visit( value, 'artifact' );
+
+}
+
+function variantFingerprintChildRole( role, parent, key ) {
+
+	if ( role === 'artifact' ) {
+
+		if ( key === 'bindings' ) return 'binding-groups';
+		if ( key === 'uniformPlan' ) return 'uniform-plan-groups';
+		if ( key === 'dynamicBindings' ) return 'dynamic-bindings';
+		if ( key === 'materialCompute' ) return 'material-compute';
+
+	}
+	if ( role === 'binding-groups' && key === 'bindings' ) return 'binding-descriptors';
+	if ( role === 'uniform-plan-groups' ) {
+
+		if ( key === 'slots' ) return 'uniform-plan-slots';
+		if ( key === 'storageBuffers' ) return 'storage-buffer-entry';
+		if ( key === 'orderedBindings' ) return 'ordered-bindings';
+
+	}
+	if ( role === 'ordered-bindings' && key === 'slots' ) return 'uniform-plan-slots';
+	if ( role === 'ordered-bindings' && key === 'ref' ) {
+
+		if ( parent.type === 'buffer-uniform' ) return 'uniform-buffer-ref';
+		if ( parent.type === 'storage-buffer' ) return 'storage-buffer-ref';
+
+	}
+	if ( role === 'material-compute' && key === 'kernels' ) return 'material-compute-kernels';
+	if ( role === 'material-compute-kernels' && key === 'artifact' ) return 'artifact';
+	return null;
+
+}
+
+function normalizeCaptureGeneratedShaderNodeIds( shader, identities ) {
+
+	return shader.replace( CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN, (
+		_,
+		nodeBufferPrefix,
+		nodeBufferId,
+		webglBufferPrefix,
+		webglBufferId,
+	) => {
+
+		const prefix = nodeBufferPrefix || webglBufferPrefix;
+		const nodeId = nodeBufferId || webglBufferId;
+		const canonicalId = identities.get( nodeId );
+		if ( canonicalId === undefined ) return _;
+		return `${ prefix }<capture-node-id:${ canonicalId }>`;
+
+	} );
+
+}
+
+function collectCaptureGeneratedShaderNodeIds( shader, identities ) {
+
+	CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN.lastIndex = 0;
+	for ( const match of shader.matchAll( CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN ) ) {
+
+		captureGeneratedIdentityId( identities, match[ 1 ] );
+
+	}
+
+}
+
+function normalizeCaptureGeneratedUniformBufferName( value, uniformBufferIdentities, shaderNodeIdentities ) {
+
+	const uniformBufferMatch = CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN.exec( value );
+	if ( uniformBufferMatch ) {
+
+		const canonicalId = captureGeneratedIdentityId( uniformBufferIdentities, uniformBufferMatch[ 1 ] );
+		return `UniformBuffer_<capture-binding-id:${ canonicalId }>`;
+
+	}
+	const webglBufferMatch = CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN.exec( value );
+	if ( ! webglBufferMatch ) return value;
+	const canonicalId = shaderNodeIdentities.get( webglBufferMatch[ 1 ] );
+	if ( canonicalId === undefined ) return value;
+	return `NodeBuffer_<capture-node-id:${ canonicalId }>`;
+
+}
+
+function normalizeCaptureGeneratedStorageBufferName( value, identities ) {
+
+	const match = CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN.exec( value );
+	if ( ! match ) return value;
+	const canonicalId = captureGeneratedIdentityId( identities, match[ 1 ] );
+	return `StorageBuffer_<capture-binding-id:${ canonicalId }>`;
+
+}
+
+function captureGeneratedIdentityId( identities, generatedId ) {
+
+	let canonicalId = identities.get( generatedId );
+	if ( canonicalId === undefined ) {
+
+		canonicalId = identities.size;
+		identities.set( generatedId, canonicalId );
+
+	}
+	return canonicalId;
 
 }
 

@@ -31,6 +31,18 @@ public output first and then build with the same evidence selectors.
 
 The build also runs a content guard that checks the multi-page output, GitHub Pages-safe navigation, working quickstart, generated evidence fallbacks, social metadata, and the overview's no-Three.js dependency boundary. It fails closed when the public evidence is stale, lacks a passing semantic gate, or no longer matches its selected campaign.
 
+After building, run the static browser proof against the production output:
+
+```sh
+pnpm --filter @tsl-precompile/site test:static
+```
+
+The proof opens the landing and examples pages in full Chromium, fails on page,
+console, request, or HTTP errors, decodes the featured, gallery, and comparison
+images, and writes screenshots plus `report.json` to
+`packages/site/results/static-site-browser`. Set `TSLP_SITE_BROWSER_OUT` (or
+pass `--output-dir`) to keep the output in a runner-temporary directory.
+
 ## Rebuild the evidence
 
 The default selectors are:

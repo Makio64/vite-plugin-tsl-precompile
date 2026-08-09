@@ -49,14 +49,20 @@
 			<div class="section-head">
 				<h2>Choose your start</h2>
 			</div>
+			<p class="release-notice" role="note">
+				<strong>Pre-release source preview:</strong> the first npm alpha is not published yet. Run the repository demo today; the package-install paths below are clearly marked as a preview for the alpha.
+			</p>
 
 			<div class="start-list" aria-label="Ways to get started">
 				<div class="start-option start-option-primary">
-					<h3>Agent installs it</h3>
-					<button class="btn btn-primary" data-copy="#agent-prompt" type="button">Copy prompt</button>
+					<div>
+						<h3>Run the repository demo</h3>
+						<p>Clone, install, and launch the working source example—no unpublished registry package required.</p>
+					</div>
+					<a class="btn btn-primary" href="https://github.com/Makio64/vite-plugin-tsl-precompile#pre-release-quick-start" rel="noopener">Open source setup <span aria-hidden="true">↗</span></a>
 				</div>
 				<div class="start-option">
-					<h3>Agent plans the install</h3>
+					<h3>Agent plans a future install</h3>
 					<button class="btn btn-ghost" data-copy="#review-agent-prompt" type="button">Copy prompt</button>
 				</div>
 				<div class="start-option">
@@ -64,39 +70,7 @@
 					<a class="btn btn-ghost" href="#manual-setup" data-open="#manual-setup">Open 4 steps</a>
 				</div>
 			</div>
-
-			<div id="agent-prompt" hidden>
-					<pre><code>Integrate vite-plugin-tsl-precompile into this Vite + three.js WebGPU app.
-
-Before installing packages or editing files, inspect the lockfile/package manager,
-Vite config, renderer bootstrap, TSL NodeMaterials, routes, current three version,
-and matching @types/three. If this is not a Vite + WebGPURenderer + TSL app, or exact
-three@0.185.1 requires an unapproved migration, stop and report without mutating.
-
-After the fit check passes, use this project's package manager (pnpm shown):
-  pnpm add -D vite-plugin-tsl-precompile@alpha
-  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
-  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
-  pnpm exec tsl-precompile-install-skill --json
-  pnpm exec tsl-precompile-doctor --json --source src
-
-Replace or repeat --source for the source roots discovered in the fit check.
-
-If npm returns 404, stop: the first alpha is not published yet. Do not substitute an
-unrelated package. If the newly installed skill is unavailable in this session, read
-the hosted raw skill and llms.txt below and continue from those instructions.
-
-Use $integrate-tsl-precompile end to end. Start in compatibility mode. Derive the
-complete route/state/render-topology matrix and ask me about authenticated or
-otherwise inaccessible states. Capture real WebGPU paths, verify and commit a
-non-zero artifacts/ set, run the production build, and replay the same matrix in a
-production WebGPU preview.
-Report anything unverified plus a separate slim-readiness verdict. Never hand-edit
-artifacts or enable slim in this change.
-
-Raw skill: https://makio64.github.io/vite-plugin-tsl-precompile/agent/integrate-tsl-precompile/SKILL.md
-AI guide: https://makio64.github.io/vite-plugin-tsl-precompile/llms.txt</code></pre>
-			</div>
+			<p id="copy-feedback" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
 
 			<div id="review-agent-prompt" hidden>
 					<pre><code>Integrate vite-plugin-tsl-precompile into this Vite + three.js WebGPU app in two phases.
@@ -133,7 +107,7 @@ AI guide: https://makio64.github.io/vite-plugin-tsl-precompile/llms.txt</code></
 			<details class="fold" id="manual-setup">
 				<summary>Manual TSL setup<span class="fold-hint">4 steps</span></summary>
 				<div class="fold-body">
-				<p class="fold-intro">Start in compatibility mode. Enable <code>slim: 'source'</code> only after capture, build, and production preview pass.</p>
+				<p class="fold-intro">Tested with Vite &gt;=6.4.3 &lt;9. Start in compatibility mode. Enable <code>slim: 'source'</code> only after capture, build, and production preview pass.</p>
 				<ol class="steps">
 				<li class="step">
 					<div class="step-head"><span class="step-num">1</span><h3>Install</h3></div>

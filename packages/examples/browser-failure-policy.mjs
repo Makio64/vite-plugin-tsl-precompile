@@ -155,6 +155,7 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 
 	if ( ! page || typeof page.on !== 'function' ) throw new TypeError( 'a Playwright-like page is required' );
 	const failures = [];
+	let pendingExactFaviconConsoleError = false;
 	const handlers = {
 		pageerror( error ) {
 
@@ -219,6 +220,31 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 
 	function record( event ) {
 
+		const method = normalizeMethod( event.method );
+		const exactFavicon = method === 'GET' && isSameOriginExactFaviconUrl( event.url, pageUrl );
+		const exactFaviconNetworkFailure = exactFavicon && (
+			event.kind === 'requestfailed' ||
+			( event.kind === 'response' && Number.isInteger( Number( event.status ) ) && Number( event.status ) >= 400 )
+		);
+		if ( exactFaviconNetworkFailure ) pendingExactFaviconConsoleError = true;
+
+		// Chromium sometimes omits the URL from the console duplicate of an
+		// exact /favicon.ico network failure. Correlate that duplicate with the
+		// already-observed network event instead of broadly allowing URL-less
+		// resource errors. Any non-favicon failure still has its own fatal HTTP
+		// or requestfailed record.
+		if (
+			pendingExactFaviconConsoleError &&
+			event.kind === 'console' &&
+			event.level === 'error' &&
+			! event.url &&
+			RESOURCE_LOAD_ERROR.test( normalizeMessage( event.message, '' ) )
+		) {
+
+			pendingExactFaviconConsoleError = false;
+			return;
+
+		}
 		const result = classifyBrowserFailureEvent( event, { pageUrl } );
 		if ( result ) failures.push( result );
 

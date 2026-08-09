@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
 import {
 	BROWSER_FAILURE_POLICY_SHA256,
 	classifyBrowserFailureEvent,
+	installBrowserFailureCollector,
 	isSameOriginExactFaviconUrl,
 } from '../../browser-failure-policy.mjs';
 import {
@@ -97,6 +99,58 @@ test( 'only exact favicon resource failures are exempt', () => {
 		status: 500,
 		url: 'http://127.0.0.1:5192/favicon.ico',
 	}, { pageUrl: PAGE_URL } ), null );
+
+} );
+
+test( 'collector correlates only the URL-less console duplicate of an observed favicon failure', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	page.emit( 'response', {
+		status: () => 404,
+		url: () => 'http://127.0.0.1:5192/favicon.ico',
+		request: () => ( {
+			method: () => 'GET',
+			url: () => 'http://127.0.0.1:5192/favicon.ico',
+		} ),
+	} );
+	page.emit( 'console', {
+		type: () => 'error',
+		text: () => 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+		location: () => ( { url: '' } ),
+	} );
+	assert.deepEqual( collector.failures(), [] );
+
+	page.emit( 'console', {
+		type: () => 'error',
+		text: () => 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+		location: () => ( { url: '' } ),
+	} );
+	assert.match( collector.failures()[ 0 ].text, /console\.error: Failed to load resource/ );
+	collector.dispose();
+
+} );
+
+test( 'collector keeps non-favicon resource failures fatal beside a favicon duplicate', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	for ( const url of [
+		'http://127.0.0.1:5192/favicon.ico',
+		'http://127.0.0.1:5192/assets/model.glb',
+	] ) page.emit( 'response', {
+		status: () => 404,
+		url: () => url,
+		request: () => ( { method: () => 'GET', url: () => url } ),
+	} );
+	page.emit( 'console', {
+		type: () => 'error',
+		text: () => 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+		location: () => ( { url: '' } ),
+	} );
+	assert.equal( collector.failures().length, 1 );
+	assert.match( collector.failures()[ 0 ].text, /HTTP 404.*model\.glb/ );
+	collector.dispose();
 
 } );
 

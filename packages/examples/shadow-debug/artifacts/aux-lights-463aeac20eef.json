@@ -1,0 +1,20 @@
+{
+  "__materialShape": "lights",
+  "__configHash": "463aeac20eefc56bcfe18e26f466ab325e6b855a080b84724364f5008342a005",
+  "__hash": "3127e3845e79f906ff4bb038c512a05117afa58ea7367b60671069ef15cddf9f",
+  "__name": "aux-lights-463aeac20eef",
+  "threeVersion": "0.185.1",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "uniformPlan": [],
+    "vertexShader": "",
+    "fragmentShader": "",
+    "lightsSignature": [
+      "AmbientLight:",
+      "DirectionalLight:shadow"
+    ],
+    "sourceThreeVersion": "0.185.1",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

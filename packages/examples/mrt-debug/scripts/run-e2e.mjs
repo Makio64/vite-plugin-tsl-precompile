@@ -14,11 +14,14 @@ const threeEntry = require.resolve( 'three' );
 const threeRepo = resolve( dirname( threeEntry ), '..' );
 
 const args = process.argv.slice( 2 ).filter( ( arg ) => arg !== '--' );
+const hasOutputRoot = args.some( ( arg ) => arg.startsWith( '--output-root=' ) );
+const evidenceRoot = resolve( process.env.TSLP_E2E_OUT || resolve( REPO_ROOT, 'packages/examples/batch/results' ) );
 const forwarded = [
 	`--three-repo=${ threeRepo }`,
 	`--local-examples-root=${ PACKAGE_ROOT }`,
 	'--save-shots',
 	'--report=mrt-debug-e2e-report.json',
+	...( hasOutputRoot ? [] : [ `--output-root=${ resolve( evidenceRoot, 'cohorts/mrt-debug' ) }` ] ),
 	...args,
 ];
 

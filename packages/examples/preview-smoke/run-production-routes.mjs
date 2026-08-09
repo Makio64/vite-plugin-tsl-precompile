@@ -9,6 +9,7 @@ import {
 	BROWSER_FAILURE_POLICY_SHA256,
 	installBrowserFailureCollector,
 } from '../browser-failure-policy.mjs';
+import { evidenceBrowserLaunchArgs } from '../batch/e2e-environment.mjs';
 import {
 	analyzePngFrames,
 	primaryCanvasLocator,
@@ -32,12 +33,193 @@ export const PRODUCTION_BROWSER_BASE_ARGS = Object.freeze( [
 	'--no-sandbox',
 	'--disable-dev-shm-usage',
 ] );
-const LINUX_SOFTWARE_WEBGPU_ARGS = Object.freeze( [
-	'--enable-features=Vulkan,WebGPUService',
-	'--use-vulkan=swiftshader',
-	'--use-angle=swiftshader',
-] );
 export const PRODUCTION_PREVIEW_VIEWPORT = Object.freeze( { width: 1280, height: 800 } );
+export const PRODUCTION_CANARY_CAPTURE_STATES = Object.freeze( [
+	Object.freeze( { id: 'pose-a', rotation: Object.freeze( [ 0.2, 0.35 ] ) } ),
+	Object.freeze( { id: 'pose-b', rotation: Object.freeze( [ 1.1, 1.55 ] ) } ),
+] );
+
+export function collectCanaryRuntimeEvidence() {
+
+	const root = globalThis;
+	const render = root.__TSLP_CANARY_RENDER_EVIDENCE__;
+	const samples = Array.isArray( root.__tslpHarnessDiagnostics?.objectUboSamples )
+		? root.__tslpHarnessDiagnostics.objectUboSamples
+		: [];
+	const matrices = samples.flatMap( ( sample ) => {
+
+		const slot = Array.isArray( sample?.slots )
+			? sample.slots.find( ( entry ) => entry?.sourceKind === 'object.worldMatrix' )
+			: null;
+		return slot && Array.isArray( slot.floats )
+			? [ { phase: sample.phase, value: slot.floats.slice() } ]
+			: [];
+
+	} );
+	const phaseSummary = ( phase ) => {
+
+		const values = matrices.filter( ( entry ) => entry.phase === phase ).map( ( entry ) => entry.value );
+		return {
+			count: values.length,
+			first: values[ 0 ] || null,
+			last: values.at( - 1 ) || null,
+			distinct: new Set( values.map( ( value ) => JSON.stringify( value ) ) ).size,
+		};
+
+	};
+	return {
+		render: render && typeof render === 'object' ? {
+			renderFrames: Number( render.renderFrames ) || 0,
+			naturalRenderFrames: Number( render.naturalRenderFrames ) || 0,
+			controlledRenderFrames: Number( render.controlledRenderFrames ) || 0,
+			controlled: render.controlled === true,
+			rotation: Array.isArray( render.rotation ) ? render.rotation.slice() : null,
+			worldMatrix: Array.isArray( render.worldMatrix ) ? render.worldMatrix.slice() : null,
+		} : null,
+		objectUbo: {
+			sampleCount: samples.length,
+			update: phaseSummary( 'update' ),
+			upload: phaseSummary( 'upload' ),
+		},
+	};
+
+}
+
+export async function settleCanaryPresentation( capture ) {
+
+	const renderAt = globalThis.__TSLP_CANARY_RENDER_AT__;
+	if ( typeof renderAt !== 'function' ) {
+
+		throw new Error( 'Production canary is missing its deterministic render hook.' );
+
+	}
+	const expectedRotation = Array.isArray( capture?.rotation ) ? capture.rotation : [];
+	if ( typeof capture?.id !== 'string' || capture.id.length === 0 ) {
+
+		throw new Error( 'Production canary capture state requires an id.' );
+
+	}
+	if ( ! Number.isSafeInteger( capture?.fenceTimeoutMs ) || capture.fenceTimeoutMs < 1 ) {
+
+		throw new Error( 'Production canary capture state requires a positive fence timeout.' );
+
+	}
+	if ( expectedRotation.length !== 2 || expectedRotation.some( ( value ) => ! Number.isFinite( value ) ) ) {
+
+		throw new Error( 'Production canary capture state requires two finite rotation values.' );
+
+	}
+	const objectUboSamples = globalThis.__tslpHarnessDiagnostics?.objectUboSamples;
+	const discardedObjectUboSamples = Array.isArray( objectUboSamples ) ? objectUboSamples.length : 0;
+	if ( Array.isArray( objectUboSamples ) ) objectUboSamples.length = 0;
+	let timeoutId;
+	let renderWork;
+	try {
+
+		renderWork = await Promise.race( [
+			renderAt( capture ),
+			new Promise( ( _, rejectTimeout ) => {
+
+				timeoutId = setTimeout( () => rejectTimeout( new Error(
+					`Production canary ${ capture.id } backend fence did not complete within ${ capture.fenceTimeoutMs }ms.`,
+				) ), capture.fenceTimeoutMs );
+
+			} ),
+		] );
+
+	} finally {
+
+		if ( timeoutId !== undefined ) clearTimeout( timeoutId );
+
+	}
+	if ( ! renderWork || ! [ 'webgpu', 'webgl' ].includes( renderWork.backend ) ) {
+
+		throw new Error( 'Production canary render-work fence returned invalid backend evidence.' );
+
+	}
+	const expectedMethod = renderWork.backend === 'webgpu'
+		? 'GPUQueue.onSubmittedWorkDone'
+		: 'WebGL2RenderingContext.finish';
+	if ( renderWork.method !== expectedMethod ) {
+
+		throw new Error(
+			`Production canary ${ renderWork.backend } render-work fence did not use ${ expectedMethod }().`,
+		);
+
+	}
+	if ( renderWork.captureId !== capture.id ) {
+
+		throw new Error( 'Production canary deterministic render did not acknowledge the requested capture id.' );
+
+	}
+	if ( renderWork.pausedNaturalRendering !== true ) {
+
+		throw new Error( 'Production canary deterministic render did not pause natural submissions.' );
+
+	}
+	if ( renderWork.fenceCompleted !== true ) {
+
+		throw new Error( 'Production canary deterministic render did not complete its backend fence.' );
+
+	}
+	if (
+		! Array.isArray( renderWork.requestedRotation ) ||
+		renderWork.requestedRotation.length !== expectedRotation.length ||
+		renderWork.requestedRotation.some( ( value, index ) => value !== expectedRotation[ index ] )
+	) {
+
+		throw new Error( 'Production canary deterministic render did not acknowledge the requested rotation.' );
+
+	}
+	if (
+		! Array.isArray( renderWork.rotation ) ||
+		renderWork.rotation.length !== expectedRotation.length ||
+		renderWork.rotation.some( ( value, index ) => value !== expectedRotation[ index ] )
+	) {
+
+		throw new Error( 'Production canary deterministic render did not apply the requested rotation.' );
+
+	}
+	if ( ! Number.isSafeInteger( renderWork.naturalRenderFrames ) || renderWork.naturalRenderFrames < 1 ) {
+
+		throw new Error( 'Production canary deterministic control started before natural rendering was proven.' );
+
+	}
+	if ( ! Number.isSafeInteger( renderWork.controlledRenderFrames ) || renderWork.controlledRenderFrames < 1 ) {
+
+		throw new Error( 'Production canary deterministic control did not render its requested pose.' );
+
+	}
+	if ( ! Number.isSafeInteger( renderWork.submittedRenderFrames ) || renderWork.submittedRenderFrames < 1 ) {
+
+		throw new Error( 'Production canary render-work fence did not cover a rendered frame.' );
+
+	}
+	if (
+		! Number.isSafeInteger( renderWork.completedRenderFrames ) ||
+		renderWork.completedRenderFrames !== renderWork.submittedRenderFrames
+	) {
+
+		throw new Error( 'Production canary submitted additional renders while deterministic control was paused.' );
+
+	}
+	if ( typeof requestAnimationFrame !== 'function' ) {
+
+		throw new Error( 'Production canary cannot schedule compositor animation frames.' );
+
+	}
+	await new Promise( ( resolveFrames ) => requestAnimationFrame( () => {
+
+		requestAnimationFrame( resolveFrames );
+
+	} ) );
+	return {
+		...renderWork,
+		discardedObjectUboSamples,
+		compositorAnimationFrames: 2,
+	};
+
+}
 
 function parseArgs( args ) {
 
@@ -85,24 +267,20 @@ export function createProductionBrowserLaunchPlan( {
 	headless = true,
 } = {} ) {
 
-	const args = [
-		...PRODUCTION_BROWSER_BASE_ARGS,
-		...( platform === 'linux' ? LINUX_SOFTWARE_WEBGPU_ARGS : [] ),
-	];
+	const args = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, platform );
 	const bundled = {
 		channel: 'playwright-chromium',
-		options: { headless, args: [ ...args ] },
+		options: { channel: 'chromium', headless, args: [ ...args ] },
 	};
 	const system = {
 		channel: 'chrome',
 		options: { channel: 'chrome', headless, args: [ ...args ] },
 	};
 
-	// Prefer the browser users actually run. Playwright's bundled Chromium can
-	// initialize Metal WebGPU yet produce a blank headless surface on macOS;
-	// the pixel gate below must exercise system Chrome first and fall back only
-	// when that channel is unavailable.
-	return [ system, bundled ];
+	// Bind Linux CI to Playwright's installed Chromium revision so its software
+	// adapter behavior is reproducible. On macOS, retain system Chrome first:
+	// bundled Chromium can initialize Metal WebGPU yet render a blank surface.
+	return platform === 'linux' ? [ bundled, system ] : [ system, bundled ];
 
 }
 
@@ -129,6 +307,7 @@ export async function launchProductionBrowser( chromiumApi = chromium, options =
 async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 
 	const pageUrl = new URL( route.path, baseUrl ).href;
+	const canaryFenceTimeoutMs = Math.max( 1, Math.min( 15_000, Math.floor( timeoutMs / 2 ) ) );
 	const context = await browser.newContext( {
 		// Deliberately differ from the capture viewport. Renderer-output replay
 		// must bind the live target through the variant family, not accidentally
@@ -140,6 +319,11 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		installRecaptureActivityCounter,
 		{ requestedBackend: route.requestedBackend },
 	);
+	if ( route.domain.type === 'canary' ) await context.addInitScript( () => {
+
+		globalThis.__TSLP_DEBUG_OBJECT_UBO = true;
+
+	} );
 	const page = await context.newPage();
 	const collector = installBrowserFailureCollector( page, { pageUrl } );
 	const captureRequests = [];
@@ -153,6 +337,7 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 	let pixelEvidence = null;
 	let webgpu = false;
 	let rendererBackends = null;
+	let canaryRuntimeEvidence = null;
 	const failures = [];
 	let browserFailures = [];
 	try {
@@ -209,11 +394,31 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		const canvas = await primaryCanvasLocator( page );
 		await canvas.waitFor( { state: 'visible', timeout: timeoutMs } );
 		await page.waitForTimeout( 250 );
+		const firstSettleEvidence = route.domain.type === 'canary'
+			? await page.evaluate( settleCanaryPresentation, {
+				...PRODUCTION_CANARY_CAPTURE_STATES[ 0 ],
+				fenceTimeoutMs: canaryFenceTimeoutMs,
+			} )
+			: null;
+		const firstRuntimeEvidence = route.domain.type === 'canary'
+			? await page.evaluate( collectCanaryRuntimeEvidence )
+			: null;
 		const firstFrame = await canvas.screenshot();
 		let secondFrame = null;
 		if ( route.domain.type === 'canary' ) {
 
-			await page.waitForTimeout( 250 );
+			const secondSettleEvidence = await page.evaluate(
+				settleCanaryPresentation,
+				{
+					...PRODUCTION_CANARY_CAPTURE_STATES[ 1 ],
+					fenceTimeoutMs: canaryFenceTimeoutMs,
+				},
+			);
+			const secondRuntimeEvidence = await page.evaluate( collectCanaryRuntimeEvidence );
+			canaryRuntimeEvidence = {
+				first: { ...firstRuntimeEvidence, settle: firstSettleEvidence },
+				second: { ...secondRuntimeEvidence, settle: secondSettleEvidence },
+			};
 			secondFrame = await canvas.screenshot();
 
 		}
@@ -240,6 +445,7 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 		captureRequests,
 		browserFailures,
 		pixelEvidence,
+		canaryRuntimeEvidence,
 	};
 	failures.push( ...productionRouteFailures( route, observation ) );
 	return {

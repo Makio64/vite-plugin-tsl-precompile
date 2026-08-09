@@ -1,0 +1,123 @@
+name: One-shot dual-backend artifact recapture
+
+on:
+  push:
+    branches:
+      - codex/recapture-artifacts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: recapture-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recapture:
+    name: Generate and commit r185 example artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Rebuild the checked slim bundle
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Transactionally recapture and preview every configured example
+        run: |
+          set -euo pipefail
+          recapture_log="$RUNNER_TEMP/recapture-all.log"
+          xvfb-run -a pnpm recapture:examples --allow-prune 2>&1 | tee "$recapture_log"
+
+          # The r184 baseline contains two byte-identical unsigned lights
+          # placeholders for this one Ambient+Directional topology. The signed
+          # r185 recapture correctly consolidates them into one artifact. Keep
+          # the broad prune flag bounded to that audited duplicate only.
+          expected_prune='[recapture-all] compute-debug: intentionally pruned aux:lights:c035f2fb0ad933b5c646d6b98c0b96bd735eee8f97d47d54b98ce53eb08d2cf7'
+          expected_refresh='[recapture-all] compute-debug: refreshed aux:lights (aux:lights:816b7e9b3e430f34eb5194c264ab9dcade5072bdd7ef2290e2a914ad33de7407 -> aux:lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36)'
+          test "$(grep -Fc 'intentionally pruned ' "$recapture_log" || true)" -eq 1
+          grep -Fxq "$expected_prune" "$recapture_log"
+          grep -Fxq "$expected_refresh" "$recapture_log"
+          test ! -e packages/examples/compute-debug/artifacts/aux-lights-816b7e9b3e43.json
+          test ! -e packages/examples/compute-debug/artifacts/aux-lights-c035f2fb0ad9.json
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const root = 'packages/examples/compute-debug/artifacts';
+          const manifest = JSON.parse( readFileSync( `${ root }/manifest.json`, 'utf8' ) );
+          const lights = Object.entries( manifest.__aux || {} ).filter( ( [ , entry ] ) => entry.shape === 'lights' );
+          if ( lights.length !== 1 || lights[ 0 ][ 0 ] !== 'lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36' ) {
+            throw new Error( `Expected the one signed r185 lights replacement, received ${ JSON.stringify( lights ) }.` );
+          }
+          const envelope = JSON.parse( readFileSync( `${ root }/${ lights[ 0 ][ 1 ].file }`, 'utf8' ) );
+          if ( envelope.threeVersion !== '0.185.1' || envelope.pluginVersion !== '0.1.0' ) {
+            throw new Error( 'The consolidated lights artifact is not signed by the r185 toolchain.' );
+          }
+          if ( envelope.__hash !== '88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d' ) {
+            throw new Error( `Unexpected consolidated lights hash: ${ envelope.__hash }.` );
+          }
+          if ( JSON.stringify( envelope.artifact?.lightsSignature ) !== JSON.stringify( [ 'AmbientLight:', 'DirectionalLight:' ] ) ) {
+            throw new Error( `Unexpected consolidated lights signature: ${ JSON.stringify( envelope.artifact?.lightsSignature ) }.` );
+          }
+          NODE
+      - name: Verify the committed artifact contract
+        run: pnpm verify
+      - name: Package a recoverable artifact snapshot
+        run: |
+          archive_name="recaptured-example-artifacts.tar.gz"
+          archive="$RUNNER_TEMP/$archive_name"
+          tar --create --gzip --file="$archive" \
+            packages/runtime/build/three.webgpu.slim.js \
+            packages/runtime/build/three.webgpu.slim.meta.json \
+            packages/examples/ocean/artifacts \
+            packages/examples/getting-started/artifacts \
+            packages/examples/pbr-shadows/artifacts \
+            packages/examples/shadow-debug/artifacts \
+            packages/examples/postprocessing-debug/artifacts \
+            packages/examples/pmrem-debug/artifacts \
+            packages/examples/mrt-debug/artifacts \
+            packages/examples/background/artifacts \
+            packages/examples/compute-debug/artifacts \
+            packages/examples/wow-showcase/artifacts
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum "$archive_name" > "$archive_name.sha256"
+          )
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: recaptured-example-artifacts
+          path: |
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz
+            ${{ runner.temp }}/recaptured-example-artifacts.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Commit only the generated outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            packages/runtime/build/three.webgpu.slim.js \
+            packages/runtime/build/three.webgpu.slim.meta.json \
+            packages/examples/ocean/artifacts \
+            packages/examples/getting-started/artifacts \
+            packages/examples/pbr-shadows/artifacts \
+            packages/examples/shadow-debug/artifacts \
+            packages/examples/postprocessing-debug/artifacts \
+            packages/examples/pmrem-debug/artifacts \
+            packages/examples/mrt-debug/artifacts \
+            packages/examples/background/artifacts \
+            packages/examples/compute-debug/artifacts \
+            packages/examples/wow-showcase/artifacts \
+            packages/plugin/src/cli/recapture.js
+          git update-index --chmod=+x packages/plugin/src/cli/recapture.js
+          git ls-files -s packages/plugin/src/cli/recapture.js | grep -q '^100755 '
+          git diff --cached --check
+          git commit -m "chore: refresh r185 example artifacts"
+          git push origin HEAD:codex/recapture-artifacts

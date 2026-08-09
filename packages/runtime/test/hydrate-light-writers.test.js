@@ -352,6 +352,41 @@ test( 'writeLightValue: light.colorScaled multiplies color by intensity', () => 
 
 } );
 
+test( 'writeLightValue: hemisphere ground color uses the exact live property', () => {
+
+	const view = makeView();
+	const light = fakeLight( {
+		uuid: 'hemisphere',
+		color: new Color( 0.8, 0.7, 0.6 ),
+		intensity: 2,
+	} );
+	light.groundColor = new Color( 0.1, 0.2, 0.3 );
+	const scene = fakeScene( [ light ] );
+	const source = {
+		kind: 'light.colorScaled',
+		property: 'groundColor',
+		lightUuid: 'hemisphere',
+		valueSnapshot: { type: 'color', data: [ 0, 0, 0 ] },
+	};
+
+	writeLightValue( view, 0, source.kind, source, { scene } );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 0.2 ) < 1e-6 );
+	assert.ok( Math.abs( view.getFloat32( 4, true ) - 0.4 ) < 1e-6 );
+	assert.ok( Math.abs( view.getFloat32( 8, true ) - 0.6 ) < 1e-6 );
+
+	light.groundColor.setRGB( 0.25, 0.5, 0.75 );
+	light.intensity = 4;
+	writeLightValue( view, 0, source.kind, source, { scene } );
+	assert.equal( view.getFloat32( 0, true ), 1 );
+	assert.equal( view.getFloat32( 4, true ), 2 );
+	assert.equal( view.getFloat32( 8, true ), 3 );
+
+	// The ordinary color path must remain bound to `light.color`.
+	writeLightValue( view, 0, source.kind, { ...source, property: undefined }, { scene } );
+	assert.ok( Math.abs( view.getFloat32( 0, true ) - 3.2 ) < 1e-6 );
+
+} );
+
 test( 'writeLightValue: light.shadowMatrix writes light.shadow.matrix', () => {
 
 	const view = makeView();

@@ -1,0 +1,248 @@
+{
+  "__aux": {
+    "background:2e54b8c8cdd7371f15594cb88fb1abbbda95983fb7d282879f0c64ea95bf4977": {
+      "file": "aux-background-2e54b8c8cdd7.json",
+      "shape": "background",
+      "configHash": "2e54b8c8cdd7371f15594cb88fb1abbbda95983fb7d282879f0c64ea95bf4977",
+      "hash": "745fe68c4c34d63816ef4d2df830eef35b8170de1a50ea04e18cd24002d8b425",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:47.461Z"
+    },
+    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
+      "file": "aux-lights-3247ab5f57af.json",
+      "shape": "lights",
+      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
+      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:39.826Z"
+    },
+    "cube-render-target:8c3dc01d546a85bd61df2be3407458a69a3a142a93dc33a3ae4b7f72756e6846": {
+      "file": "aux-cube-render-target-8c3dc01d546a.json",
+      "shape": "cube-render-target",
+      "configHash": "8c3dc01d546a85bd61df2be3407458a69a3a142a93dc33a3ae4b7f72756e6846",
+      "hash": "332ee8594a061eb56b633d649956046417e880553184d0686db15b9c0a3e6a5e",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:49.351Z"
+    },
+    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
+      "file": "aux-cube-render-target-f8bd804355c3.json",
+      "shape": "cube-render-target",
+      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
+      "hash": "230152de35c45e287aa21f295f1de18bdbed50fcca5bc8d71fd59d2125a7669a",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:49.365Z"
+    },
+    "pmrem-equirect:43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd": {
+      "file": "aux-pmrem-equirect-43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd-2ca8c90deb45fba39f0afc40bda595cd335aa266af6f76b9fb9543f145d54d79.json",
+      "shape": "pmrem-equirect",
+      "configHash": "43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd",
+      "hash": "2ca8c90deb45fba39f0afc40bda595cd335aa266af6f76b9fb9543f145d54d79",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:49.490Z"
+    },
+    "pmrem-ggx:43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd": {
+      "file": "aux-pmrem-ggx-43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd-000b1a82b87dab70011634aab833d5c100e47354fff1889dd1e0ab4e7f27fc32.json",
+      "shape": "pmrem-ggx",
+      "configHash": "43369b977f511fec45dc46efcb8d0fe60d1e40f83816d92ab0b32442a57288fd",
+      "hash": "000b1a82b87dab70011634aab833d5c100e47354fff1889dd1e0ab4e7f27fc32",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:49.490Z"
+    },
+    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+      "file": "aux-render-output-3f1fa57642fc.json",
+      "shape": "render-output",
+      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+      "hash": "979ce6518ed6713431421fdb2756dfdecaeafad80ceb1c13ef27fbfc30ee5fb9",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:49.552Z"
+    },
+    "background:c78ea2daa4140806552aab30d8161d64f793316294aded9e6cde6c2a2d903df3": {
+      "file": "aux-background-c78ea2daa414.json",
+      "shape": "background",
+      "configHash": "c78ea2daa4140806552aab30d8161d64f793316294aded9e6cde6c2a2d903df3",
+      "hash": "8956ee354011273088a742ca8605772db8ecd53f5611ba47db588033676c320a",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:42.367Z"
+    },
+    "pmrem-cubemap:6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe": {
+      "file": "aux-pmrem-cubemap-6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe-46881b3cc98a701ac9e0ade1f72419cd9e24e580a85fe7fa69a73979493ff66b.json",
+      "shape": "pmrem-cubemap",
+      "configHash": "6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe",
+      "hash": "46881b3cc98a701ac9e0ade1f72419cd9e24e580a85fe7fa69a73979493ff66b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:43.570Z"
+    },
+    "pmrem-ggx:6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe": {
+      "file": "aux-pmrem-ggx-6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe-121e825a4b87c4ea6be89f87a8203ab078e7b71fb57526d673e84860149d289d.json",
+      "shape": "pmrem-ggx",
+      "configHash": "6b19fe2354212b6594c2b603131799778cdff15f03a1e4c36568babe404676fe",
+      "hash": "121e825a4b87c4ea6be89f87a8203ab078e7b71fb57526d673e84860149d289d",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:43.570Z"
+    },
+    "pmrem-blur:0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7": {
+      "file": "aux-pmrem-blur-0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7-bc7be0fd5c00026324ef850c9318e186303bc0f8cf28c8e21f9028135cbabde0.json",
+      "shape": "pmrem-blur",
+      "configHash": "0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7",
+      "hash": "bc7be0fd5c00026324ef850c9318e186303bc0f8cf28c8e21f9028135cbabde0",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:45.810Z"
+    },
+    "pmrem-ggx:0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7": {
+      "file": "aux-pmrem-ggx-0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7-69270af56e6ba0093d8aa66d4d68fb0edb90c0a3bb0817f5917a20dc90e4a38b.json",
+      "shape": "pmrem-ggx",
+      "configHash": "0e043867c967ae3e4c0b0545c4d9c6c1581c75bc8057a496554aa1e5fb5e0ff7",
+      "hash": "69270af56e6ba0093d8aa66d4d68fb0edb90c0a3bb0817f5917a20dc90e4a38b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T22:20:45.810Z"
+    }
+  },
+  "pmrem-debug-floor": {
+    "file": "pmrem-debug-floor.7c43afc5ddd3.json",
+    "hash": "7c43afc5ddd31897e335af3a4fb82877c1e09aaac723b7e1c90e3fe1cf7466bb",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:40.890Z"
+  },
+  "pmrem-debug-metal": {
+    "file": "pmrem-debug-metal.4f5ced1d6590.json",
+    "hash": "4f5ced1d65905110b9a702fe63e8e2887578418c581c68c14585d80b14642a2c",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:40.975Z"
+  },
+  "pmrem-debug-rough": {
+    "file": "pmrem-debug-rough.2c57ec9dbbf2.json",
+    "hash": "2c57ec9dbbf238a5c7ff65a88f744c6f540bd42b084b67be02f3b5bd3693eda0",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:41.004Z"
+  },
+  "pmrem-debug-env-face-0": {
+    "file": "pmrem-debug-env-face-0.deb3f354bab5.json",
+    "hash": "deb3f354bab595ab5579283ee9d575bf341b61f6f6aa7fb1d3ef0de09f5b8b64",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:45.775Z"
+  },
+  "pmrem-debug-env-face-1": {
+    "file": "pmrem-debug-env-face-1.18b419b324d9.json",
+    "hash": "18b419b324d9933ba2a29f1de14d69fa39de88a90d8053b22d744f254420d68a",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:45.813Z"
+  },
+  "pmrem-debug-env-face-2": {
+    "file": "pmrem-debug-env-face-2.22f1a339369a.json",
+    "hash": "22f1a339369ae12b7362746455bcb9cbbd36bea73d3cb34d993668d50294da50",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:45.820Z"
+  },
+  "pmrem-debug-env-face-3": {
+    "file": "pmrem-debug-env-face-3.e52b2a121166.json",
+    "hash": "e52b2a121166c71fd06828173b021757732e5800dfeae71d29677c9974f033e8",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:45.825Z"
+  },
+  "pmrem-debug-transmission": {
+    "file": "pmrem-debug-transmission.0bcd4b389d5a.json",
+    "hash": "0bcd4b389d5ae40ce7e391705e27b5daa67513bf425f6abf21ab0df62155eff7",
+    "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/shared.js:precompile:0",
+        "revision": "6eec64a9152c9226cc4ee9012a63a04010f05a0be092e74b904b96c0fcbf5c93",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T22:20:49.542Z"
+  }
+}

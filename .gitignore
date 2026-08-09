@@ -51,6 +51,7 @@ packages/plugin/skill/
 # Playwright/CI scratch
 playwright-report/
 test-results/
+packages/site/results/
 
 # Per-worker e2e reports — only the merged e2e-report.json is checked in
 packages/examples/batch/results/e2e-report-worker-*.json

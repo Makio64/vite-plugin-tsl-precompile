@@ -7,6 +7,8 @@ import { resolve } from 'node:path';
 import {
 	captureCanSettle,
 	classifyRecaptureResourceFailure,
+	isCorrelatedRecaptureFaviconConsoleError,
+	isExactRecaptureFaviconFailure,
 	classifyRecaptureRendererBackendEvidence,
 	classifyRecaptureRendererBackendGate,
 	classifyRecaptureRouteOutcome,
@@ -18,6 +20,8 @@ import {
 	isTransientRecaptureNavigationError,
 	navigateWithColdReloadRetry,
 	parseRecaptureArgs,
+	recaptureBrowserLaunchArgs,
+	recaptureBrowserLaunchOptions,
 	recoverColdReloadDuringPolling,
 } from '../../src/cli/recapture-support.js';
 
@@ -61,6 +65,49 @@ test( 'recapture CLI parser accepts explicit validated options', () => {
 			help: false,
 		},
 	);
+
+} );
+
+test( 'recapture Chromium launch preserves macOS behavior and enables both software backends on Linux', async () => {
+
+	const macArgs = [
+		'--enable-unsafe-webgpu',
+		'--ignore-gpu-blocklist',
+		'--no-sandbox',
+		'--disable-dev-shm-usage',
+	];
+	assert.deepEqual( recaptureBrowserLaunchArgs( 'chromium', 'darwin' ), macArgs );
+	assert.deepEqual( recaptureBrowserLaunchArgs( 'firefox', 'linux' ), [] );
+	assert.deepEqual(
+		recaptureBrowserLaunchOptions( 'chromium', { platform: 'linux', headless: true } ),
+		{
+			channel: 'chromium',
+			headless: true,
+			args: recaptureBrowserLaunchArgs( 'chromium', 'linux' ),
+		},
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchOptions( 'chromium', { platform: 'darwin', headless: true } ),
+		{ headless: true, args: macArgs },
+	);
+
+	const { evidenceBrowserLaunchArgs, LINUX_SWIFTSHADER_BROWSER_ARGS } = await import(
+		'../../../examples/batch/e2e-environment.mjs'
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchArgs( 'chromium', 'linux' ),
+		evidenceBrowserLaunchArgs( macArgs, 'linux' ),
+	);
+	assert.deepEqual(
+		recaptureBrowserLaunchArgs( 'chromium', 'linux' )
+			.filter( ( arg ) => LINUX_SWIFTSHADER_BROWSER_ARGS.includes( arg ) ),
+		[ ...LINUX_SWIFTSHADER_BROWSER_ARGS ],
+	);
+	for ( const arg of LINUX_SWIFTSHADER_BROWSER_ARGS ) {
+
+		assert.equal( recaptureBrowserLaunchArgs( 'chromium', 'linux' ).includes( arg ), true );
+
+	}
 
 } );
 
@@ -775,6 +822,44 @@ test( 'recapture network policy ignores only exact same-origin favicon failures'
 		status: 500,
 		url: 'http://127.0.0.1:5199/favicon.ico',
 	}, pageUrl ), /HTTP 500/ );
+
+} );
+
+test( 'recapture correlates Chromium URL-less console duplicates only after an exact favicon failure', () => {
+
+	const pageUrl = 'http://127.0.0.1:5199/example';
+	const faviconFailure = {
+		kind: 'response',
+		method: 'GET',
+		status: 404,
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	};
+	assert.equal( isExactRecaptureFaviconFailure( faviconFailure, pageUrl ), true );
+	assert.equal( isExactRecaptureFaviconFailure( {
+		...faviconFailure,
+		url: 'http://127.0.0.1:5199/assets/favicon.ico',
+	}, pageUrl ), false );
+
+	const consoleError = {
+		level: 'error',
+		message: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
+		url: '',
+	};
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( consoleError, pageUrl ), false );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError(
+		consoleError,
+		pageUrl,
+		{ networkFailureObserved: true },
+	), true );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( {
+		...consoleError,
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	}, pageUrl ), true );
+	assert.equal( isCorrelatedRecaptureFaviconConsoleError( {
+		...consoleError,
+		message: 'application failed while handling favicon',
+		url: 'http://127.0.0.1:5199/favicon.ico',
+	}, pageUrl ), false );
 
 } );
 

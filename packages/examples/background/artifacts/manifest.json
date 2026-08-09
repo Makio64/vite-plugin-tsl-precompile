@@ -1,0 +1,57 @@
+{
+  "__aux": {
+    "background:0cb5a5612a0e3b72efcd73629d852d7d0dce43a364ba1be490726221a523169e": {
+      "file": "aux-background-0cb5a5612a0e.json",
+      "shape": "background",
+      "configHash": "0cb5a5612a0e3b72efcd73629d852d7d0dce43a364ba1be490726221a523169e",
+      "hash": "ea479eb41da1a353871a85c55a19c57fd04e30829153c070a54f6b144e91d608",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T11:10:50.450Z"
+    },
+    "lights:c06b382a158f365cdf6714b6fd11ffe77129e1e3d40a73501333b0213e194da6": {
+      "file": "aux-lights-c06b382a158f.json",
+      "shape": "lights",
+      "configHash": "c06b382a158f365cdf6714b6fd11ffe77129e1e3d40a73501333b0213e194da6",
+      "hash": "1575e6f7901853a79bf4f698079eabb6e06a9dada56fc8d554552119e3a17393",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T11:10:50.353Z"
+    },
+    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
+      "file": "aux-cube-render-target-f8bd804355c3.json",
+      "shape": "cube-render-target",
+      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
+      "hash": "46f17a545aaa1d298061264f8ecf59a26b720d5b9a11d612355a41ecef8cdd62",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T11:10:50.465Z"
+    },
+    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+      "file": "aux-render-output-3f1fa57642fc.json",
+      "shape": "render-output",
+      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+      "hash": "fbf62cafa11eb05af50b39147230903e70cc61c098904c8b802aef1743a4856b",
+      "threeVersion": "0.185.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-07-30T11:10:50.521Z"
+    }
+  },
+  "bg-test-sphere": {
+    "file": "bg-test-sphere.71de6f9cf14f.json",
+    "hash": "71de6f9cf14fe63484c163918885224ded86dac58a8d5e7e918ff145b6abdd39",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "e9e52fd99d4d2fe0b9501f0fcebbd35344f2dc0a0e78eb8655726dd8a4ea78cf",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T11:10:50.434Z"
+  }
+}

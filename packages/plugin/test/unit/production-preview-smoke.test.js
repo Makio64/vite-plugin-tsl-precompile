@@ -9,11 +9,18 @@ import {
 	productionRouteFailures,
 } from '../../../examples/preview-smoke/production-route-contract.mjs';
 import {
+	collectCanaryRuntimeEvidence,
 	createProductionBrowserLaunchPlan,
 	launchProductionBrowser,
 	PRODUCTION_BROWSER_BASE_ARGS,
+	PRODUCTION_CANARY_CAPTURE_STATES,
 	PRODUCTION_PREVIEW_VIEWPORT,
+	settleCanaryPresentation,
 } from '../../../examples/preview-smoke/run-production-routes.mjs';
+import {
+	evidenceBrowserLaunchArgs,
+	LINUX_SWIFTSHADER_BROWSER_ARGS,
+} from '../../../examples/batch/e2e-environment.mjs';
 import { RECAPTURE_VIEWPORT } from '../../src/cli/recapture-support.js';
 
 const REPO = resolve( import.meta.dirname, '../../../..' );
@@ -29,6 +36,183 @@ const PIXELS = Object.freeze( {
 	framesCompared: false,
 	changedFraction: null,
 	meanFrameDelta: null,
+} );
+
+test( 'production canary summarizes changing render and object UBO evidence', () => {
+
+	const previousRender = globalThis.__TSLP_CANARY_RENDER_EVIDENCE__;
+	const previousDiagnostics = globalThis.__tslpHarnessDiagnostics;
+	try {
+
+		globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = {
+			renderFrames: 9,
+			naturalRenderFrames: 7,
+			controlledRenderFrames: 2,
+			controlled: true,
+			rotation: [ 0.4, 0.6 ],
+			worldMatrix: [ 1, 0, 0, 1 ],
+		};
+		const sample = ( phase, value ) => ( {
+			phase,
+			slots: [ { sourceKind: 'object.worldMatrix', floats: [ value, 0, 0, 1 ] } ],
+		} );
+		globalThis.__tslpHarnessDiagnostics = {
+			objectUboSamples: [
+				sample( 'update', 1 ),
+				sample( 'upload', 1 ),
+				sample( 'update', 2 ),
+				sample( 'upload', 2 ),
+			],
+		};
+
+		const evidence = collectCanaryRuntimeEvidence();
+		assert.equal( evidence.render.renderFrames, 9 );
+		assert.equal( evidence.render.naturalRenderFrames, 7 );
+		assert.equal( evidence.render.controlledRenderFrames, 2 );
+		assert.equal( evidence.render.controlled, true );
+		assert.deepEqual( evidence.render.rotation, [ 0.4, 0.6 ] );
+		assert.deepEqual( evidence.objectUbo.update, {
+			count: 2,
+			first: [ 1, 0, 0, 1 ],
+			last: [ 2, 0, 0, 1 ],
+			distinct: 2,
+		} );
+		assert.equal( evidence.objectUbo.upload.distinct, 2 );
+
+	} finally {
+
+		if ( previousRender === undefined ) delete globalThis.__TSLP_CANARY_RENDER_EVIDENCE__;
+		else globalThis.__TSLP_CANARY_RENDER_EVIDENCE__ = previousRender;
+		if ( previousDiagnostics === undefined ) delete globalThis.__tslpHarnessDiagnostics;
+		else globalThis.__tslpHarnessDiagnostics = previousDiagnostics;
+
+	}
+
+} );
+
+test( 'production canary deterministically renders and fences before two compositor frames', async () => {
+
+	const previousRenderAt = globalThis.__TSLP_CANARY_RENDER_AT__;
+	const previousAnimationFrame = globalThis.requestAnimationFrame;
+	const previousDiagnostics = globalThis.__tslpHarnessDiagnostics;
+	const events = [];
+	const capture = { ...PRODUCTION_CANARY_CAPTURE_STATES[ 0 ], fenceTimeoutMs: 250 };
+	try {
+
+		globalThis.__tslpHarnessDiagnostics = { objectUboSamples: [ { phase: 'natural' }, { phase: 'natural' } ] };
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async ( requestedCapture ) => {
+
+			events.push( `render:${ requestedCapture.id }:samples=${ globalThis.__tslpHarnessDiagnostics.objectUboSamples.length }` );
+			return {
+				backend: 'webgpu',
+				method: 'GPUQueue.onSubmittedWorkDone',
+				captureId: requestedCapture.id,
+				pausedNaturalRendering: true,
+				fenceCompleted: true,
+				requestedRotation: requestedCapture.rotation.slice(),
+				rotation: requestedCapture.rotation.slice(),
+				naturalRenderFrames: 10,
+				controlledRenderFrames: 1,
+				submittedRenderFrames: 12,
+				completedRenderFrames: 12,
+			};
+
+		};
+		globalThis.requestAnimationFrame = ( callback ) => {
+
+			events.push( 'raf' );
+			callback();
+			return events.length;
+
+		};
+		assert.deepEqual( await settleCanaryPresentation( capture ), {
+			backend: 'webgpu',
+			method: 'GPUQueue.onSubmittedWorkDone',
+			captureId: 'pose-a',
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: [ 0.2, 0.35 ],
+			rotation: [ 0.2, 0.35 ],
+			naturalRenderFrames: 10,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 12,
+			completedRenderFrames: 12,
+			discardedObjectUboSamples: 2,
+			compositorAnimationFrames: 2,
+		} );
+		assert.deepEqual( events, [ 'render:pose-a:samples=0', 'raf', 'raf' ] );
+
+	} finally {
+
+		if ( previousRenderAt === undefined ) delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		else globalThis.__TSLP_CANARY_RENDER_AT__ = previousRenderAt;
+		if ( previousAnimationFrame === undefined ) delete globalThis.requestAnimationFrame;
+		else globalThis.requestAnimationFrame = previousAnimationFrame;
+		if ( previousDiagnostics === undefined ) delete globalThis.__tslpHarnessDiagnostics;
+		else globalThis.__tslpHarnessDiagnostics = previousDiagnostics;
+
+	}
+
+} );
+
+test( 'production canary deterministic render fails closed and accepts WebGL evidence', async () => {
+
+	const previousRenderAt = globalThis.__TSLP_CANARY_RENDER_AT__;
+	const previousAnimationFrame = globalThis.requestAnimationFrame;
+	const capture = { ...PRODUCTION_CANARY_CAPTURE_STATES[ 1 ], fenceTimeoutMs: 250 };
+	try {
+
+		globalThis.requestAnimationFrame = ( callback ) => { callback(); return 1; };
+		delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		await assert.rejects( settleCanaryPresentation( capture ), /missing its deterministic render hook/ );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => ( {
+			backend: 'webgpu',
+			method: 'unavailable',
+			captureId: capture.id,
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: capture.rotation.slice(),
+			rotation: capture.rotation.slice(),
+			naturalRenderFrames: 3,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 1,
+			completedRenderFrames: 1,
+		} );
+		await assert.rejects( settleCanaryPresentation( capture ), /did not use GPUQueue\.onSubmittedWorkDone/ );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => ( {
+			backend: 'webgl',
+			method: 'WebGL2RenderingContext.finish',
+			captureId: capture.id,
+			pausedNaturalRendering: true,
+			fenceCompleted: true,
+			requestedRotation: capture.rotation.slice(),
+			rotation: capture.rotation.slice(),
+			naturalRenderFrames: 3,
+			controlledRenderFrames: 1,
+			submittedRenderFrames: 4,
+			completedRenderFrames: 4,
+		} );
+		const webgl = await settleCanaryPresentation( capture );
+		assert.equal( webgl.backend, 'webgl' );
+		assert.equal( webgl.compositorAnimationFrames, 2 );
+
+		globalThis.__TSLP_CANARY_RENDER_AT__ = async () => new Promise( () => {} );
+		await assert.rejects(
+			settleCanaryPresentation( { ...capture, fenceTimeoutMs: 10 } ),
+			/backend fence did not complete within 10ms/,
+		);
+
+	} finally {
+
+		if ( previousRenderAt === undefined ) delete globalThis.__TSLP_CANARY_RENDER_AT__;
+		else globalThis.__TSLP_CANARY_RENDER_AT__ = previousRenderAt;
+		if ( previousAnimationFrame === undefined ) delete globalThis.requestAnimationFrame;
+		else globalThis.requestAnimationFrame = previousAnimationFrame;
+
+	}
+
 } );
 
 test( 'production preview exercises a viewport distinct from capture', () => {
@@ -79,15 +263,34 @@ test( 'production preview uses recapture-compatible native WebGPU flags on Darwi
 
 } );
 
-test( 'production preview retains software WebGPU fallback flags on Linux', () => {
+test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flags on Linux', () => {
 
 	const plan = createProductionBrowserLaunchPlan( { platform: 'linux', headless: false } );
-	assert.equal( plan[ 0 ].channel, 'chrome' );
-	assert.equal( plan[ 0 ].options.channel, 'chrome' );
+	const expectedArgs = evidenceBrowserLaunchArgs( PRODUCTION_BROWSER_BASE_ARGS, 'linux' );
+	assert.equal( plan[ 0 ].channel, 'playwright-chromium' );
+	assert.equal( plan[ 0 ].options.channel, 'chromium' );
 	assert.equal( plan[ 0 ].options.headless, false );
-	assert.ok( plan[ 0 ].options.args.includes( '--enable-features=Vulkan,WebGPUService' ) );
-	assert.ok( plan[ 0 ].options.args.includes( '--use-vulkan=swiftshader' ) );
-	assert.ok( plan[ 0 ].options.args.includes( '--use-angle=swiftshader' ) );
+	assert.equal( plan[ 1 ].channel, 'chrome' );
+	assert.equal( plan[ 1 ].options.channel, 'chrome' );
+	for ( const candidate of plan ) {
+
+		assert.deepEqual( candidate.options.args, expectedArgs );
+		for ( const arg of LINUX_SWIFTSHADER_BROWSER_ARGS ) {
+
+			assert.ok( candidate.options.args.includes( arg ) );
+
+		}
+		assert.ok( candidate.options.args.includes( '--use-vulkan=swiftshader' ) );
+		assert.ok( ! candidate.options.args.includes( '--enable-features=Vulkan,WebGPUService' ) );
+
+	}
+
+	const source = readFileSync(
+		resolve( REPO, 'packages/examples/preview-smoke/run-production-routes.mjs' ),
+		'utf8',
+	);
+	assert.match( source, /evidenceBrowserLaunchArgs\( PRODUCTION_BROWSER_BASE_ARGS, platform \)/ );
+	assert.doesNotMatch( source, /enable-features=Vulkan,WebGPUService/ );
 
 } );
 
@@ -110,7 +313,7 @@ test( 'production preview falls back through the platform launch plan', async ()
 	);
 	assert.equal( calls.length, 2 );
 	assert.equal( calls[ 0 ].channel, 'chrome' );
-	assert.equal( calls[ 1 ].channel, undefined );
+	assert.equal( calls[ 1 ].channel, 'chromium' );
 
 } );
 
@@ -262,7 +465,7 @@ test( 'production preview fails closed on fallback, capture, browser, domain, an
 
 } );
 
-test( 'recapture production preview is wired before artifact commit', () => {
+test( 'recapture production preview is wired before commit and fixtures publish domain receipts', () => {
 
 	const recapture = readFileSync(
 		resolve( REPO, 'packages/plugin/src/cli/recapture-all.js' ),
@@ -272,5 +475,33 @@ test( 'recapture production preview is wired before artifact commit', () => {
 	const previewIndex = recapture.indexOf( 'await runProductionPreview(abortController.signal, example, selection.port);' );
 	const commitIndex = recapture.indexOf( 'transaction.commit()' );
 	assert.ok( buildIndex >= 0 && buildIndex < previewIndex && previewIndex < commitIndex );
+
+	const shadow = readFileSync(
+		resolve( REPO, 'packages/examples/shadow-debug/src/shared.js' ),
+		'utf8',
+	);
+	assert.match( shadow, /__TSLP_SITE_DOMAIN__ = shadowReplayReceipt/ );
+	assert.match( shadow, /populateShadowMaps\( scene, camera \)/ );
+	assert.match( shadow, /shadowReplayReceipt\.rendered \|\|=/ );
+	assert.match( shadow, /shadowReplayReceipt\.renderFrames \+= 1/ );
+	assert.match( shadow, /mapPassTexture === shadowLight\.shadow\.__tslpVsmShadowTexture/ );
+
+	const pmrem = readFileSync(
+		resolve( REPO, 'packages/examples/pmrem-debug/src/shared.js' ),
+		'utf8',
+	);
+	assert.match( pmrem, /__TSLP_SITE_DOMAIN__ = pmremReplayReceipt/ );
+	assert.match( pmrem, /isPMREMTexture: environmentTarget\?\.texture\?\.isPMREMTexture === true/ );
+	assert.match( pmrem, /pmremReplayReceipt\.renderFrames \+= 1/ );
+	assert.match( pmrem, /scene\.environment === environmentTarget\.texture/ );
+	for ( const page of [ 'equirect', 'cubemap', 'from-scene', 'transmission' ] ) {
+
+		const html = readFileSync(
+			resolve( REPO, `packages/examples/pmrem-debug/${ page }.html` ),
+			'utf8',
+		);
+		assert.match( html, /src="\/src\/site-status\.js"/ );
+
+	}
 
 } );

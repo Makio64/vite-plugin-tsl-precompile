@@ -49,7 +49,10 @@
         "webgpu_shadowmap_vsm.html",
         "webgpu_postprocessing_bloom.html",
         "webgpu_postprocessing_bloom_emissive.html",
-        "webgpu_postprocessing_bloom_selective.html"
+        "webgpu_postprocessing_bloom_selective.html",
+        "webgpu_storage_buffer.html",
+        "webgpu_texturegather.html",
+        "webgpu_texturegrad.html"
       ],
       "tier2": [
         "webgpu_materials_arrays.html",

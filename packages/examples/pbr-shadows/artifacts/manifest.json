@@ -1,0 +1,36 @@
+{
+  "sphere": {
+    "file": "sphere.6648359fc04c.json",
+    "hash": "6648359fc04c8e018ab7846133de1bf18d9fe138785f018cdcea9a2627da437e",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "f81669cf0f9918c4f44a9d25d9437646b6bb83979f0dcce611458364edb50cd1",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T12:06:17.482Z"
+  },
+  "ground": {
+    "file": "ground.40e1b0561894.json",
+    "hash": "40e1b0561894b2f896073a608d2923ba275b42e71c53ab2b7ca11b920f496873",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "f81669cf0f9918c4f44a9d25d9437646b6bb83979f0dcce611458364edb50cd1",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-07-30T12:06:17.498Z"
+  }
+}

@@ -720,6 +720,14 @@ function collectLightUniformSources( state ) {
 			out.set( lightColorNode, { kind: 'light.colorScaled', ...base } );
 
 		}
+		// HemisphereLightNode owns a second color uniform for the lower
+		// hemisphere. It follows the same `color * intensity` lifecycle as the
+		// primary light color, but reads `light.groundColor` at runtime.
+		if ( node.groundColorNode ) {
+
+			out.set( node.groundColorNode, { kind: 'light.colorScaled', property: 'groundColor', ...base } );
+
+		}
 		// PointLight / SpotLight expose cutoffDistance + decay as uniforms.
 		if ( node.cutoffDistanceNode ) {
 

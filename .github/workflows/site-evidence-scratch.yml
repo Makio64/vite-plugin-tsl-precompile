@@ -1,0 +1,230 @@
+name: One-shot canonical site evidence refresh
+
+on:
+  push:
+    branches:
+      - codex/recapture-artifacts
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-evidence-refresh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/codex/recapture-artifacts'
+    name: Generate, verify, and commit schema-2 site evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Configure runner-temporary evidence paths
+        run: |
+          {
+            echo "TSLP_E2E_OUT=$RUNNER_TEMP/site-evidence-campaign"
+            echo "TSLP_STOCK_OUT=$RUNNER_TEMP/site-evidence-stock"
+            echo "TSLP_STOCK_REPORT=$RUNNER_TEMP/site-evidence-stock/report.json"
+            echo "TSLP_SITE_PUBLIC_OUT=$RUNNER_TEMP/site-evidence-public"
+            echo "TSLP_SITE_BROWSER_OUT=$RUNNER_TEMP/site-evidence-browser"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Require the completed artifact-recapture branch
+        run: |
+          test "$GITHUB_REF" = "refs/heads/codex/recapture-artifacts"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test ! -e .github/workflows/recapture-scratch.yml
+          git ls-files -s packages/plugin/src/cli/recapture.js | grep -q '^100755 '
+      - name: Check out the matching Three.js r185 corpus
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: mrdoob/three.js
+          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          path: three.js
+          fetch-depth: 1
+          sparse-checkout: |
+            build
+            examples
+            src
+            package.json
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify the catalogue against the exact Three.js corpus
+        run: pnpm --filter examples-batch catalogue:check:corpus
+        env:
+          TSLP_THREE_REPO: ${{ github.workspace }}/three.js
+      - name: Install full Playwright Chromium and its system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build the exact slim bundle with rewrite warnings fatal
+        run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
+      - name: Run the canonical 209-case stock-renderer sweep
+        run: >-
+          xvfb-run -a node packages/examples/batch/run.mjs
+          --three-repo="$GITHUB_WORKSPACE/three.js"
+          --output-root="$TSLP_STOCK_OUT"
+          --canonical-evidence
+      - name: Run the exact 254-case capture/replay campaign
+        run: >-
+          xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
+          --three-repo="$GITHUB_WORKSPACE/three.js"
+          --output-root="$TSLP_E2E_OUT"
+          --campaign-id="site-${GITHUB_SHA}"
+      - name: Generate isolated schema-2 public evidence
+        run: pnpm --filter @tsl-precompile/site data
+      - name: Build and audit the production site
+        run: pnpm build:site
+      - name: Verify landing, gallery, and comparison evidence in full Chromium
+        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:static
+      - name: Exercise the built compiler-free live examples
+        run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
+      - name: Validate the isolated publication payload
+        run: |
+          test "$TSLP_SITE_PUBLIC_OUT" = "$RUNNER_TEMP/site-evidence-public"
+          test "$TSLP_SITE_BROWSER_OUT" = "$RUNNER_TEMP/site-evidence-browser"
+          test -d "$TSLP_SITE_PUBLIC_OUT"
+          test ! -L "$TSLP_SITE_PUBLIC_OUT"
+          test -d "$TSLP_SITE_PUBLIC_OUT/examples/thumbs"
+          test ! -L "$TSLP_SITE_PUBLIC_OUT/examples/thumbs"
+          test -d "$TSLP_SITE_BROWSER_OUT"
+          test -f "$TSLP_SITE_BROWSER_OUT/report.json"
+          test -z "$(find "$TSLP_SITE_PUBLIC_OUT/examples/thumbs" -type l -print -quit)"
+          node --input-type=module <<'NODE'
+          import { lstat, readFile, readdir } from 'node:fs/promises';
+          import { join, relative, resolve, sep } from 'node:path';
+          import {
+            assertPublishableSitePublicEvidence,
+            verifyPublishedSiteEvidence,
+          } from './packages/site/scripts/examples-evidence-contract.mjs';
+
+          const root = resolve( process.env.TSLP_SITE_PUBLIC_OUT );
+          if ( root !== resolve( process.env.RUNNER_TEMP, 'site-evidence-public' ) ) {
+            throw new Error( `Unexpected site-public root: ${ root }.` );
+          }
+          const examples = JSON.parse( await readFile( join( root, 'examples.json' ), 'utf8' ) );
+          assertPublishableSitePublicEvidence( examples, 'Scratch workflow public evidence' );
+          verifyPublishedSiteEvidence( examples, root );
+          if ( examples.schemaVersion !== 2 ) throw new Error( 'Expected site evidence schemaVersion 2.' );
+          if ( examples.totals.examplesProcessed !== 254 ) throw new Error( 'Expected exactly 254 published cases.' );
+          if ( examples.totals.upstreamExamples !== 209 ) throw new Error( 'Expected exactly 209 upstream cases.' );
+          if ( examples.totals.localExamples !== 45 ) throw new Error( 'Expected exactly 45 local cases.' );
+          if ( examples.totals.smokeTotal !== 209 || examples.totals.smokePass !== 209 ) {
+            throw new Error( 'Expected the stock sweep to pass all 209 cases.' );
+          }
+
+          const generation = examples.provenance.thumbnailGeneration;
+          if ( typeof generation !== 'string' || ! /^[A-Za-z0-9][A-Za-z0-9._-]+$/.test( generation ) ) {
+            throw new Error( `Unsafe thumbnail generation: ${ JSON.stringify( generation ) }.` );
+          }
+          const thumbsRoot = resolve( root, 'examples/thumbs' );
+          const generationRoot = resolve( thumbsRoot, generation );
+          if ( ! generationRoot.startsWith( `${ thumbsRoot }${ sep }` ) ) {
+            throw new Error( 'Thumbnail generation escapes the generated public root.' );
+          }
+          const rootEntries = await readdir( thumbsRoot, { withFileTypes: true } );
+          if ( rootEntries.length !== 1 || ! rootEntries[ 0 ].isDirectory() || rootEntries[ 0 ].name !== generation ) {
+            throw new Error( 'Generated thumbnail root must contain exactly the current generation.' );
+          }
+          const entries = await readdir( generationRoot, { withFileTypes: true } );
+          if ( entries.length !== 254 * 4 || entries.some( entry => ! entry.isFile() ) ) {
+            throw new Error( `Expected 1016 regular generated thumbnails, received ${ entries.length }.` );
+          }
+          for ( const file of [
+            'examples.json',
+            'coverage-summary.json',
+            'coverage-evidence-set.json',
+          ] ) {
+            const stat = await lstat( join( root, file ) );
+            if ( ! stat.isFile() || stat.isSymbolicLink() ) throw new Error( `${ file } is not a regular file.` );
+          }
+          console.log( `Validated ${ examples.totals.examplesProcessed } cases and ${ entries.length } thumbnails below ${ relative( process.cwd(), root ) }.` );
+          NODE
+      - name: Package recoverable public and browser evidence
+        run: |
+          site_archive="$RUNNER_TEMP/canonical-site-public.tar.gz"
+          browser_archive="$RUNNER_TEMP/canonical-site-browser.tar.gz"
+          tar --create --gzip --file="$site_archive" \
+            --directory="$TSLP_SITE_PUBLIC_OUT" \
+            examples.json \
+            coverage-summary.json \
+            coverage-evidence-set.json \
+            examples/thumbs
+          tar --create --gzip --file="$browser_archive" \
+            --directory="$TSLP_SITE_BROWSER_OUT" \
+            .
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum \
+              canonical-site-public.tar.gz \
+              canonical-site-browser.tar.gz \
+              > canonical-site-evidence.sha256
+          )
+      - name: Upload recoverable site-public and browser evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-site-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/canonical-site-public.tar.gz
+            ${{ runner.temp }}/canonical-site-browser.tar.gz
+            ${{ runner.temp }}/canonical-site-evidence.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Replace only the checked generated publication files
+        run: |
+          source_root="$TSLP_SITE_PUBLIC_OUT"
+          target_root="$GITHUB_WORKSPACE/packages/site/public"
+          target_thumbs="$GITHUB_WORKSPACE/packages/site/public/examples/thumbs"
+          workflow="$GITHUB_WORKSPACE/.github/workflows/site-evidence-scratch.yml"
+
+          test "$source_root" = "$RUNNER_TEMP/site-evidence-public"
+          test "$target_root" = "$GITHUB_WORKSPACE/packages/site/public"
+          test "$target_thumbs" = "$GITHUB_WORKSPACE/packages/site/public/examples/thumbs"
+          test "$workflow" = "$GITHUB_WORKSPACE/.github/workflows/site-evidence-scratch.yml"
+          test -d "$source_root/examples/thumbs"
+          test -d "$target_root/examples"
+          test ! -L "$target_root"
+          test ! -L "$target_root/examples"
+          test ! -L "$target_thumbs"
+          test -f "$workflow"
+          test ! -L "$workflow"
+
+          rm -rf -- "$target_thumbs"
+          cp -a -- "$source_root/examples/thumbs" "$target_thumbs"
+          install -m 0644 -- "$source_root/examples.json" "$target_root/examples.json"
+          install -m 0644 -- "$source_root/coverage-summary.json" "$target_root/coverage-summary.json"
+          install -m 0644 -- "$source_root/coverage-evidence-set.json" "$target_root/coverage-evidence-set.json"
+      - name: Commit only the exact generated outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            packages/site/public/examples.json \
+            packages/site/public/coverage-summary.json \
+            packages/site/public/coverage-evidence-set.json \
+            packages/site/public/examples/thumbs
+
+          test -n "$(git diff --cached --name-only)"
+          while IFS= read -r path; do
+            case "$path" in
+              packages/site/public/examples.json | \
+              packages/site/public/coverage-summary.json | \
+              packages/site/public/coverage-evidence-set.json | \
+              packages/site/public/examples/thumbs/*)
+                ;;
+              *)
+                echo "Refusing to commit unexpected path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done < <(git diff --cached --name-only)
+
+          git ls-files -s packages/plugin/src/cli/recapture.js | grep -q '^100755 '
+          git diff --cached --check
+          git commit -m "chore: refresh canonical site evidence"
+          git push origin HEAD:codex/recapture-artifacts

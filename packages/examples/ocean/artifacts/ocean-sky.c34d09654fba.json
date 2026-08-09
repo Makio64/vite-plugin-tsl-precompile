@@ -1,0 +1,839 @@
+{
+  "__hash": "c34d09654fba752662b59164ec8e3f3f8858f93d0662585e6200758e9dbed183",
+  "__name": "ocean-sky",
+  "__sourceOwners": [
+    {
+      "identity": "main.js:precompile:0",
+      "revision": "f4d29d02aeab2243abdbc6f141ebf36ad448a2c022d2d593e6e944162296f357",
+      "provenance": {
+        "schema": "marker-source-closure@1",
+        "dependencies": []
+      }
+    }
+  ],
+  "artifact": {
+    "version": 3,
+    "cacheKey": 8880289156844868,
+    "materialShape": "node-material",
+    "vertexShader": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : mat4x4<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform16 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tnodeUniform8 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraPosition : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionWorld : vec3<f32>,\n\t@location( 1 ) nodeVarying5 : f32,\n\t@location( 2 ) nodeVarying6 : vec3<f32>,\n\t@location( 3 ) nodeVarying7 : vec3<f32>,\n\t@location( 4 ) nodeVarying8 : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar30 : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar31 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tvaryings.v_positionWorld = ( object.nodeUniform0 * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tnodeVar30 = normalize( object.nodeUniform12 );\n\tvaryings.nodeVarying7 = nodeVar30;\n\tvaryings.nodeVarying5 = ( 1000.0 * max( 0.0, ( 1.0 - pow( 2.718281828459045, ( - ( ( 1.6110731556870734 - acos( clamp( dot( nodeVar30, object.nodeUniform13 ), -1.0, 1.0 ) ) ) / 1.5 ) ) ) ) ) );\n\tvaryings.nodeVarying6 = ( vec3<f32>( 0.000005804542996261093, 0.000013562911419845635, 0.000030265902468824876 ) * vec3<f32>( ( object.nodeUniform14 - ( 1.0 * ( 1.0 - ( 1.0 - clamp( ( 1.0 - exp( ( object.nodeUniform12.y / 450000.0 ) ) ), 0.0, 1.0 ) ) ) ) ) ) );\n\tvaryings.nodeVarying8 = ( ( vec3<f32>( ( 0.434 * ( ( 0.2 * object.nodeUniform15 ) * 1e-17 ) ) ) * vec3<f32>( 183999185144339.78, 277980239196605.28, 407904795438610.94 ) ) * vec3<f32>( object.nodeUniform16 ) );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform0 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar31 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar31;\n\tVERTEX_v_modelViewProjection.z = VERTEX_v_modelViewProjection.w;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform8 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraPosition : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : mat4x4<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : f32,\n\tnodeUniform12 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform16 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : vec3<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : vec2<f32>;\nvar<private> nodeVar12 : vec2<f32>;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : vec2<f32>;\nvar<private> nodeVar16 : vec2<f32>;\nvar<private> nodeVar17 : vec2<f32>;\nvar<private> nodeVar18 : vec2<f32>;\nvar<private> nodeVar19 : vec2<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : vec2<f32>;\nvar<private> nodeVar23 : vec2<f32>;\nvar<private> nodeVar24 : vec2<f32>;\nvar<private> nodeVar25 : vec2<f32>;\nvar<private> nodeVar26 : f32;\nvar<private> nodeVar27 : f32;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar29 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionWorld : vec3<f32>,\n\t@location( 1 ) nodeVarying5 : f32,\n\t@location( 2 ) nodeVarying6 : vec3<f32>,\n\t@location( 3 ) nodeVarying7 : vec3<f32>,\n\t@location( 4 ) nodeVarying8 : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = normalize( ( v_positionWorld - render.cameraPosition ) );\n\tnodeVar1 = dot( nodeVar0, nodeVarying7 );\n\tnodeVar2 = ( nodeVarying6 * vec3<f32>( ( 0.05968310365946075 * ( 1.0 + pow( ( ( nodeVar1 * 0.5 ) + 0.5 ), 2.0 ) ) ) ) );\n\tnodeVar3 = pow( object.nodeUniform2, 2.0 );\n\tnodeVar4 = ( nodeVarying8 * vec3<f32>( ( ( 0.07957747154594767 * ( 1.0 - nodeVar3 ) ) * ( 1.0 / pow( ( ( 1.0 - ( ( 2.0 * object.nodeUniform2 ) * nodeVar1 ) ) + nodeVar3 ), 1.5 ) ) ) ) );\n\tnodeVar5 = acos( max( 0.0, dot( object.nodeUniform3, nodeVar0 ) ) );\n\tnodeVar6 = ( 1.0 / ( cos( nodeVar5 ) + ( 0.15 * pow( ( 93.885 - ( ( nodeVar5 * 180.0 ) / 3.141592653589793 ) ), -1.253 ) ) ) );\n\tnodeVar7 = exp( ( - ( ( nodeVarying6 * vec3<f32>( ( 8400.0 * nodeVar6 ) ) ) + ( nodeVarying8 * vec3<f32>( ( 1250.0 * nodeVar6 ) ) ) ) ) );\n\tnodeVar8 = pow( ( ( vec3<f32>( nodeVarying5 ) * ( ( nodeVar2 + nodeVar4 ) / ( nodeVarying6 + nodeVarying8 ) ) ) * ( vec3<f32>( 1.0 ) - nodeVar7 ) ), vec3<f32>( 1.5, 1.5, 1.5 ) );\n\tnodeVar8 = ( nodeVar8 * mix( vec3<f32>( 1.0, 1.0, 1.0 ), pow( ( ( vec3<f32>( nodeVarying5 ) * ( ( nodeVar2 + nodeVar4 ) / ( nodeVarying6 + nodeVarying8 ) ) ) * nodeVar7 ), vec3<f32>( 0.5, 0.5, 0.5 ) ), clamp( pow( ( 1.0 - dot( object.nodeUniform3, nodeVarying7 ) ), 5.0 ), 0.0, 1.0 ) ) );\n\tnodeVar9 = ( vec3<f32>( 0.1, 0.1, 0.1 ) * nodeVar7 );\n\tnodeVar9 = ( nodeVar9 + ( ( vec3<f32>( ( nodeVarying5 * 19000.0 ) ) * nodeVar7 ) * vec3<f32>( ( smoothstep( 0.9999566769464484, ( 0.9999566769464484 + 0.00002 ), nodeVar1 ) * object.nodeUniform4 ) ) ) );\n\tnodeVar10 = ( ( ( nodeVar8 + nodeVar9 ) * vec3<f32>( 0.04 ) ) + vec3<f32>( 0.0, 0.0003, 0.00075 ) );\n\n\tif ( ( ( nodeVar0.y > 0.0 ) && ( object.nodeUniform5 > 0.0 ) ) ) {\n\n\t\tnodeVar11 = ( nodeVar0.xz / vec2<f32>( ( nodeVar0.y * mix( 1.0, 0.1, object.nodeUniform6 ) ) ) );\n\t\tnodeVar11 = ( nodeVar11 * vec2<f32>( object.nodeUniform7 ) );\n\t\tnodeVar11 = ( nodeVar11 + vec2<f32>( ( render.nodeUniform8 * object.nodeUniform9 ) ) );\n\t\tnodeVar12 = ( nodeVar11 * vec2<f32>( 1000.0 ) );\n\t\tnodeVar13 = 0.0;\n\t\tnodeVar14 = 0.5;\n\n\t\tfor ( var i : i32 = 0; i < 5; i ++ ) {\n\n\t\t\tnodeVar15 = nodeVar12;\n\t\t\tnodeVar16 = floor( nodeVar15 );\n\t\t\tnodeVar17 = fract( nodeVar15 );\n\t\t\tnodeVar18 = ( ( nodeVar17 * nodeVar17 ) * ( vec2<f32>( 3.0 ) - ( nodeVar17 * vec2<f32>( 2.0 ) ) ) );\n\t\t\tnodeVar13 = ( nodeVar13 + ( nodeVar14 * mix( mix( fract( ( sin( dot( nodeVar16, vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), fract( ( sin( dot( ( nodeVar16 + vec2<f32>( 1.0, 0.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), nodeVar18.x ), mix( fract( ( sin( dot( ( nodeVar16 + vec2<f32>( 0.0, 1.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), fract( ( sin( dot( ( nodeVar16 + vec2<f32>( 1.0, 1.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), nodeVar18.x ), nodeVar18.y ) ) );\n\t\t\tnodeVar12 = ( nodeVar12 * vec2<f32>( 2.0 ) );\n\t\t\tnodeVar14 = ( nodeVar14 * 0.5 );\n\n\t\t}\n\n\t\tnodeVar19 = ( ( nodeVar11 * vec2<f32>( 2000.0 ) ) + vec2<f32>( 3.7 ) );\n\t\tnodeVar20 = 0.0;\n\t\tnodeVar21 = 0.5;\n\n\t\tfor ( var i : i32 = 0; i < 5; i ++ ) {\n\n\t\t\tnodeVar22 = nodeVar19;\n\t\t\tnodeVar23 = floor( nodeVar22 );\n\t\t\tnodeVar24 = fract( nodeVar22 );\n\t\t\tnodeVar25 = ( ( nodeVar24 * nodeVar24 ) * ( vec2<f32>( 3.0 ) - ( nodeVar24 * vec2<f32>( 2.0 ) ) ) );\n\t\t\tnodeVar20 = ( nodeVar20 + ( nodeVar21 * mix( mix( fract( ( sin( dot( nodeVar23, vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), fract( ( sin( dot( ( nodeVar23 + vec2<f32>( 1.0, 0.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), nodeVar25.x ), mix( fract( ( sin( dot( ( nodeVar23 + vec2<f32>( 0.0, 1.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), fract( ( sin( dot( ( nodeVar23 + vec2<f32>( 1.0, 1.0 ) ), vec2<f32>( 127.1, 311.7 ) ) ) * 43758.5453123 ) ), nodeVar25.x ), nodeVar25.y ) ) );\n\t\t\tnodeVar19 = ( nodeVar19 * vec2<f32>( 2.0 ) );\n\t\t\tnodeVar21 = ( nodeVar21 * 0.5 );\n\n\t\t}\n\n\t\tnodeVar26 = ( nodeVar13 + ( nodeVar20 * 0.5 ) );\n\t\tnodeVar26 = ( ( nodeVar26 * 0.5 ) + 0.5 );\n\t\tnodeVar27 = smoothstep( ( 1.0 - object.nodeUniform5 ), ( ( 1.0 - object.nodeUniform5 ) + 0.3 ), nodeVar26 );\n\t\tnodeVar27 = ( nodeVar27 * smoothstep( 0.0, ( 0.1 + ( 0.2 * object.nodeUniform6 ) ), nodeVar0.y ) );\n\t\tnodeVar28 = mix( vec3<f32>( 0.3, 0.3, 0.3 ), vec3<f32>( 1.0, 1.0, 1.0 ), max( 0.0, ( nodeVarying7.y * 2.0 ) ) );\n\t\tnodeVar28 = mix( nodeVar28, ( ( nodeVar8 * vec3<f32>( 0.04 ) ) + vec3<f32>( 1.0, 1.0, 1.0 ) ), ( ( ( dot( nodeVar0, nodeVarying7 ) * 0.5 ) + 0.5 ) * 0.5 ) );\n\t\tnodeVar28 = ( nodeVar28 * vec3<f32>( ( nodeVarying5 * 0.00002 ) ) );\n\t\tnodeVar10 = mix( nodeVar10, nodeVar28, ( nodeVar27 * object.nodeUniform10 ) );\n\t\t\n\n\t}\n\n\tDiffuseColor = vec4<f32>( nodeVar10, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform11 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar29 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar29;\n\n\t// result\n\n\toutput.color = nodeVar29;\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 160,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 176,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 160,
+        "slots": [
+          {
+            "name": "nodeUniform8",
+            "offset": 0,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "frame.time",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.19779999998211867
+              }
+            }
+          },
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 16,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1.0000000000000002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1.0000000000000002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1.0010010010010009,
+                  -1,
+                  0,
+                  0,
+                  -0.10010010010010009,
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 80,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraPosition",
+            "offset": 144,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "camera.position",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 160,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform8",
+                "offset": 0,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "frame.time",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.19779999998211867
+                  }
+                }
+              },
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 16,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0010010010010009,
+                      -1,
+                      0,
+                      0,
+                      -0.10010010010010009,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 80,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraPosition",
+                "offset": 144,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "camera.position",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 7,
+        "byteLength": 176,
+        "slots": [
+          {
+            "name": "nodeUniform0",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  10000,
+                  0,
+                  0,
+                  0,
+                  0,
+                  10000,
+                  0,
+                  0,
+                  0,
+                  0,
+                  10000,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform2",
+            "offset": 64,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.8
+              },
+              "liveNodeId": 0
+            }
+          },
+          {
+            "name": "nodeUniform3",
+            "offset": 80,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  0,
+                  1,
+                  0
+                ]
+              },
+              "liveNodeId": 1
+            }
+          },
+          {
+            "name": "nodeUniform4",
+            "offset": 92,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              },
+              "liveNodeId": 2
+            }
+          },
+          {
+            "name": "nodeUniform5",
+            "offset": 96,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.4
+              },
+              "liveNodeId": 3
+            }
+          },
+          {
+            "name": "nodeUniform6",
+            "offset": 100,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.5
+              },
+              "liveNodeId": 4
+            }
+          },
+          {
+            "name": "nodeUniform7",
+            "offset": 104,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.0002
+              },
+              "liveNodeId": 5
+            }
+          },
+          {
+            "name": "nodeUniform9",
+            "offset": 108,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.0001
+              },
+              "liveNodeId": 6
+            }
+          },
+          {
+            "name": "nodeUniform10",
+            "offset": 112,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.5
+              },
+              "liveNodeId": 7
+            }
+          },
+          {
+            "name": "nodeUniform11",
+            "offset": 116,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.opacity",
+              "property": "opacity",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              }
+            }
+          },
+          {
+            "name": "nodeUniform12",
+            "offset": 128,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  1.2239007774061617e-16,
+                  0.03489949670250108,
+                  -0.9993908270190958
+                ]
+              },
+              "liveNodeId": 8
+            }
+          },
+          {
+            "name": "nodeUniform13",
+            "offset": 144,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  0,
+                  1,
+                  0
+                ]
+              },
+              "liveNodeId": 1
+            }
+          },
+          {
+            "name": "nodeUniform14",
+            "offset": 156,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 2
+              },
+              "liveNodeId": 9
+            }
+          },
+          {
+            "name": "nodeUniform15",
+            "offset": 160,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 10
+              },
+              "liveNodeId": 10
+            }
+          },
+          {
+            "name": "nodeUniform16",
+            "offset": 164,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.005
+              },
+              "liveNodeId": 11
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 176,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform0",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      10000,
+                      0,
+                      0,
+                      0,
+                      0,
+                      10000,
+                      0,
+                      0,
+                      0,
+                      0,
+                      10000,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform2",
+                "offset": 64,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.8
+                  },
+                  "liveNodeId": 0
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 80,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      0,
+                      1,
+                      0
+                    ]
+                  },
+                  "liveNodeId": 1
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 92,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  },
+                  "liveNodeId": 2
+                }
+              },
+              {
+                "name": "nodeUniform5",
+                "offset": 96,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.4
+                  },
+                  "liveNodeId": 3
+                }
+              },
+              {
+                "name": "nodeUniform6",
+                "offset": 100,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.5
+                  },
+                  "liveNodeId": 4
+                }
+              },
+              {
+                "name": "nodeUniform7",
+                "offset": 104,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.0002
+                  },
+                  "liveNodeId": 5
+                }
+              },
+              {
+                "name": "nodeUniform9",
+                "offset": 108,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.0001
+                  },
+                  "liveNodeId": 6
+                }
+              },
+              {
+                "name": "nodeUniform10",
+                "offset": 112,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.5
+                  },
+                  "liveNodeId": 7
+                }
+              },
+              {
+                "name": "nodeUniform11",
+                "offset": 116,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.opacity",
+                  "property": "opacity",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform12",
+                "offset": 128,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      1.2239007774061617e-16,
+                      0.03489949670250108,
+                      -0.9993908270190958
+                    ]
+                  },
+                  "liveNodeId": 8
+                }
+              },
+              {
+                "name": "nodeUniform13",
+                "offset": 144,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      0,
+                      1,
+                      0
+                    ]
+                  },
+                  "liveNodeId": 1
+                }
+              },
+              {
+                "name": "nodeUniform14",
+                "offset": 156,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 2
+                  },
+                  "liveNodeId": 9
+                }
+              },
+              {
+                "name": "nodeUniform15",
+                "offset": 160,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 10
+                  },
+                  "liveNodeId": 10
+                }
+              },
+              {
+                "name": "nodeUniform16",
+                "offset": 164,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.005
+                  },
+                  "liveNodeId": 11
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "defaults": {
+      "opacity": 1
+    },
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 1,
+      "depthTest": true,
+      "depthWrite": false,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 8,
+      "updateBeforeNodes": 0,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":{\"channel\":0,\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\",\"magFilter\":1006,\"mapping\":306,\"minFilter\":1006,\"wrapS\":1001,\"wrapT\":1001},\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-2d\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "4dd28361-3275-45b9-9075-b302df1ad7b2",
+    "userMaterialUuid": "4dd28361-3275-45b9-9075-b302df1ad7b2",
+    "captureClock": 0.19779999998211867,
+    "sourceGraphHash": "8ae9b9fbaa951d325cac2f5ec749a3cd5db3e62e0667d149b876c43bd51a0b29",
+    "sourceHashVersion": "0.1.0",
+    "sourceThreeVersion": "0.185.1",
+    "renderContextSignature": "{\"camera\":{\"array\":false,\"coordinateSystem\":2001,\"layers\":1,\"orthographic\":false,\"perspective\":true,\"type\":\"PerspectiveCamera\",\"viewEnabled\":false,\"views\":[]},\"clipping\":{\"groups\":[],\"intersection\":false,\"materialPlaneCount\":0,\"shadows\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"castShadow\":false,\"geometry\":{\"attributes\":[[\"normal\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"position\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"uv\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":2,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}]],\"index\":{\"arrayType\":\"Uint32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":1,\"normalized\":false,\"type\":\"Uint16BufferAttribute\"},\"morphAttributes\":[],\"morphTargetsRelative\":false,\"type\":\"BoxGeometry\"},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"receiveShadow\":false,\"skinned\":false,\"type\":\"Mesh\",\"visible\":true},\"renderTarget\":{\"depthBuffer\":true,\"depthTexture\":null,\"samples\":0,\"stencilBuffer\":false,\"textures\":[{\"channel\":0,\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\",\"mapping\":301,\"type\":\"CubeTexture\"}],\"type\":\"CubeRenderTarget\"},\"renderer\":{\"backend\":\"WebGPUBackend\",\"coordinateSystem\":2001,\"currentSamples\":0,\"depth\":true,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"outputColorSpace\":\"srgb\",\"shadowMap\":{\"enabled\":false,\"type\":1},\"toneMapping\":4,\"transparent\":true,\"type\":\"WebGPURenderer\"},\"scene\":{\"backgroundNode\":null,\"environment\":{\"channel\":0,\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\",\"mapping\":306,\"type\":\"Texture\"},\"environmentNode\":null,\"fog\":null,\"lights\":[],\"overrideMaterial\":null,\"type\":\"Scene\"},\"version\":\"render-context@0.1.0\"}",
+    "artifactContentHashVersion": "artifact-content@3",
+    "sourceValidationMode": "runtime-graph",
+    "sourceMaterial": {
+      "type": "NodeMaterial",
+      "name": "",
+      "nodeProps": [
+        "colorNode",
+        "vertexNode"
+      ],
+      "object": {
+        "type": "Mesh",
+        "renderOrder": 0,
+        "castShadow": false,
+        "receiveShadow": false,
+        "isInstancedMesh": false,
+        "count": 1,
+        "isSkinnedMesh": false,
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          10000,
+          10000,
+          10000
+        ]
+      }
+    }
+  }
+}

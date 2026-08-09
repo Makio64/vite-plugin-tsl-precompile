@@ -52,13 +52,11 @@ with generated UBO updates, and fails closed on missing or stale captures. The
 default compatibility mode runs the same artifact and freshness gates but keeps
 the live NodeMaterial/compiler authoritative while coverage is being audited.
 
-The checked Three r185 gzip-9 regression baselines are **176,256 bytes** for a
-minimal guarded source build, **185,398 bytes** for the advanced source fixture,
-**261,382 bytes** for the single-file prebuilt runtime, and **202,842 bytes** for
-a generated-helper consumer. Their enforced caps are 184,000, 194,000, 268,000,
-and 209,000 bytes respectively. These are repository fixtures, not universal
-transfer sizes or a stock-Three comparison. `pnpm analyze:slim` reports the
-current exact measurements and provenance; measure your own production chunks.
+The canonical Three r185 gzip-9 fixture baselines and enforced caps live in
+[`packages/runtime/build-tools/slim-budget.json`](packages/runtime/build-tools/slim-budget.json).
+These are repository regression fixtures, not universal transfer sizes or a
+stock-Three comparison. `pnpm analyze:slim` recomputes the current exact
+measurements and provenance; measure your own production chunks.
 
 ## Requirements
 
@@ -68,7 +66,7 @@ current exact measurements and provenance; measure your own production chunks.
 | **Browser** | WebGPU or WebGL 2, matching the backend captured for each render path |
 | **three.js** | Exactly `0.185.1` for this alpha (use `"three": "0.185.1"`, not a range). Artifacts are versioned against the exact native-shader emitter package; see [MIGRATION.md](MIGRATION.md) for the deliberate upgrade and re-capture workflow. |
 | **Vite** | `>= 6.4.3 < 9` |
-| **Node** | `>= 20.19` (build tooling only; not a runtime requirement) |
+| **Node** | `>= 24.0.0` (build tooling only; not a runtime requirement) |
 | **TypeScript** | `>= 5.6` when consuming the declarations (CI runs exact `5.6.3` and `5.9.3` packed consumers) |
 
 Classic `WebGLRenderer` is not supported. WebGL 2 support means the WebGL
@@ -400,9 +398,10 @@ Both alias `three/tsl` to compiler-free replay stubs; known captured graph
 construction calls become inert, while unsupported live paths fail loudly.
 `slim: 'source'` aliases
 `three/webgpu` to a guarded source entry so the application bundler can discard
-unused Three constructors and runtime exports. The checked r185 fixture
-baselines are 176,256 bytes gzip-9 for minimal source versus 261,600 bytes for
-the prebuilt file: 85,231 bytes, or 35.3%, smaller. `slim: true` aliases
+unused Three constructors and runtime exports. The source and prebuilt fixture
+baselines are single-sourced in
+[`slim-budget.json`](packages/runtime/build-tools/slim-budget.json), while
+`pnpm analyze:slim` reports current measurements. `slim: true` aliases
 `three/webgpu` to that checked `@tsl-precompile/runtime/slim` file when a stable
 single-file renderer is preferable to application-specific tree shaking.
 
@@ -443,9 +442,9 @@ the same exact patch; artifacts from another patch are rejected.
 - ✅ Uncovered paths fail loudly in pure slim; applications that explicitly
   call `ensureFallback()` can instead delegate them to the lazy full renderer.
 - ✅ Lets the application bundler remove unused renderer/runtime exports in
-  source mode; the guarded minimal and advanced regression baselines are
-  176,256 and 185,490 bytes gzip-9, versus 261,600 bytes for the checked
-  prebuilt runtime. `pnpm analyze:slim` reports the current exact values.
+  source mode; the guarded fixture baselines and caps are maintained in the
+  machine-readable [`slim-budget.json`](packages/runtime/build-tools/slim-budget.json).
+  `pnpm analyze:slim` reports the current exact values.
 
 **`optimizeDeps` is required** in `vite.config.js` for slim:
 
@@ -625,7 +624,7 @@ may work but aren't guarded against regression.
 |---|---|---|
 | **Operating systems** | Ubuntu | Unit, visual, example-production, and packed-consumer gates run on Linux. macOS and Windows are not currently gated. |
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
-| **Node** | 20.19.0, 22.12.0, and 24.18.0 | The complete suite runs on 24.18; default package checks exercise the declared 20.19 minimum, and packed-consumer lanes cover all three versions. |
+| **Node** | 24.18.0 | The complete suite, default package checks, and every packed-consumer lane run on the Node 24 LTS line. |
 | **Vite** | 6.4.3, 7.3.6, and 8.0.16 | Exact packed-consumer smokes exercise every major in the declared `>= 6.4.3 < 9` range. |
 | **three.js** | `0.185.1` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
 | **TypeScript** | 5.6.3 and 5.9.3 | Packed public declarations are checked in strict NodeNext mode with library checking enabled at the documented floor and current pinned compiler. |

@@ -5,6 +5,7 @@ import {
 	collectArtifactVariantCandidates,
 	createArtifactVariantPayload,
 	createArtifactVariantPayloadFingerprint,
+	createArtifactVariantSemanticFingerprint,
 	mergeArtifactVariantFamily,
 } from '@tsl-precompile/contract/artifact-variants';
 import {
@@ -91,6 +92,57 @@ function withUniformSourceSnapshots( value, cameraValue, objectValue, extraSourc
 		orderedBindings: [ { type: 'ubo', name: 'render', slots: structuredClone( slots ) } ],
 	} ];
 	return value;
+
+}
+
+function vsmInternalPassArtifact( cacheKey, shaderLanguage, selector, light ) {
+
+	const backend = shaderLanguage === 'wgsl' ? 'webgpu' : 'webgl';
+	const source = {
+		kind: 'light.shadowRadius',
+		lightIdentity: 0,
+		lightIndex: light.captureIndex,
+		lightUuid: light.uuid,
+		valueSnapshot: { type: 'number', data: light.radius },
+	};
+	const slot = { name: 'nodeUniform3', dtype: 'number', source };
+	const shaders = shaderLanguage === 'wgsl' ? {
+		vertexShader: '@vertex fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0); }',
+		fragmentShader: '@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }',
+	} : {
+		vertexShader: '#version 300 es\nvoid main() { gl_Position = vec4(0.0); }',
+		fragmentShader: '#version 300 es\nprecision highp float;\nout vec4 color;\nvoid main() { color = vec4(1.0); }',
+	};
+	return {
+		cacheKey,
+		variantKey: `${ backend }:${ cacheKey }`,
+		shaderLanguage,
+		materialShape: 'shadow-vsm-horizontal',
+		renderContextSelectors: [ selector ],
+		...shaders,
+		bindings: [],
+		uniformPlan: [ {
+			name: 'render',
+			slots: [ slot ],
+			orderedBindings: [ {
+				type: 'ubo',
+				name: 'render',
+				slots: [ structuredClone( slot ) ],
+			} ],
+		} ],
+		lightIdentities: [ {
+			schema: 'light-identity@1',
+			captureUuid: light.uuid,
+			captureIndex: light.captureIndex,
+			type: light.type,
+			name: light.name,
+			snapshot: {
+				castShadow: true,
+				shadowType: light.shadowType,
+				cameraType: light.cameraType,
+			},
+		} ],
+	};
 
 }
 
@@ -372,6 +424,69 @@ test( 'artifact variant family ignores fallback snapshots for live renderer sour
 
 } );
 
+test( 'VSM internal-pass families reuse one backend program across directional and spot light evidence', () => {
+
+	const selector = ( backend ) => stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: backend } },
+		target: { surface: 'offscreen-2d' },
+	} );
+	const directional = {
+		uuid: 'directional-capture-light',
+		captureIndex: 1,
+		type: 'DirectionalLight',
+		name: 'debug-directional-light',
+		shadowType: 'DirectionalLightShadow',
+		cameraType: 'OrthographicCamera',
+		radius: 2,
+	};
+	const spot = {
+		uuid: 'spot-capture-light',
+		captureIndex: 3,
+		type: 'SpotLight',
+		name: 'debug-spot-light',
+		shadowType: 'SpotLightShadow',
+		cameraType: 'PerspectiveCamera',
+		radius: 5,
+	};
+	const webgpu = vsmInternalPassArtifact( 'directional-webgpu', 'wgsl', selector( 'webgpu' ), directional );
+	const webgl = vsmInternalPassArtifact( 'directional-webgl', 'glsl', selector( 'webgl' ), directional );
+	const spotWebgpu = vsmInternalPassArtifact( 'spot-webgpu', 'wgsl', selector( 'webgpu' ), spot );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( webgpu ),
+		createArtifactVariantPayloadFingerprint( spotWebgpu ),
+		'semantic role binding makes capture-light identity and fallback values non-program data',
+	);
+	mergeArtifactVariantFamily( webgpu, [ webgpu, webgl ] );
+	mergeArtifactVariantFamily( webgpu, [ webgpu, spotWebgpu ] );
+
+	const candidates = collectArtifactVariantCandidates( webgpu );
+	assert.deepEqual( candidates.map( ( candidate ) => candidate.shaderLanguage ).sort(), [ 'glsl', 'wgsl' ] );
+	assert.equal(
+		candidates.find( ( candidate ) => candidate.shaderLanguage === 'wgsl' ).lightIdentities[ 0 ].type,
+		'DirectionalLight',
+		'the authoritative capture evidence remains intact',
+	);
+	const validation = validateArtifact( webgpu, { label: 'multi-light VSM backend family' } );
+	assert.equal( validation.ok, true, validation.errors.map( ( error ) => error.message ).join( '\n' ) );
+
+	const ordinaryDirectional = {
+		...vsmInternalPassArtifact( 'ordinary', 'wgsl', selector( 'webgpu' ), directional ),
+		materialShape: 'shadow-depth',
+	};
+	const ordinarySpot = {
+		...vsmInternalPassArtifact( 'ordinary', 'wgsl', selector( 'webgpu' ), spot ),
+		materialShape: 'shadow-depth',
+	};
+	assert.notEqual(
+		createArtifactVariantPayloadFingerprint( ordinaryDirectional ),
+		createArtifactVariantPayloadFingerprint( ordinarySpot ),
+		'ordinary light-consuming programs retain strict light-topology identity',
+	);
+
+} );
+
 test( 'artifact variant family ignores fallback snapshots for live environment and PMREM sources', () => {
 
 	for ( const kind of [
@@ -598,12 +713,559 @@ test( 'artifact variant family fails closed when one cache key identifies diverg
 			assert.equal( error?.name, 'ArtifactVariantFamilyError' );
 			assert.equal( error?.code, 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION' );
 			assert.deepEqual( error?.details?.differingFields, [ 'vertexShader', 'fragmentShader' ] );
+			assert.deepEqual( error?.details?.differingPaths, [ 'fragmentShader', 'vertexShader' ] );
+			assert.equal( error?.details?.differencesTruncated, false );
 			assert.match( error?.message || '', /Divergent fields: vertexShader, fragmentShader/ );
+			assert.match( error?.message || '', /Divergent semantic paths: fragmentShader, vertexShader/ );
 			return true;
 
 		},
 	);
 	assert.equal( first.variants, undefined, 'failed merge leaves the target family untouched' );
+
+} );
+
+test( 'artifact variant family reports bounded leaf paths when one selector identifies divergent payloads', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const authoritative = artifact( 'authoritative-private-key', 'shared-shader', [ selector ] );
+	authoritative.meta = {
+		capture: {
+			generatedNodeId: 'node-1',
+			values: Array.from( { length: 16 }, ( _, index ) => index ),
+		},
+	};
+	authoritative.renderState = { depthWrite: true };
+	const incoming = artifact( 'incoming-private-key', 'shared-shader', [ selector ] );
+	incoming.meta = {
+		capture: {
+			generatedNodeId: 'node-2',
+			values: Array.from( { length: 16 }, ( _, index ) => index + 100 ),
+		},
+	};
+	incoming.renderState = { depthWrite: false };
+
+	assert.throws(
+		() => mergeArtifactVariantFamily( authoritative, [ authoritative, incoming ] ),
+		( error ) => {
+
+			assert.equal( error?.code, 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION' );
+			assert.equal( error?.details?.authoritativeVariantKey, 'authoritative-private-key' );
+			assert.equal( error?.details?.incomingVariantKey, 'incoming-private-key' );
+			assert.equal( error?.details?.selector, selector );
+			assert.deepEqual(
+				error?.details?.differingFields,
+				[ 'renderState', 'meta' ],
+				'top-level fields remain complete when the leaf-path budget is exhausted in meta',
+			);
+			assert.deepEqual( error?.details?.differingPaths, [
+				'meta.capture.generatedNodeId',
+				...Array.from( { length: 11 }, ( _, index ) => `meta.capture.values[${ index }]` ),
+			] );
+			assert.equal( error?.details?.differencePathLimit, 12 );
+			assert.equal( error?.details?.differencesTruncated, true );
+			assert.deepEqual( error?.details?.stringDifferences, [ {
+				path: 'meta.capture.generatedNodeId',
+				firstDifferenceOffset: 5,
+				authoritativeLength: 6,
+				incomingLength: 6,
+			} ] );
+			assert.match( error?.message || '', /Divergent semantic paths: meta\.capture\.generatedNodeId, meta\.capture\.values\[0\]/ );
+			assert.match( error?.message || '', /, …\. String differences: meta\.capture\.generatedNodeId@5\.$/ );
+			return true;
+
+		},
+	);
+	assert.equal( authoritative.variants, undefined, 'failed merge leaves the target family untouched' );
+
+} );
+
+test( 'artifact variant family reports bounded shader excerpts without logging whole shaders', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', renderer: { backend: { kind: 'webgpu' } } } );
+	const shader = ( id ) => `@group(0) @binding(0) var<uniform> GeneratedBufferSlot_${ id }: GeneratedBufferStruct;\n` +
+		'@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }';
+	const authoritative = artifact( 'first-generated-key', shader( 17 ), [ selector ] );
+	const incoming = artifact( 'second-generated-key', shader( 203 ), [ selector ] );
+
+	assert.throws(
+		() => mergeArtifactVariantFamily( authoritative, [ authoritative, incoming ] ),
+		( error ) => {
+
+			assert.equal( error?.code, 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION' );
+			const fragmentDifference = error?.details?.stringDifferences?.find( ( difference ) => difference.path === 'fragmentShader' );
+			assert.equal( fragmentDifference?.firstDifferenceOffset, 55 );
+			assert.ok( fragmentDifference?.authoritativeExcerpt.length <= 66 );
+			assert.ok( fragmentDifference?.incomingExcerpt.length <= 66 );
+			assert.match( error?.message || '', /fragmentShader@55 \(".*GeneratedBufferSlot_17.*" != ".*GeneratedBufferSlot_203.*"\)/ );
+			assert.doesNotMatch( error?.message || '', /@fragment fn main/ );
+			return true;
+
+		},
+	);
+
+} );
+
+test( 'artifact variant fingerprints canonicalize generated buffer node IDs while preserving topology', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const shaderCases = [
+		{
+			label: 'WGSL',
+			shader: ( first, second ) =>
+				`struct NodeBuffer_${ first }Struct { value: vec4<f32> };\n` +
+				`var<uniform> NodeBuffer_${ first }: NodeBuffer_${ first }Struct;\n` +
+				`struct NodeBuffer_${ second }Struct { value: vec4<f32> };\n` +
+				`var<uniform> NodeBuffer_${ second }: NodeBuffer_${ second }Struct;\n` +
+				`let result = NodeBuffer_${ first }.value + NodeBuffer_${ second }.value;`,
+		},
+		{
+			label: 'WebGL fallback',
+			shader: ( first, second ) =>
+				`struct NodeBuffer_${ first } { vec4 value; };\n` +
+				`uniform NodeBuffer_${ first } buffer${ first };\n` +
+				`struct NodeBuffer_${ second } { vec4 value; };\n` +
+				`uniform NodeBuffer_${ second } buffer${ second };\n` +
+				`vec4 result = buffer${ first }.value + buffer${ second }.value;`,
+		},
+	];
+	for ( const { label, shader } of shaderCases ) {
+
+		const authoritative = artifact( `${ label }-authoritative`, shader( 17, 18 ), [ selector ] );
+		const renamed = artifact( `${ label }-renamed`, shader( 203, 204 ), [ selector ] );
+		const collapsed = artifact( `${ label }-collapsed`, shader( 203, 203 ), [ selector ] );
+		assert.equal(
+			createArtifactVariantPayloadFingerprint( authoritative ),
+			createArtifactVariantPayloadFingerprint( renamed ),
+			`${ label } payload fingerprints ignore the module-global Node.id spelling`,
+		);
+		assert.equal(
+			createArtifactVariantSemanticFingerprint( authoritative ),
+			createArtifactVariantSemanticFingerprint( renamed ),
+			`${ label } semantic fingerprints share one generated-node namespace`,
+		);
+		assert.notEqual(
+			createArtifactVariantSemanticFingerprint( authoritative ),
+			createArtifactVariantSemanticFingerprint( collapsed ),
+			`${ label } keeps distinct generated nodes distinct`,
+		);
+		assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, renamed ] ), label );
+		assert.equal(
+			authoritative.fragmentShader,
+			shader( 17, 18 ),
+			`${ label } retains the authoritative durable shader bytes`,
+		);
+		assert.throws(
+			() => mergeArtifactVariantFamily( authoritative, [ authoritative, collapsed ] ),
+			( error ) => error?.code === 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+			`${ label } shared-vs-distinct topology remains strict`,
+		);
+
+	}
+
+} );
+
+test( 'artifact variant shader fingerprints leave authored generated-prefix extensions strict', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const authoredShader = ( id ) =>
+		`struct NodeBuffer_${ id }Custom { vec4 value; };\n` +
+		`uniform NodeBuffer_${ id }Custom buffer${ id }Custom;\n` +
+		`vec4 result = buffer${ id }Custom.value;`;
+	const authoritative = artifact( 'authored-prefix-authoritative', authoredShader( 17 ), [ selector ] );
+	const renamed = artifact( 'authored-prefix-renamed', authoredShader( 203 ), [ selector ] );
+
+	assert.notEqual(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( renamed ),
+		'only exact NodeBuffer_<id>, NodeBuffer_<id>Struct, and buffer<id> generated tokens are canonicalized',
+	);
+	assert.throws(
+		() => mergeArtifactVariantFamily( authoritative, [ authoritative, renamed ] ),
+		( error ) => error?.code === 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+		'authored identifier suffixes remain runnable shader differences',
+	);
+	const unpairedWebGLName = ( id ) => artifact(
+		`unpaired-webgl-${ id }`,
+		`uniform vec4 buffer${ id };\nvec4 result = buffer${ id };`,
+		[ selector ],
+	);
+	assert.notEqual(
+		createArtifactVariantPayloadFingerprint( unpairedWebGLName( 17 ) ),
+		createArtifactVariantPayloadFingerprint( unpairedWebGLName( 203 ) ),
+		'an exact buffer<id> token is not generated evidence without a matching NodeBuffer_<id> declaration',
+	);
+
+} );
+
+test( 'WebGL fallback buffer names share shader Node IDs without hiding linkage changes', () => {
+
+	const selector = stableJsonStringify( {
+		version: 'render-object-selector@1',
+		renderer: { backend: { kind: 'webgl' } },
+		target: { surface: 'offscreen-2d' },
+	} );
+	const webglBufferArtifact = ( cacheKey, shaderNodeId, bindingNodeId = shaderNodeId ) => {
+
+		const value = artifact(
+			cacheKey,
+			`struct NodeBuffer_${ shaderNodeId } { vec4 value; };\n` +
+				`uniform NodeBuffer_${ shaderNodeId } buffer${ shaderNodeId };\n` +
+				`vec4 result = buffer${ shaderNodeId }.value;`,
+			[ selector ],
+		);
+		value.shaderLanguage = 'glsl';
+		value.bindings = [ {
+			name: 'object',
+			bindings: [ {
+				name: `NodeBuffer_${ bindingNodeId }`,
+				kind: 'uniform-buffer',
+				visibility: 2,
+				byteLength: 16,
+			} ],
+		} ];
+		value.uniformPlan = [ {
+			name: 'object',
+			orderedBindings: [ {
+				type: 'buffer-uniform',
+				ref: {
+					name: `NodeBuffer_${ bindingNodeId }`,
+					byteLength: 16,
+					valueSnapshot: [ 1, 2, 3, 4 ],
+				},
+			} ],
+		} ];
+		return value;
+
+	};
+	const authoritative = webglBufferArtifact( 'webgl-buffer-authoritative', 17 );
+	const renamed = webglBufferArtifact( 'webgl-buffer-renamed', 203 );
+	const beforeFingerprint = structuredClone( authoritative );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( renamed ),
+		'Three r185 WebGL binding names use the same module-global Node.id as NodeBuffer/buffer shader tokens',
+	);
+	assert.deepEqual( authoritative, beforeFingerprint, 'fingerprinting leaves durable WebGL names and shader bytes untouched' );
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, renamed ] ) );
+	assert.equal( authoritative.bindings[ 0 ].bindings[ 0 ].name, 'NodeBuffer_17' );
+	assert.equal( authoritative.uniformPlan[ 0 ].orderedBindings[ 0 ].ref.name, 'NodeBuffer_17' );
+
+	const linked = webglBufferArtifact( 'webgl-buffer-linked', 17 );
+	const mismatched = webglBufferArtifact( 'webgl-buffer-mismatched', 203, 204 );
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( linked ),
+		createArtifactVariantSemanticFingerprint( mismatched ),
+		'a binding renamed independently from its shader node remains a topology difference',
+	);
+	assert.throws(
+		() => mergeArtifactVariantFamily( linked, [ linked, mismatched ] ),
+		( error ) => error?.code === 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+	);
+	const unlinkedAuthoritative = webglBufferArtifact( 'webgl-unlinked-authoritative', 17 );
+	const unlinkedRenamed = webglBufferArtifact( 'webgl-unlinked-renamed', 203 );
+	unlinkedAuthoritative.vertexShader = unlinkedRenamed.vertexShader = 'shared vertex without generated buffers';
+	unlinkedAuthoritative.fragmentShader = unlinkedRenamed.fragmentShader = 'shared fragment without generated buffers';
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( unlinkedAuthoritative ),
+		createArtifactVariantSemanticFingerprint( unlinkedRenamed ),
+		'a NodeBuffer-looking persisted name remains strict unless the shader establishes its generated Node.id',
+	);
+
+} );
+
+test( 'artifact variant fingerprints canonicalize generated uniform-buffer names while preserving topology', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const withGeneratedUniformBuffers = ( value, first, second ) => {
+
+		const binding = ( id, fill ) => ( {
+			name: `UniformBuffer_${ id }`,
+			kind: 'uniform-buffer',
+			visibility: 2,
+			byteLength: 16,
+			valueSnapshot: new Array( 4 ).fill( fill ),
+		} );
+		value.bindings = [ {
+			name: 'object',
+			bindings: [ binding( first, 1 ), binding( second, 2 ) ],
+		} ];
+		value.uniformPlan = [ {
+			name: 'object',
+			orderedBindings: [
+				{ type: 'buffer-uniform', ref: binding( first, 1 ) },
+				{ type: 'buffer-uniform', ref: binding( second, 2 ) },
+			],
+		} ];
+		return value;
+
+	};
+	const authoritative = withGeneratedUniformBuffers(
+		artifact( 'uniform-buffer-authoritative', 'shared-buffer-shader', [ selector ] ),
+		14,
+		15,
+	);
+	const renamed = withGeneratedUniformBuffers(
+		artifact( 'uniform-buffer-renamed', 'shared-buffer-shader', [ selector ] ),
+		0,
+		1,
+	);
+	const collapsed = withGeneratedUniformBuffers(
+		artifact( 'uniform-buffer-collapsed', 'shared-buffer-shader', [ selector ] ),
+		0,
+		0,
+	);
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( renamed ),
+		'NodeUniformBuffer module-global IDs are capture-order spelling, not binding topology',
+	);
+	assert.equal(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( renamed ),
+		'repeated binding and ordered-ref names share one generated-buffer namespace',
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( collapsed ),
+		'two distinct generated buffers cannot collapse into one identity',
+	);
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, renamed ] ) );
+	assert.deepEqual(
+		authoritative.bindings[ 0 ].bindings.map( ( binding ) => binding.name ),
+		[ 'UniformBuffer_14', 'UniformBuffer_15' ],
+		'the authoritative durable binding names remain unchanged',
+	);
+	assert.deepEqual(
+		authoritative.uniformPlan[ 0 ].orderedBindings.map( ( binding ) => binding.ref.name ),
+		[ 'UniformBuffer_14', 'UniformBuffer_15' ],
+		'the authoritative durable ordered refs remain unchanged',
+	);
+	assert.throws(
+		() => mergeArtifactVariantFamily( authoritative, [ authoritative, collapsed ] ),
+		( error ) => error?.code === 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+		'shared-vs-distinct generated uniform-buffer topology remains strict',
+	);
+	const authoredMetadata = artifact( 'authored-buffer-label', 'shared-buffer-shader', [ selector ] );
+	authoredMetadata.meta = { label: 'UniformBuffer_14' };
+	const renamedMetadata = artifact( 'renamed-buffer-label', 'shared-buffer-shader', [ selector ] );
+	renamedMetadata.meta = { label: 'UniformBuffer_0' };
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoredMetadata ),
+		createArtifactVariantSemanticFingerprint( renamedMetadata ),
+		'exact-looking authored strings outside proven binding-name positions remain strict',
+	);
+
+} );
+
+test( 'artifact variant fingerprints canonicalize generated storage-buffer linkage without mutating artifacts', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'offscreen-2d' } } );
+	const withGeneratedStorageBuffers = ( value, first, second, orderedSecond = second ) => {
+
+		const descriptor = ( id ) => ( {
+			name: `StorageBuffer_${ id }`,
+			kind: 'storage-buffer',
+			visibility: 4,
+			byteLength: 16,
+			access: 'readWrite',
+		} );
+		const planEntry = ( id ) => ( {
+			name: `StorageBuffer_${ id }`,
+			access: 'readWrite',
+			visibility: 4,
+			arrayType: 'Float32Array',
+			count: 4,
+			itemSize: 1,
+		} );
+		const firstPlanEntry = planEntry( first );
+		const secondPlanEntry = planEntry( second );
+		value.bindings = [ {
+			name: 'compute',
+			bindings: [ descriptor( first ), descriptor( second ) ],
+		} ];
+		value.uniformPlan = [ {
+			name: 'compute',
+			storageBuffers: [ firstPlanEntry, secondPlanEntry ],
+			orderedBindings: [
+				{ type: 'storage-buffer', ref: firstPlanEntry },
+				{ type: 'storage-buffer', ref: orderedSecond === second ? secondPlanEntry : planEntry( orderedSecond ) },
+			],
+		} ];
+		value.dynamicBindings = [ first, second ].map( ( id ) => ( {
+			kind: 'storage.buffer',
+			target: 'storage-buffer',
+			phase: 'update-before',
+			owner: 'compute',
+			resolver: 'hydrator/storage-buffer',
+			group: 'compute',
+			binding: `StorageBuffer_${ id }`,
+			source: { kind: 'storage.buffer' },
+		} ) );
+		return value;
+
+	};
+	const authoritative = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-authoritative', 'shared-storage-shader', [ selector ] ),
+		4,
+		5,
+	);
+	const renamed = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-renamed', 'shared-storage-shader', [ selector ] ),
+		12,
+		13,
+	);
+	const collapsed = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-collapsed', 'shared-storage-shader', [ selector ] ),
+		12,
+		12,
+	);
+	const beforeFingerprint = structuredClone( authoritative );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( renamed ),
+		'NodeStorageBuffer module-global IDs are canonical across descriptors, convenience entries, and ordered refs',
+	);
+	assert.deepEqual( authoritative, beforeFingerprint, 'storage-buffer fingerprinting does not rewrite durable names' );
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( collapsed ),
+		'distinct generated storage buffers cannot collapse into one identity',
+	);
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, renamed ] ) );
+	assert.deepEqual(
+		authoritative.bindings[ 0 ].bindings.map( ( binding ) => binding.name ),
+		[ 'StorageBuffer_4', 'StorageBuffer_5' ],
+	);
+	assert.deepEqual(
+		authoritative.uniformPlan[ 0 ].storageBuffers.map( ( binding ) => binding.name ),
+		[ 'StorageBuffer_4', 'StorageBuffer_5' ],
+	);
+	assert.deepEqual(
+		authoritative.dynamicBindings.map( ( binding ) => binding.binding ),
+		[ 'StorageBuffer_4', 'StorageBuffer_5' ],
+		'derived dynamic-binding linkage retains its durable spelling',
+	);
+
+	const linked = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-linked', 'shared-storage-shader', [ selector ] ),
+		4,
+		5,
+	);
+	const mismatchedRef = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-mismatched-ref', 'shared-storage-shader', [ selector ] ),
+		12,
+		13,
+		14,
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( linked ),
+		createArtifactVariantSemanticFingerprint( mismatchedRef ),
+		'an ordered ref that no longer names its convenience entry remains a linkage difference',
+	);
+	assert.throws(
+		() => mergeArtifactVariantFamily( linked, [ linked, mismatchedRef ] ),
+		( error ) => error?.code === 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION',
+	);
+	const mismatchedDynamicBinding = withGeneratedStorageBuffers(
+		artifact( 'storage-buffer-mismatched-dynamic', 'shared-storage-shader', [ selector ] ),
+		12,
+		13,
+	);
+	mismatchedDynamicBinding.dynamicBindings[ 1 ].binding = 'StorageBuffer_14';
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( linked ),
+		createArtifactVariantSemanticFingerprint( mismatchedDynamicBinding ),
+		'a dynamic binding that no longer names its storage entry remains a linkage difference',
+	);
+
+	const authoredMetadata = artifact( 'authored-storage-label', 'shared-storage-shader', [ selector ] );
+	authoredMetadata.meta = {
+		storageBuffers: [ { name: 'StorageBuffer_4' } ],
+		binding: { kind: 'storage-buffer', name: 'StorageBuffer_4' },
+	};
+	const renamedMetadata = artifact( 'renamed-storage-label', 'shared-storage-shader', [ selector ] );
+	renamedMetadata.meta = {
+		storageBuffers: [ { name: 'StorageBuffer_12' } ],
+		binding: { kind: 'storage-buffer', name: 'StorageBuffer_12' },
+	};
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoredMetadata ),
+		createArtifactVariantSemanticFingerprint( renamedMetadata ),
+		'exact-looking authored metadata outside contract linkage positions remains strict',
+	);
+
+} );
+
+test( 'render-output fingerprints ignore only the generated exposure-slot ordinal', () => {
+
+	const selector = stableJsonStringify( { version: 'render-object-selector@1', target: { surface: 'default' } } );
+	const withExposureSlot = ( value, name, overrides = {} ) => {
+
+		value.materialShape = 'render-output';
+		const slot = {
+			name,
+			offset: 128,
+			size: 4,
+			dtype: 'number',
+			source: {
+				kind: 'renderer.toneMappingExposure',
+				valueSnapshot: { type: 'number', data: 1 },
+			},
+			...overrides,
+		};
+		value.uniformPlan = [ {
+			name: 'render',
+			slots: [ structuredClone( slot ) ],
+			orderedBindings: [ { type: 'ubo', name: 'render', slots: [ structuredClone( slot ) ] } ],
+		} ];
+		return value;
+
+	};
+	const authoritative = withExposureSlot( artifact( 'render-output-first', 'shared-output-shader', [ selector ] ), 'nodeUniform2' );
+	const recaptured = withExposureSlot( artifact( 'render-output-second', 'shared-output-shader', [ selector ] ), 'nodeUniform1' );
+	const beforeFingerprint = structuredClone( authoritative );
+
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( authoritative ),
+		createArtifactVariantPayloadFingerprint( recaptured ),
+		'Three r185 cache reuse can move only the generated exposure label while retaining its exact byte writer',
+	);
+	assert.doesNotThrow( () => mergeArtifactVariantFamily( authoritative, [ authoritative, recaptured ] ) );
+	assert.deepEqual( authoritative, beforeFingerprint, 'the shader-era durable slot name remains authoritative' );
+
+	const moved = withExposureSlot(
+		artifact( 'render-output-moved', 'shared-output-shader', [ selector ] ),
+		'nodeUniform1',
+		{ offset: 132 },
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( moved ),
+		'the exposure byte offset remains shader-family identity',
+	);
+	const otherSource = withExposureSlot(
+		artifact( 'render-output-other-source', 'shared-output-shader', [ selector ] ),
+		'nodeUniform1',
+		{ source: { kind: 'renderer.size', valueSnapshot: { type: 'vec2', data: [ 1, 1 ] } } },
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( otherSource ),
+		'other renderer slot sources remain strict',
+	);
+	const authored = withExposureSlot(
+		artifact( 'render-output-authored-label', 'shared-output-shader', [ selector ] ),
+		'toneMappingExposure',
+	);
+	assert.notEqual(
+		createArtifactVariantSemanticFingerprint( authoritative ),
+		createArtifactVariantSemanticFingerprint( authored ),
+		'non-generated exposure labels remain strict',
+	);
 
 } );
 

@@ -513,6 +513,7 @@ function createCollectorState( {
 		routeHandler: null,
 		webSocketHandler: null,
 		eventHandlers: null,
+		sealedObservation: null,
 	};
 
 }
@@ -571,6 +572,18 @@ function ensureRecord( state, request ) {
 	};
 	state.records.set( request, record );
 	return record;
+
+}
+
+function invalidateSealedObservation( state, issue ) {
+
+	if ( ! state.sealedObservation ) return;
+	state.sealedObservation.lateRequests = state.lateRequests;
+	state.sealedObservation.issues = uniqueSortedIssues( [
+		...( state.sealedObservation.issues || [] ),
+		issue,
+	] );
+	state.sealedObservation.complete = false;
 
 }
 
@@ -645,7 +658,9 @@ async function captureRoute( state, route ) {
 	if ( state.state !== 'active' ) {
 
 		state.lateRequests ++;
-		state.issues.push( `cross-origin request started after network sealing began: ${ record.method } ${ record.url }` );
+		const issue = `cross-origin request started after network sealing began: ${ record.method } ${ record.url }`;
+		state.issues.push( issue );
+		invalidateSealedObservation( state, issue );
 		await abortRoute( route );
 		return;
 
@@ -683,7 +698,9 @@ async function replayRoute( state, route ) {
 	if ( state.state !== 'active' ) {
 
 		state.lateRequests ++;
-		state.issues.push( `cross-origin request started after network sealing began: ${ record.method } ${ record.url }` );
+		const issue = `cross-origin request started after network sealing began: ${ record.method } ${ record.url }`;
+		state.issues.push( issue );
+		invalidateSealedObservation( state, issue );
 		await abortRoute( route );
 		return;
 
@@ -1139,12 +1156,18 @@ function collectorApi( state ) {
 			state.state = 'sealed';
 			recordCompletionIssues( state );
 			const observation = buildObservation( state );
+			state.sealedObservation = observation;
 			return { observation, bodies: new Map( state.bodies ) };
 
 		},
 		assertNoLateRequests() {
 
 			if ( state.lateRequests !== 0 ) {
+
+				invalidateSealedObservation(
+					state,
+					`network evidence observed ${ state.lateRequests } request(s) after sealing began`,
+				);
 
 				throw new Error( `network evidence observed ${ state.lateRequests } request(s) after sealing began` );
 

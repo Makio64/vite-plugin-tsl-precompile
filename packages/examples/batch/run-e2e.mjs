@@ -82,6 +82,7 @@ import {
 	installE2EGpuDiagnostics,
 } from './e2e-gpu-diagnostics.mjs';
 import {
+	assertStoredE2ENetworkObservation,
 	bindE2ENetworkObservationBodies,
 	e2eNetworkCrossPhaseIssues,
 	e2eNetworkObservationIssues,
@@ -3775,6 +3776,9 @@ function emptyVisitResult( overrides = {} ) {
 		warningCount: 0,
 		canvasBackends: [],
 		diagnostics: null,
+		networkEvidence: null,
+		networkFixtureRoot: null,
+		networkFixtureRunId: null,
 		context: null,
 		page: null,
 		cleanup: async () => {},
@@ -3878,7 +3882,46 @@ function loadSavedReferenceShot( name ) {
 
 	}
 	const { bytes } = verifyEvidenceDescriptor( INPUT_ROOT, saved.entry.capture, saved.input.manifest.runId );
-	return emptyVisitResult( { shot: bytes, fromDisk: true, sourceRunId: saved.input.manifest.runId } );
+	let networkEvidence = saved.entry.networkInputs?.stock;
+	if ( ! networkEvidence ) {
+
+		return emptyVisitResult( { errors: [ `saved evidence case ${ name } has no stock network evidence` ] } );
+
+	}
+	try {
+
+		assertStoredE2ENetworkObservation( networkEvidence, {
+			outputRoot: INPUT_ROOT,
+			runId: saved.input.manifest.runId,
+			label: `Saved stock network evidence for ${ name }`,
+		} );
+		const bodies = new Map();
+		for ( const resource of networkEvidence.resources ) {
+
+			if ( bodies.has( resource.sha256 ) ) continue;
+			const verified = verifyEvidenceDescriptor(
+				INPUT_ROOT,
+				resource.evidence,
+				saved.input.manifest.runId,
+			);
+			bodies.set( resource.sha256, verified.bytes );
+
+		}
+		networkEvidence = bindRunNetworkEvidence( networkEvidence, bodies );
+
+	} catch ( error ) {
+
+		return emptyVisitResult( { errors: [ error && error.message || String( error ) ] } );
+
+	}
+	return emptyVisitResult( {
+		shot: bytes,
+		fromDisk: true,
+		sourceRunId: saved.input.manifest.runId,
+		networkEvidence,
+		networkFixtureRoot: OUT,
+		networkFixtureRunId: RUN_ID,
+	} );
 
 }
 
@@ -4013,7 +4056,11 @@ async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MI
 
 }
 
-async function visitExample( browser, name, mode, waitMs ) {
+async function visitExample( browser, name, mode, waitMs, {
+	networkFixture = null,
+	networkFixtureRoot = OUT,
+	networkFixtureRunId = RUN_ID,
+} = {} ) {
 
 	const timings = { mode };
 	const minimumBrightFraction = minimumBrightFractionForExample( name, DEFAULT_MINIMUM_BRIGHT_FRACTION );
@@ -4026,12 +4073,39 @@ async function visitExample( browser, name, mode, waitMs ) {
 	};
 	trace( 'start' );
 
-	let stepStartedAt = Date.now();
-	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
-	const page = await context.newPage();
 	const examplePath = examplePathFor( name );
 	const separator = examplePath.includes( '?' ) ? '&' : '?';
 	const pageUrl = `http://localhost:${ port }/examples/${ examplePath }${ separator }__tslp_mode=${ mode }&__tslp_case=${ encodeURIComponent( name ) }`;
+	let stepStartedAt = Date.now();
+	const context = await browser.newContext( {
+		viewport: { width: 640, height: 480 },
+		serviceWorkers: 'block',
+	} );
+	const networkBodyCache = new Map();
+	const networkCollector = networkFixture
+		? await installE2ENetworkFixtureReplayCollector( context, {
+			pageUrl,
+			fixture: networkFixture,
+			serviceWorkersBlocked: true,
+			loadBody( resource ) {
+
+				const cached = networkBodyCache.get( resource.sha256 );
+				if ( cached ) return cached;
+				const verified = verifyEvidenceDescriptor(
+					networkFixtureRoot,
+					resource.evidence,
+					networkFixtureRunId,
+				);
+				networkBodyCache.set( resource.sha256, verified.bytes );
+				return verified.bytes;
+
+			},
+		} )
+		: await installE2ENetworkCaptureCollector( context, {
+			pageUrl,
+			serviceWorkersBlocked: true,
+		} );
+	const page = await context.newPage();
 	const browserFailures = installBrowserFailureCollector( page, { pageUrl } );
 	mark( 'contextMs', stepStartedAt );
 	trace( 'context-ready' );
@@ -4040,6 +4114,49 @@ async function visitExample( browser, name, mode, waitMs ) {
 	const errors = [];
 	const warnings = [];
 	let canvasBackends = [];
+	let networkEvidence = null;
+	let networkFinalized = false;
+	let visitResult = null;
+	const recordNetworkError = ( value ) => {
+
+		const message = `network evidence: ${ value && value.message || value }`;
+		errors.push( message );
+		if ( visitResult && visitResult.errors !== errors ) {
+
+			visitResult.errors.push( message );
+			visitResult.errorCount = visitResult.errors.length;
+
+		}
+
+	};
+	const finalizeNetworkEvidence = async () => {
+
+		if ( networkFinalized ) return networkEvidence;
+		networkFinalized = true;
+		try {
+
+			const sealed = await networkCollector.drain();
+			const expectedMode = networkFixture ? 'replay' : 'capture';
+			const issues = e2eNetworkObservationIssues( sealed.observation, { expectedMode } );
+			if ( issues.length > 0 ) {
+
+				networkEvidence = sealed.observation;
+				for ( const issue of issues ) recordNetworkError( issue );
+
+			} else {
+
+				networkEvidence = bindRunNetworkEvidence( sealed.observation, sealed.bodies );
+
+			}
+
+		} catch ( error ) {
+
+			recordNetworkError( error );
+
+		}
+		return networkEvidence;
+
+	};
 
 	// Named diagnostic handlers so cleanup() can detach them. Without removeListener
 	// the closures retain references to errors/warnings/mode for the lifetime
@@ -4092,7 +4209,14 @@ async function visitExample( browser, name, mode, waitMs ) {
 			page.off( 'console', onConsole );
 		} catch ( _ ) {}
 		try { await page.close( { runBeforeUnload: false } ); } catch ( _ ) {}
+		try { networkCollector.assertNoLateRequests(); } catch ( error ) {
+			recordNetworkError( error );
+		}
 		try { await context.close(); } catch ( _ ) {}
+		try { networkCollector.assertNoLateRequests(); } catch ( error ) {
+			recordNetworkError( error );
+		}
+		try { await networkCollector.dispose(); } catch ( _ ) {}
 
 	};
 
@@ -4856,6 +4980,9 @@ async function visitExample( browser, name, mode, waitMs ) {
 				if ( typeof seal === 'function' ) seal();
 			}, mode );
 			mark( 'gpuDiagnosticsFenceMs', stepStartedAt );
+			stepStartedAt = Date.now();
+			await finalizeNetworkEvidence();
+			mark( 'networkEvidenceMs', stepStartedAt );
 		// Wedge 4: read the deterministic clock at the moment the screenshot
 		// was taken. nodeFrame.time accumulates from `performance.now()`, which
 		// the harness patched to `base + __tslpRafTick * step`. So at freeze,
@@ -4888,17 +5015,20 @@ async function visitExample( browser, name, mode, waitMs ) {
 			if ( diagnostics && frameTextureSnapshot ) diagnostics.frameTextureSnapshot = frameTextureSnapshot;
 			timings.totalMs = Date.now() - startedAt;
 			const visitErrors = [ ...browserFailures.messages(), ...errors ];
-			return { bright: finalBright, shot, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, context, page, timings, cleanup, frameClock };
+			visitResult = { bright: finalBright, shot, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, networkEvidence, context, page, timings, cleanup, frameClock };
+			return visitResult;
 
 	} catch ( err ) {
 
 		try {
 			await page.evaluate( drainE2EGpuDiagnostics );
 		} catch ( _ ) {}
+		await finalizeNetworkEvidence();
 		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
 		const visitErrors = [ ...browserFailures.messages(), ...errors, err && err.message || String( err ) ];
-		return { bright: 0, shot: null, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, navigationError: true, context, page, timings, cleanup };
+		visitResult = { bright: 0, shot: null, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, networkEvidence, navigationError: true, context, page, timings, cleanup };
+		return visitResult;
 
 	}
 
@@ -5013,10 +5143,17 @@ async function runOne( browser, name ) {
 	// so discard any incidental POSTs before the dedicated capture visit while
 	// retaining only the measured reference clock needed by replay.
 	resetCaptureBucketForArtifactPass( name, capture.frameClock );
+	const stockNetworkFixture = capture.networkEvidence;
+	const networkFixtureRoot = capture.networkFixtureRoot || OUT;
+	const networkFixtureRunId = capture.networkFixtureRunId || RUN_ID;
 
 	const artifactCapture = replayOnly
 		? emptyVisitResult()
-		: await visitExample( browser, name, 'capture', effectiveCaptureWait );
+		: await visitExample( browser, name, 'capture', effectiveCaptureWait, {
+			networkFixture: stockNetworkFixture,
+			networkFixtureRoot,
+			networkFixtureRunId,
+		} );
 	if ( artifactCapture.cleanup ) await artifactCapture.cleanup();
 	artifactCapture.cleanup = null;
 	artifactCapture.context = null;
@@ -5073,7 +5210,11 @@ async function runOne( browser, name ) {
 
 	}
 
-	const replay = await visitExample( browser, name, 'replay', replayWaitMs );
+	const replay = await visitExample( browser, name, 'replay', replayWaitMs, {
+		networkFixture: stockNetworkFixture,
+		networkFixtureRoot,
+		networkFixtureRunId,
+	} );
 	const passTimings = {
 		stock: capture.timings || null,
 		capture: artifactCapture.timings || null,
@@ -5147,6 +5288,12 @@ async function runOne( browser, name ) {
 	replay.cleanup = null;
 	replay.context = null;
 	replay.page = null;
+	const networkInputs = {
+		stock: stockNetworkFixture,
+		capture: replayOnly ? savedEvidenceCase( name ).entry.networkInputs?.capture || null : artifactCapture.networkEvidence,
+		replay: replay.networkEvidence,
+	};
+	const networkIssues = e2eNetworkCrossPhaseIssues( networkInputs );
 
 	const effectivePsnrThreshold = psnrThresholdForExample( name, psnrThreshold );
 	const pixelGate = pixelGateOf( pixelMetrics, effectivePsnrThreshold );
@@ -5194,6 +5341,11 @@ async function runOne( browser, name ) {
 			artifactCapture.diagnostics?.operationRegistry,
 			replay.diagnostics?.operationRegistry,
 		),
+		blocking: networkIssues.map( ( message ) => ( {
+			code: 'network-provenance',
+			phase: null,
+			message,
+		} ) ),
 	} );
 	const backendArtifactGate = auditArtifactShaderLanguageBackends( bucket, {
 		requiredBackends: canvasOrderForExample( name ) === 'webgpu-backend-first' ? [ 'webgpu', 'webgl' ] : [],
@@ -5235,6 +5387,7 @@ async function runOne( browser, name ) {
 			auxArtifacts: auxArtifactEvidence,
 		},
 		artifactMetrics,
+		networkInputs,
 		evidenceGate,
 		backendArtifactGate,
 		rendererBackendEvidence,

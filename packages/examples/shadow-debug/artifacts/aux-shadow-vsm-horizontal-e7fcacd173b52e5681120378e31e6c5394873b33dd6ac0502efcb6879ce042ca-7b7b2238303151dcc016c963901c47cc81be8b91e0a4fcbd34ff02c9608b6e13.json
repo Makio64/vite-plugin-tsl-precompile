@@ -1,0 +1,818 @@
+{
+  "__materialShape": "shadow-vsm-horizontal",
+  "__configHash": "e7fcacd173b52e5681120378e31e6c5394873b33dd6ac0502efcb6879ce042ca",
+  "__hash": "7b7b2238303151dcc016c963901c47cc81be8b91e0a4fcbd34ff02c9608b6e13",
+  "__name": "aux-shadow-vsm-horizontal-e7fcacd173b5",
+  "threeVersion": "0.185.1",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 8920380199781762,
+    "materialShape": "shadow-vsm-horizontal",
+    "vertexShader": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform0 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform7 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec2<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform0 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform7 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> meanHorizontal : f32;\nvar<private> squareMeanHorizontal : f32;\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tmeanHorizontal = 0.0;\n\tsquareMeanHorizontal = 0.0;\n\n\tfor ( var i : i32 = 0; i < i32( render.nodeUniform0 ); i ++ ) {\n\n\n\t\tif ( ( render.nodeUniform0 <= 1.0 ) ) {\n\n\t\t\tnodeVar0 = 0.0;\n\n\t\t} else {\n\n\t\t\tnodeVar0 = -1.0;\n\n\t\t}\n\n\n\t\tif ( ( render.nodeUniform0 <= 1.0 ) ) {\n\n\t\t\tnodeVar1 = 0.0;\n\n\t\t} else {\n\n\t\t\tnodeVar1 = ( 2.0 / ( render.nodeUniform0 - 1.0 ) );\n\n\t\t}\n\n\t\tnodeVar2 = textureSample( nodeUniform1, nodeUniform1_sampler, ( object.nodeUniform2 * vec3<f32>( ( ( fragCoord.xy + ( vec2<f32>( ( nodeVar0 + ( f32( i ) * nodeVar1 ) ), 0.0 ) * vec2<f32>( render.nodeUniform3 ) ) ) / render.nodeUniform4 ), 1.0 ) ).xy );\n\t\tmeanHorizontal = ( meanHorizontal + nodeVar2.x );\n\t\tsquareMeanHorizontal = ( squareMeanHorizontal + ( ( nodeVar2.y * nodeVar2.y ) + ( nodeVar2.x * nodeVar2.x ) ) );\n\n\t}\n\n\tmeanHorizontal = ( meanHorizontal / render.nodeUniform0 );\n\tsquareMeanHorizontal = ( squareMeanHorizontal / render.nodeUniform0 );\n\n\t// result\n\n\toutput.color = vec2<f32>( meanHorizontal, sqrt( max( ( squareMeanHorizontal - ( meanHorizontal * meanHorizontal ) ), 0.0 ) ) );\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 144,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform1_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform1",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 112,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 144,
+        "slots": [
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1.3579951288348662,
+                  0,
+                  0,
+                  0,
+                  0,
+                  2.4142135623730954,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1.0020040080160322,
+                  -1,
+                  0,
+                  0,
+                  -0.10020040080160321,
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  0.7808688094430303,
+                  -0.22719939219699894,
+                  0.5819143739626464,
+                  0,
+                  0,
+                  0.9315175080076961,
+                  0.3636964837266539,
+                  0,
+                  -0.6246950475544243,
+                  -0.2839992402462486,
+                  0.7273929674533078,
+                  0,
+                  4.3021142204224816e-16,
+                  -0.46575875400384903,
+                  -7.0557117842970865,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform0",
+            "offset": 128,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "light.shadowBlurSamples",
+              "property": "blurSamples",
+              "uniformType": "float",
+              "lightIndex": 1,
+              "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 8
+              },
+              "lightIdentity": 0
+            }
+          },
+          {
+            "name": "nodeUniform3",
+            "offset": 132,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "light.shadowRadius",
+              "property": "radius",
+              "uniformType": "float",
+              "lightIndex": 1,
+              "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 2
+              },
+              "lightIdentity": 0
+            }
+          },
+          {
+            "name": "nodeUniform4",
+            "offset": 136,
+            "size": 8,
+            "dtype": "vec2",
+            "source": {
+              "kind": "light.shadowMapSize",
+              "property": "mapSize",
+              "uniformType": "vec2",
+              "lightIndex": 1,
+              "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+              "valueSnapshot": {
+                "type": "vec2",
+                "data": [
+                  1024,
+                  1024
+                ]
+              },
+              "lightIdentity": 0
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 144,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1.3579951288348662,
+                      0,
+                      0,
+                      0,
+                      0,
+                      2.4142135623730954,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0020040080160322,
+                      -1,
+                      0,
+                      0,
+                      -0.10020040080160321,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      0.7808688094430303,
+                      -0.22719939219699894,
+                      0.5819143739626464,
+                      0,
+                      0,
+                      0.9315175080076961,
+                      0.3636964837266539,
+                      0,
+                      -0.6246950475544243,
+                      -0.2839992402462486,
+                      0.7273929674533078,
+                      0,
+                      4.3021142204224816e-16,
+                      -0.46575875400384903,
+                      -7.0557117842970865,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform0",
+                "offset": 128,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "light.shadowBlurSamples",
+                  "property": "blurSamples",
+                  "uniformType": "float",
+                  "lightIndex": 1,
+                  "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 8
+                  },
+                  "lightIdentity": 0
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 132,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "light.shadowRadius",
+                  "property": "radius",
+                  "uniformType": "float",
+                  "lightIndex": 1,
+                  "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 2
+                  },
+                  "lightIdentity": 0
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 136,
+                "size": 8,
+                "dtype": "vec2",
+                "source": {
+                  "kind": "light.shadowMapSize",
+                  "property": "mapSize",
+                  "uniformType": "vec2",
+                  "lightIndex": 1,
+                  "lightUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+                  "valueSnapshot": {
+                    "type": "vec2",
+                    "data": [
+                      1024,
+                      1024
+                    ]
+                  },
+                  "lightIdentity": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 2,
+        "byteLength": 112,
+        "slots": [
+          {
+            "name": "nodeUniform2",
+            "offset": 0,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 0
+            }
+          },
+          {
+            "name": "nodeUniform7",
+            "offset": 48,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0.85,
+                  0.75,
+                  0.15,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform1_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "f187dced-a00c-4f66-a475-7ac6da8b9100",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1024,
+              "imageHeight": 1024,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 0
+                },
+                "target": {
+                  "topology": "single",
+                  "dimension": "2d",
+                  "mrtCount": 1
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1030,
+                  "type": 1016,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": null,
+                  "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                  }
+                }
+              }
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform1",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "f187dced-a00c-4f66-a475-7ac6da8b9100",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1024,
+              "imageHeight": 1024,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 0
+                },
+                "target": {
+                  "topology": "single",
+                  "dimension": "2d",
+                  "mrtCount": 1
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1030,
+                  "type": 1016,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": null,
+                  "extent": {
+                    "width": 1024,
+                    "height": 1024,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform1_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "f187dced-a00c-4f66-a475-7ac6da8b9100",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1024,
+                "imageHeight": 1024,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 0
+                  },
+                  "target": {
+                    "topology": "single",
+                    "dimension": "2d",
+                    "mrtCount": 1
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1030,
+                    "type": 1016,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": null,
+                    "extent": {
+                      "width": 1024,
+                      "height": 1024,
+                      "depth": 1
+                    }
+                  }
+                }
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform1",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "f187dced-a00c-4f66-a475-7ac6da8b9100",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1024,
+                "imageHeight": 1024,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 0
+                  },
+                  "target": {
+                    "topology": "single",
+                    "dimension": "2d",
+                    "mrtCount": 1
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1030,
+                    "type": 1016,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": null,
+                    "extent": {
+                      "width": 1024,
+                      "height": 1024,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 112,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform2",
+                "offset": 0,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 0
+                }
+              },
+              {
+                "name": "nodeUniform7",
+                "offset": 48,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0.85,
+                      0.75,
+                      0.15,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": true,
+      "depthWrite": true,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 11,
+      "updateBeforeNodes": 0,
+      "updateAfterNodes": 0
+    },
+    "lightIdentities": [
+      {
+        "schema": "light-identity@1",
+        "captureUuid": "79845400-1670-4a16-87e7-3b2aac4fc1ed",
+        "captureIndex": 1,
+        "type": "DirectionalLight",
+        "snapshot": {
+          "position": [
+            3,
+            5,
+            2.5
+          ],
+          "targetPosition": [
+            0,
+            0,
+            0
+          ],
+          "color": [
+            1,
+            1,
+            1
+          ],
+          "intensity": 3.2,
+          "castShadow": true,
+          "shadowType": "DirectionalLightShadow",
+          "cameraType": "OrthographicCamera"
+        },
+        "name": "debug-directional-light"
+      }
+    ],
+    "internalPass": {
+      "schema": "internal-pass@1",
+      "family": "shadow-vsm",
+      "stage": "horizontal",
+      "shape": "shadow-vsm-horizontal",
+      "config": {
+        "schema": "shadow-vsm-support@1",
+        "profile": "2d",
+        "source": {
+          "dimension": "2d",
+          "sampleType": "depth",
+          "samplingMode": "load",
+          "samplerType": "none",
+          "samples": 1,
+          "depth": true,
+          "comparison": false
+        },
+        "moments": {
+          "dimension": "2d",
+          "format": 1030,
+          "type": 1016,
+          "sampleType": "float",
+          "samplingMode": "sample-implicit",
+          "samplerType": "filtering",
+          "samples": 1,
+          "depth": false,
+          "comparison": false
+        }
+      },
+      "uniforms": [
+        {
+          "role": "blur-samples",
+          "group": "render",
+          "binding": "nodeUniform0",
+          "valueType": "float"
+        },
+        {
+          "role": "map-size",
+          "group": "render",
+          "binding": "nodeUniform4",
+          "valueType": "vec2"
+        },
+        {
+          "role": "radius",
+          "group": "render",
+          "binding": "nodeUniform3",
+          "valueType": "float"
+        }
+      ],
+      "inputs": [
+        {
+          "role": "vsm-vertical",
+          "kind": "texture",
+          "group": "object",
+          "binding": "nodeUniform1",
+          "topology": {
+            "dimension": "2d",
+            "format": 1030,
+            "type": 1016,
+            "sampleType": "float",
+            "samplingMode": "sample-implicit",
+            "samplerType": "filtering",
+            "samples": 1,
+            "depth": false,
+            "comparison": false
+          }
+        }
+      ],
+      "output": {
+        "topology": {
+          "dimension": "2d",
+          "format": 1030,
+          "type": 1016,
+          "sampleType": "float",
+          "samplingMode": "sample-implicit",
+          "samplerType": "filtering",
+          "samples": 1,
+          "depth": false,
+          "comparison": false
+        }
+      }
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":true,\"type\":3}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"\",\"dataType\":1016,\"format\":1030,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-2d\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "a168eb7b-70cc-45e6-b875-9d26ada8ff18",
+    "captureClock": 0.06410000002384185,
+    "sourceThreeVersion": "0.185.1",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

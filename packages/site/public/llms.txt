@@ -9,7 +9,7 @@ Generated evidence: https://makio64.github.io/vite-plugin-tsl-precompile/example
 
 ## Fit
 
-- Requires Node >=20.19, Vite >=6.4.3 <9, `WebGPURenderer`, TSL NodeMaterials, and
+- Requires Node >=24.0.0, Vite >=6.4.3 <9, `WebGPURenderer`, TSL NodeMaterials, and
   exactly `three@0.185.1` for the current alpha.
 - The plugin and runtime must use matching releases.
 - Do not silently migrate a WebGL-only, non-Vite, or non-TSL app.

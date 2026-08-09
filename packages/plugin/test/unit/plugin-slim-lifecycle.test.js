@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { appendFile, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { build as viteBuild } from 'vite';
+import { build as viteBuild, mergeConfig } from 'vite';
 
 import tslPrecompile from '../../src/index.js';
 import { autoMarkSource } from '../../src/auto-mark.js';
@@ -36,6 +36,7 @@ const GENERATED_RUNTIME_HELPER_IMPORTS = Object.freeze( [
 ] );
 const STATELESS_ATTRIBUTE_MATERIALIZER = '@tsl-precompile/contract/attribute-generators';
 const STATELESS_VARIANT_SELECTOR_MATERIALIZER = '@tsl-precompile/contract/variant-selector-adapter';
+const INSPECTOR_ADDON_SPECIFIER = 'three/addons/inspector/Inspector.js';
 
 async function makeProject( threeVersion = '0.185.1', { provenance = false, bundleBody = null } = {} ) {
 
@@ -219,6 +220,38 @@ test( 'non-slim serve does not request an unused renderer-output capture', async
 		const plugin = tslPrecompile();
 		const config = await plugin.config( { root: fixture.root }, { command: 'serve' } );
 		assert.equal( config.define[ 'globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__' ], 'false' );
+
+	} finally {
+
+		await rm( fixture.root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'serve excludes optional Inspector from dependency optimization without replacing user exclusions', async () => {
+
+	const fixture = await makeProject();
+	try {
+
+		const userConfig = {
+			root: fixture.root,
+			optimizeDeps: { exclude: [ 'consumer-owned-addon' ] },
+		};
+		const pluginConfig = await tslPrecompile().config( userConfig, { command: 'serve' } );
+		assert.deepEqual( pluginConfig.optimizeDeps.exclude, [ INSPECTOR_ADDON_SPECIFIER ] );
+		assert.deepEqual(
+			mergeConfig( userConfig, pluginConfig ).optimizeDeps.exclude,
+			[ 'consumer-owned-addon', INSPECTOR_ADDON_SPECIFIER ],
+		);
+
+		const alreadyExcludedConfig = {
+			root: fixture.root,
+			optimizeDeps: { exclude: [ 'consumer-owned-addon', INSPECTOR_ADDON_SPECIFIER ] },
+		};
+		const noDuplicate = await tslPrecompile().config( alreadyExcludedConfig, { command: 'serve' } );
+		assert.equal( noDuplicate.optimizeDeps, undefined );
+		assert.equal( ( await tslPrecompile().config( { root: fixture.root }, { command: 'build' } ) ).optimizeDeps, undefined );
 
 	} finally {
 

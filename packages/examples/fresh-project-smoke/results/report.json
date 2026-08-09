@@ -1,29 +1,675 @@
 {
   "ok": true,
+  "environment": {
+    "node": "v24.18.0",
+    "requestedVite": "8.0.16",
+    "requestedTypeScript": "5.9.3",
+    "installedVite": "8.0.16",
+    "installedTypeScript": "5.9.3"
+  },
+  "harness": {
+    "browserFailurePolicySha256": "5da56df5429a83d3d9988f295325f837c48207ea83b632857ea6ceb8e2335046"
+  },
   "steps": {
     "pack": {
       "ok": true,
       "tarballs": {
-        "@tsl-precompile/contract": "tsl-precompile-contract-0.1.0.tgz",
-        "@tsl-precompile/runtime": "tsl-precompile-runtime-0.1.0.tgz",
-        "vite-plugin-tsl-precompile": "vite-plugin-tsl-precompile-0.1.0.tgz"
+        "@tsl-precompile/contract": "tsl-precompile-contract-0.1.0-alpha.0.tgz",
+        "@tsl-precompile/runtime": "tsl-precompile-runtime-0.1.0-alpha.0.tgz",
+        "vite-plugin-tsl-precompile": "vite-plugin-tsl-precompile-0.1.0-alpha.0.tgz"
       }
     },
+    "requiredRuntimePeer": {
+      "ok": true
+    },
     "install": {
+      "ok": true,
+      "vite": "8.0.16",
+      "typescript": "5.9.3"
+    },
+    "agentSkillInstall": {
+      "ok": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsl-precompile-install-skill",
+        "--target",
+        "codex",
+        "--json"
+      ],
+      "result": {
+        "schemaVersion": 1,
+        "ok": true,
+        "status": "installed",
+        "destination": ".codex/skills/integrate-tsl-precompile",
+        "digest": "2f8d1cf28ba35a1fa1ee274b878fd7ce3652ac19a5c94e66fd6ef092893b1070",
+        "suggestedAgentPrompt": "Use $integrate-tsl-precompile. Start with tsl-precompile-doctor --json, then integrate TSL precompilation into this Vite three.js app in compatibility mode, capture every real route and advanced render topology, run source-aware verification, and prove the production build and WebGPU preview. Do not enable slim mode unless it is separately proven."
+      }
+    },
+    "coreRuntimeImport": {
       "ok": true
     },
     "typecheck": {
       "ok": true
     },
+    "coreTypecheck": {
+      "ok": true
+    },
+    "recapture": {
+      "ok": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsl-precompile-recapture",
+        "--json",
+        "--url",
+        "http://127.0.0.1:4180",
+        "--paths",
+        "/",
+        "--timeout",
+        "30000",
+        "--settle",
+        "500"
+      ],
+      "result": {
+        "schemaVersion": 1,
+        "ok": true,
+        "status": "passed",
+        "startedAt": "2026-07-30T10:08:45.710Z",
+        "baseUrl": "http://127.0.0.1:4180",
+        "browser": {
+          "name": "chromium",
+          "headless": true,
+          "webgpuPreflight": "navigator.gpu"
+        },
+        "options": {
+          "paths": [
+            "/"
+          ],
+          "timeoutMs": 30000,
+          "settleMs": 500,
+          "allowEmpty": false
+        },
+        "routes": [
+          {
+            "path": "/",
+            "url": "http://127.0.0.1:4180/",
+            "ok": true,
+            "status": "captured",
+            "startedAt": "2026-07-30T10:08:45.987Z",
+            "elapsedMs": 713,
+            "webgpu": {
+              "available": true,
+              "backend": "application-owned-unverified"
+            },
+            "capture": {
+              "pending": 0,
+              "starts": 3,
+              "acceptedPosts": 3,
+              "failedCaptures": 0,
+              "elapsedMs": 609
+            },
+            "coldReload": {
+              "recoveries": 0,
+              "retries": 0
+            },
+            "failures": [],
+            "finishedAt": "2026-07-30T10:08:46.700Z"
+          }
+        ],
+        "issues": [],
+        "nextActions": [
+          {
+            "message": "Run source-aware verification; accepted recapture activity alone does not prove marker coverage.",
+            "argv": [
+              "tsl-precompile-verify",
+              "--json",
+              "--source",
+              "src",
+              "--source-root",
+              ".",
+              "artifacts"
+            ]
+          }
+        ],
+        "finishedAt": "2026-07-30T10:08:46.722Z"
+      }
+    },
     "devCapture": {
       "ok": true,
       "manifest": {
+        "__aux": {
+          "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
+            "file": "aux-render-output-3f1fa57642fc.json",
+            "shape": "render-output",
+            "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
+            "hash": "fbf62cafa11eb05af50b39147230903e70cc61c098904c8b802aef1743a4856b",
+            "threeVersion": "0.185.1",
+            "pluginVersion": "0.1.0",
+            "capturedAt": "2026-07-30T10:08:46.145Z"
+          }
+        },
         "fresh-project-smoke": {
-          "file": "fresh-project-smoke.99518865c6d9.json",
-          "hash": "99518865c6d9583b1c7129fb1adfec815ee2ea54034e09bebc6b9d4eb0efd73b",
-          "sourceIdentity": "3f4b29c622ac8492f41bb05f2f98c3ff419b992d8ef02d20c0e723af218532cb",
-          "capturedAt": "2026-07-11T01:36:28.818Z"
+          "file": "fresh-project-smoke.3342636aba8d.json",
+          "hash": "3342636aba8d10750d7d2c4d5c546bfe78b3ba6ccd622cc7771a67f18eceb920",
+          "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+          "sourceIdentityKind": "callsite",
+          "sourceOwners": [
+            {
+              "identity": "main.js:precompile:0",
+              "revision": "b3a837a8e0f335d78616e57a3159b22f6d3a7cdb16e6157cd6ab39c6c030b9e5",
+              "provenance": {
+                "schema": "marker-source-closure@1",
+                "dependencies": [
+                  "materials.js"
+                ]
+              }
+            }
+          ],
+          "capturedAt": "2026-07-30T10:08:37.546Z"
+        },
+        "auto-materials-2c7edbc49d0e-0": {
+          "file": "auto-materials-2c7edbc49d0e-0.ec395c7e9a44.json",
+          "hash": "ec395c7e9a44313b81a99b8ee7f2a0c920d6083349b9f1497dba9f5a13022a05",
+          "sourceIdentity": "6568e5190754a1789a4e581f43e1e0b8122f22b32dc089b3a14af90d49a5bae5",
+          "sourceIdentityKind": "callsite",
+          "sourceOwners": [
+            {
+              "identity": "materials.js:precompile:0",
+              "revision": "4476d7d2beca8364cdf4a001d1bf3b8910703e40e916ceb6927b370878051053",
+              "provenance": {
+                "schema": "marker-source-closure@1",
+                "dependencies": []
+              }
+            }
+          ],
+          "capturedAt": "2026-07-30T10:08:37.559Z"
         }
+      }
+    },
+    "eagerImportBootstrap": {
+      "ok": true,
+      "module": "materials.js",
+      "staticallyImportedBy": "main.js",
+      "setupCallModule": "main.js",
+      "autoArtifacts": [
+        {
+          "name": "auto-materials-2c7edbc49d0e-0",
+          "hash": "ec395c7e9a44313b81a99b8ee7f2a0c920d6083349b9f1497dba9f5a13022a05"
+        }
+      ]
+    },
+    "doctor": {
+      "ok": true,
+      "command": [
+        "npx",
+        "--no-install",
+        "tsl-precompile-doctor",
+        "--json",
+        "--source",
+        "main.js",
+        "--source",
+        "materials.js"
+      ],
+      "sourcePaths": [
+        "main.js",
+        "materials.js"
+      ],
+      "result": {
+        "schemaVersion": 1,
+        "ok": true,
+        "readiness": "ready-compatibility",
+        "project": {
+          "root": "/private/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-ExjVKv",
+          "packageManager": "npm",
+          "lockfiles": [
+            "package-lock.json"
+          ],
+          "sourcePaths": [
+            "main.js",
+            "materials.js"
+          ],
+          "artifacts": "artifacts",
+          "viteConfigs": [
+            "vite.config.js"
+          ],
+          "mode": "compatibility"
+        },
+        "versions": {
+          "node": "24.18.0",
+          "plugin": "0.1.0-alpha.0",
+          "runtime": "0.1.0-alpha.0",
+          "three": "0.185.1",
+          "vite": "8.0.16",
+          "expectedThree": "0.185.1",
+          "artifactToolchain": "0.1.0"
+        },
+        "summary": {
+          "pass": 18,
+          "warn": 0,
+          "fail": 0
+        },
+        "discovery": {
+          "sourceFiles": [
+            "main.js",
+            "materials.js"
+          ],
+          "webgpuRendererConstructions": 1,
+          "setupCalls": 1,
+          "readyAwaits": 1,
+          "captureAuxCalls": 0,
+          "totalMarkers": 2,
+          "automaticMarkers": 1,
+          "authoredMarkers": 1,
+          "markerScanIssues": []
+        },
+        "verification": {
+          "schemaVersion": 1,
+          "ok": true,
+          "checkedArtifactFiles": 3,
+          "emptyShapeFingerprints": 0,
+          "directories": [
+            {
+              "input": "artifacts",
+              "checkedArtifactFiles": 3,
+              "manifestEntries": 2
+            }
+          ],
+          "markerCoverage": {
+            "enabled": true,
+            "sourceRoot": "/private/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-ExjVKv",
+            "checkedSourceFiles": 2,
+            "total": 2,
+            "covered": 2,
+            "missing": [],
+            "markers": [
+              {
+                "name": "fresh-project-smoke",
+                "source": "main.js",
+                "line": 35,
+                "column": 1,
+                "autoMarked": false,
+                "sourceIdentity": "main.js:precompile:0",
+                "sourceRevision": "b3a837a8e0f335d78616e57a3159b22f6d3a7cdb16e6157cd6ab39c6c030b9e5",
+                "covered": true,
+                "coverageReason": "exact-owner-dependency-revision"
+              },
+              {
+                "name": "auto-materials-2c7edbc49d0e-0",
+                "source": "materials.js",
+                "line": 4,
+                "column": 38,
+                "autoMarked": true,
+                "sourceIdentity": "materials.js:precompile:0",
+                "sourceRevision": "4476d7d2beca8364cdf4a001d1bf3b8910703e40e916ceb6927b370878051053",
+                "covered": true,
+                "coverageReason": "exact-owner-dependency-revision"
+              }
+            ],
+            "issues": []
+          },
+          "issues": []
+        },
+        "checks": [
+          {
+            "id": "node-version",
+            "code": "node-version",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Node 24.18.0 satisfies >=20.19.",
+            "message": "Node 24.18.0 satisfies >=20.19.",
+            "evidence": null,
+            "remediation": "Use Node 20.19 or newer before installing or building.",
+            "nextAction": "Use Node 20.19 or newer before installing or building."
+          },
+          {
+            "id": "package-json",
+            "code": "package-json",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found package.json.",
+            "message": "Found package.json.",
+            "evidence": null,
+            "remediation": "Run the doctor from the Vite application root.",
+            "nextAction": "Run the doctor from the Vite application root."
+          },
+          {
+            "id": "package-manager",
+            "code": "package-manager",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Detected npm from package-lock.json.",
+            "message": "Detected npm from package-lock.json.",
+            "evidence": null,
+            "remediation": "Install dependencies with the application package manager so one lockfile owns the project.",
+            "nextAction": "Install dependencies with the application package manager so one lockfile owns the project."
+          },
+          {
+            "id": "plugin-package",
+            "code": "plugin-package",
+            "status": "pass",
+            "severity": "info",
+            "summary": "vite-plugin-tsl-precompile 0.1.0-alpha.0 is installed as a development dependency.",
+            "message": "vite-plugin-tsl-precompile 0.1.0-alpha.0 is installed as a development dependency.",
+            "evidence": null,
+            "remediation": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1",
+            "nextAction": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1"
+          },
+          {
+            "id": "runtime-package",
+            "code": "runtime-package",
+            "status": "pass",
+            "severity": "info",
+            "summary": "@tsl-precompile/runtime 0.1.0-alpha.0 is installed as a runtime dependency.",
+            "message": "@tsl-precompile/runtime 0.1.0-alpha.0 is installed as a runtime dependency.",
+            "evidence": null,
+            "remediation": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1",
+            "nextAction": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1"
+          },
+          {
+            "id": "package-version-pair",
+            "code": "package-version-pair",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Plugin and runtime versions match at 0.1.0-alpha.0.",
+            "message": "Plugin and runtime versions match at 0.1.0-alpha.0.",
+            "evidence": null,
+            "remediation": "Install matching releases of vite-plugin-tsl-precompile and @tsl-precompile/runtime.",
+            "nextAction": "Install matching releases of vite-plugin-tsl-precompile and @tsl-precompile/runtime."
+          },
+          {
+            "id": "three-version",
+            "code": "three-version",
+            "status": "pass",
+            "severity": "info",
+            "summary": "three is declared and resolved exactly at 0.185.1.",
+            "message": "three is declared and resolved exactly at 0.185.1.",
+            "evidence": null,
+            "remediation": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1",
+            "nextAction": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1"
+          },
+          {
+            "id": "vite-version",
+            "code": "vite-version",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Vite 8.0.16 satisfies >=6.4.3 <9.",
+            "message": "Vite 8.0.16 satisfies >=6.4.3 <9.",
+            "evidence": null,
+            "remediation": "Install a Vite release in the supported >=6.4.3 <9 range.",
+            "nextAction": "Install a Vite release in the supported >=6.4.3 <9 range."
+          },
+          {
+            "id": "three-types-version",
+            "code": "three-types-version",
+            "status": "pass",
+            "severity": "info",
+            "summary": "@types/three is declared and resolved exactly at 0.185.1.",
+            "message": "@types/three is declared and resolved exactly at 0.185.1.",
+            "evidence": null,
+            "remediation": "npm install --save-dev --save-exact @types/three@0.185.1",
+            "nextAction": "npm install --save-dev --save-exact @types/three@0.185.1"
+          },
+          {
+            "id": "vite-plugin",
+            "code": "vite-plugin",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found tslPrecompile() in vite.config.js; detected mode: compatibility.",
+            "message": "Found tslPrecompile() in vite.config.js; detected mode: compatibility.",
+            "evidence": {
+              "configs": [
+                "vite.config.js"
+              ],
+              "activeConfigs": [
+                "vite.config.js"
+              ],
+              "mode": "compatibility"
+            },
+            "remediation": "Import vite-plugin-tsl-precompile and add tslPrecompile() to the existing Vite plugins array in compatibility mode.",
+            "nextAction": "Import vite-plugin-tsl-precompile and add tslPrecompile() to the existing Vite plugins array in compatibility mode."
+          },
+          {
+            "id": "source-files",
+            "code": "source-files",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Inspecting 2 application source files.",
+            "message": "Inspecting 2 application source files.",
+            "evidence": {
+              "sourcePaths": [
+                "main.js",
+                "materials.js"
+              ],
+              "sourceFiles": [
+                "main.js",
+                "materials.js"
+              ]
+            },
+            "remediation": "Repeat --source for the application JavaScript/TypeScript roots.",
+            "nextAction": "Repeat --source for the application JavaScript/TypeScript roots."
+          },
+          {
+            "id": "webgpu-renderer",
+            "code": "webgpu-renderer",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found 1 WebGPURenderer construction site.",
+            "message": "Found 1 WebGPURenderer construction site.",
+            "evidence": null,
+            "remediation": "Confirm this is a Vite + three.js WebGPU app and include the source file that constructs its live renderer.",
+            "nextAction": "Confirm this is a Vite + three.js WebGPU app and include the source file that constructs its live renderer."
+          },
+          {
+            "id": "runtime-setup",
+            "code": "runtime-setup",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found 1 setupPrecompile() call and an awaited ready gate.",
+            "message": "Found 1 setupPrecompile() call and an awaited ready gate.",
+            "evidence": null,
+            "remediation": "Register the same live renderer once with setupPrecompile({ renderer }); await renderer.init() and setup.ready.",
+            "nextAction": "Register the same live renderer once with setupPrecompile({ renderer }); await renderer.init() and setup.ready."
+          },
+          {
+            "id": "material-markers",
+            "code": "material-markers",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Discovered 2 expected material markers (1 automatic, 1 authored).",
+            "message": "Discovered 2 expected material markers (1 automatic, 1 authored).",
+            "evidence": {
+              "total": 2,
+              "automatic": 1,
+              "authored": 1,
+              "issues": []
+            },
+            "remediation": "Keep direct new *NodeMaterial() constructors discoverable, or add stable literal .precompile(name) markers after graph assignment.",
+            "nextAction": "Keep direct new *NodeMaterial() constructors discoverable, or add stable literal .precompile(name) markers after graph assignment."
+          },
+          {
+            "id": "artifact-verification",
+            "code": "artifact-verification",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Verified 3 artifact files and 2/2 expected markers.",
+            "message": "Verified 3 artifact files and 2/2 expected markers.",
+            "evidence": {
+              "checkedArtifactFiles": 3,
+              "markerCoverage": {
+                "enabled": true,
+                "sourceRoot": "/private/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-ExjVKv",
+                "checkedSourceFiles": 2,
+                "total": 2,
+                "covered": 2,
+                "missing": [],
+                "markers": [
+                  {
+                    "name": "fresh-project-smoke",
+                    "source": "main.js",
+                    "line": 35,
+                    "column": 1,
+                    "autoMarked": false,
+                    "sourceIdentity": "main.js:precompile:0",
+                    "sourceRevision": "b3a837a8e0f335d78616e57a3159b22f6d3a7cdb16e6157cd6ab39c6c030b9e5",
+                    "covered": true,
+                    "coverageReason": "exact-owner-dependency-revision"
+                  },
+                  {
+                    "name": "auto-materials-2c7edbc49d0e-0",
+                    "source": "materials.js",
+                    "line": 4,
+                    "column": 38,
+                    "autoMarked": true,
+                    "sourceIdentity": "materials.js:precompile:0",
+                    "sourceRevision": "4476d7d2beca8364cdf4a001d1bf3b8910703e40e916ceb6927b370878051053",
+                    "covered": true,
+                    "coverageReason": "exact-owner-dependency-revision"
+                  }
+                ],
+                "issues": []
+              },
+              "issues": []
+            },
+            "remediation": "Start the dev server, exercise every real WebGPU route/state, then run: npx --no-install tsl-precompile-verify --json --source main.js --source materials.js --source-root . artifacts",
+            "nextAction": "Start the dev server, exercise every real WebGPU route/state, then run: npx --no-install tsl-precompile-verify --json --source main.js --source materials.js --source-root . artifacts"
+          },
+          {
+            "id": "agent-skill",
+            "code": "agent-skill",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found the integration skill at .codex/skills/integrate-tsl-precompile/SKILL.md.",
+            "message": "Found the integration skill at .codex/skills/integrate-tsl-precompile/SKILL.md.",
+            "evidence": {
+              "locations": [
+                ".codex/skills/integrate-tsl-precompile/SKILL.md"
+              ]
+            },
+            "remediation": "npx --no-install tsl-precompile-install-skill --json",
+            "nextAction": "npx --no-install tsl-precompile-install-skill --json"
+          },
+          {
+            "id": "project-scripts",
+            "code": "project-scripts",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Found project dev and build scripts.",
+            "message": "Found project dev and build scripts.",
+            "evidence": null,
+            "remediation": "Expose the application dev server and production build as package scripts so agents can run deterministic gates.",
+            "nextAction": "Expose the application dev server and production build as package scripts so agents can run deterministic gates."
+          },
+          {
+            "id": "artifact-tracking",
+            "code": "artifact-tracking",
+            "status": "pass",
+            "severity": "info",
+            "summary": "artifacts is not excluded by a simple .gitignore rule.",
+            "message": "artifacts is not excluded by a simple .gitignore rule.",
+            "evidence": null,
+            "remediation": "Ensure artifacts and manifest.json can be committed; generated capture artifacts must not be fabricated or hand-edited.",
+            "nextAction": "Ensure artifacts and manifest.json can be committed; generated capture artifacts must not be fabricated or hand-edited."
+          }
+        ],
+        "commands": {
+          "install": "npm install --save-dev vite-plugin-tsl-precompile@0.1.0-alpha.0 && npm install --save-exact @tsl-precompile/runtime@0.1.0-alpha.0 three@0.185.1",
+          "installTypes": "npm install --save-dev --save-exact @types/three@0.185.1",
+          "installSkill": "npx --no-install tsl-precompile-install-skill --json",
+          "doctor": "npx --no-install tsl-precompile-doctor --json --source main.js --source materials.js",
+          "recapture": "npx --no-install tsl-precompile-recapture --json --url http://localhost:5173 --paths /",
+          "verify": "npx --no-install tsl-precompile-verify --json --source main.js --source materials.js --source-root . artifacts",
+          "dev": "npm run dev",
+          "build": "npm run build",
+          "argv": {
+            "install": [
+              [
+                "npm",
+                "install",
+                "--save-dev",
+                "vite-plugin-tsl-precompile@0.1.0-alpha.0"
+              ],
+              [
+                "npm",
+                "install",
+                "--save-exact",
+                "@tsl-precompile/runtime@0.1.0-alpha.0",
+                "three@0.185.1"
+              ]
+            ],
+            "installTypes": [
+              "npm",
+              "install",
+              "--save-dev",
+              "--save-exact",
+              "@types/three@0.185.1"
+            ],
+            "installSkill": [
+              "npx",
+              "--no-install",
+              "tsl-precompile-install-skill",
+              "--json"
+            ],
+            "doctor": [
+              "npx",
+              "--no-install",
+              "tsl-precompile-doctor",
+              "--json",
+              "--source",
+              "main.js",
+              "--source",
+              "materials.js"
+            ],
+            "recapture": [
+              "npx",
+              "--no-install",
+              "tsl-precompile-recapture",
+              "--json",
+              "--url",
+              "http://localhost:5173",
+              "--paths",
+              "/"
+            ],
+            "verify": [
+              "npx",
+              "--no-install",
+              "tsl-precompile-verify",
+              "--json",
+              "--source",
+              "main.js",
+              "--source",
+              "materials.js",
+              "--source-root",
+              ".",
+              "artifacts"
+            ],
+            "dev": [
+              "npm",
+              "run",
+              "dev"
+            ],
+            "build": [
+              "npm",
+              "run",
+              "build"
+            ]
+          }
+        },
+        "nextActions": [],
+        "proof": {
+          "routeCoverage": "unverified",
+          "topologyCoverage": "unverified",
+          "productionBuild": "unverified",
+          "productionWebGPUPreview": "unverified",
+          "slimReadiness": "not-applicable"
+        },
+        "remainingGates": [
+          "route-coverage",
+          "topology-coverage",
+          "production-build",
+          "production-webgpu-preview"
+        ],
+        "suggestedAgentPrompt": "Use $integrate-tsl-precompile. Start with tsl-precompile-doctor --json, then integrate TSL precompilation into this Vite three.js app in compatibility mode, capture every real route and advanced render topology, run source-aware verification, and prove the production build and WebGPU preview. Do not enable slim mode unless it is separately proven."
       }
     },
     "build": {
@@ -31,11 +677,97 @@
     },
     "previewSmoke": {
       "ok": true,
-      "nonZeroRatio": 0.9696,
+      "pixelEvidence": {
+        "width": 1280,
+        "height": 800,
+        "pixelCount": 1024000,
+        "sampleCount": 114009,
+        "sampleStep": 3,
+        "backgroundRgb": [
+          16,
+          20,
+          24
+        ],
+        "opaqueFraction": 1,
+        "contentFraction": 0.2159566350024998,
+        "rgbDeviation": 36.788810626770236,
+        "luminanceMean": 33.10537229512526,
+        "luminanceDeviation": 32.543698924533054,
+        "luminanceRange": 249.47579999999996,
+        "framesCompared": true,
+        "changedFraction": 0.11588558797989633,
+        "meanFrameDelta": 3.403933022831514
+      },
+      "browserFailures": [],
       "pageErrors": [],
       "consoleErrors": [],
-      "failures": []
+      "failures": [],
+      "cleanDocumentReloaded": false
+    },
+    "slimBuild": {
+      "ok": true
+    },
+    "slimPreviewSmoke": {
+      "ok": true,
+      "pixelEvidence": {
+        "width": 1280,
+        "height": 800,
+        "pixelCount": 1024000,
+        "sampleCount": 114009,
+        "sampleStep": 3,
+        "backgroundRgb": [
+          16,
+          20,
+          24
+        ],
+        "opaqueFraction": 1,
+        "contentFraction": 0.215825066442123,
+        "rgbDeviation": 36.74436245999728,
+        "luminanceMean": 33.068876969317586,
+        "luminanceDeviation": 32.50064830485524,
+        "luminanceRange": 249.47579999999996,
+        "framesCompared": true,
+        "changedFraction": 0.11168416528519678,
+        "meanFrameDelta": 3.0942264791961405
+      },
+      "browserFailures": [],
+      "pageErrors": [],
+      "consoleErrors": [],
+      "failures": [],
+      "cleanDocumentReloaded": false
+    },
+    "slimSourceBuild": {
+      "ok": true
+    },
+    "slimSourcePreviewSmoke": {
+      "ok": true,
+      "pixelEvidence": {
+        "width": 1280,
+        "height": 800,
+        "pixelCount": 1024000,
+        "sampleCount": 114009,
+        "sampleStep": 3,
+        "backgroundRgb": [
+          16,
+          20,
+          24
+        ],
+        "opaqueFraction": 1,
+        "contentFraction": 0.21571981159382153,
+        "rgbDeviation": 36.919450752465536,
+        "luminanceMean": 33.21837794029351,
+        "luminanceDeviation": 32.67055798262882,
+        "luminanceRange": 249.47579999999996,
+        "framesCompared": true,
+        "changedFraction": 0.11451727495197747,
+        "meanFrameDelta": 3.3989129513167113
+      },
+      "browserFailures": [],
+      "pageErrors": [],
+      "consoleErrors": [],
+      "failures": [],
+      "cleanDocumentReloaded": false
     }
   },
-  "tmpRoot": "/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-U8qPDr"
+  "tmpRoot": "/var/folders/5y/895dhjqd4x38z7jmf4hfz0n00000gn/T/tslp-fresh-ExjVKv"
 }

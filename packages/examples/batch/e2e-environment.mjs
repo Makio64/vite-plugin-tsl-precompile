@@ -1,5 +1,9 @@
 import { isDeepStrictEqual } from 'node:util';
 
+import { LINUX_SWIFTSHADER_BROWSER_ARGS } from '../../plugin/src/cli/recapture-support.js';
+
+export { LINUX_SWIFTSHADER_BROWSER_ARGS };
+
 export const E2E_ENVIRONMENT_SCHEMA = 'tslp-e2e-execution-environment@1';
 
 const GPU_ADAPTER_INFO_KEYS = Object.freeze( [
@@ -59,6 +63,13 @@ function nonEmptyString( value ) {
 function availableString( value ) {
 
 	return nonEmptyString( value ) && value !== '<unavailable>';
+
+}
+
+export function evidenceBrowserLaunchArgs( args = [], platform = process.platform ) {
+
+	if ( platform !== 'linux' ) return [ ...args ];
+	return [ ...new Set( [ ...args, ...LINUX_SWIFTSHADER_BROWSER_ARGS ] ) ];
 
 }
 
@@ -128,16 +139,30 @@ function normalizeChromiumGpuInfo( gpu ) {
 export async function launchEvidenceBrowser( chromium, {
 	args = [],
 	headless = true,
+	platform = process.platform,
 } = {} ) {
 
+	const launchArgs = evidenceBrowserLaunchArgs( args, platform );
+	// Linux evidence is pinned to Playwright's installed Chromium revision. A
+	// runner's system Chrome can accept the SwiftShader flags yet report WebGPU
+	// as unavailable, making the environment non-reproducible. Keep system
+	// Chrome first on other platforms, where the bundled browser can expose a
+	// native adapter but still present a blank surface.
+	const primary = platform === 'linux'
+		? { launchChannel: 'chromium', evidenceChannel: 'playwright-chromium' }
+		: { launchChannel: 'chrome', evidenceChannel: 'chrome' };
+	const fallback = platform === 'linux'
+		? { launchChannel: 'chrome', evidenceChannel: 'chrome' }
+		: { launchChannel: 'chromium', evidenceChannel: 'playwright-chromium' };
+
 	let browser = await chromium.launch( {
-		channel: 'chrome',
+		channel: primary.launchChannel,
 		headless,
-		args,
+		args: launchArgs,
 	} ).catch( () => null );
-	if ( browser ) return { browser, channel: 'chrome' };
-	browser = await chromium.launch( { headless, args } );
-	return { browser, channel: 'playwright-chromium' };
+	if ( browser ) return { browser, channel: primary.evidenceChannel };
+	browser = await chromium.launch( { channel: fallback.launchChannel, headless, args: launchArgs } );
+	return { browser, channel: fallback.evidenceChannel };
 
 }
 
@@ -319,6 +344,36 @@ export function assertEvidenceEnvironment( environment, label = 'Evidence enviro
 	) {
 
 		throw new Error( `${ label } has incomplete GPU/backend provenance.` );
+
+	}
+	if ( environment.node.platform === 'linux' ) {
+
+		const statuses = environment.graphics.featureStatus;
+		const unusable = [ 'webgpu', 'webgl' ].filter( ( feature ) => {
+
+			const status = statuses[ feature ];
+			if ( ! availableString( status ) || /disabled/i.test( status ) ) return true;
+			// Chromium reports `unavailable_software` for WebGPU when software
+			// fallback is blocklisted in the GPU feature table, even while
+			// --enable-unsafe-webgpu exposes a real adapter through navigator.gpu.
+			// The browser probe above acquired that adapter directly, so its live
+			// result is authoritative; every stock/evidence case still has to prove
+			// a device and rendered output before publication.
+			if ( feature === 'webgpu' && /^unavailable_software$/i.test( status ) ) return false;
+			return /unavailable/i.test( status );
+
+		} );
+		if ( unusable.length > 0 ) {
+
+			const summary = unusable.map( ( feature ) => (
+				`${ feature }=${ statuses[ feature ] || '<missing>' }`
+			) ).join( ', ' );
+			throw new Error(
+				`${ label } has unusable Linux browser graphics feature status (${ summary }). ` +
+				'Launch Chromium with the deterministic SwiftShader WebGPU + WebGL configuration.',
+			);
+
+		}
 
 	}
 	return environment;

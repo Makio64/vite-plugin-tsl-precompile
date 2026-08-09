@@ -194,9 +194,10 @@ silently accepted for a contract that records a padded vec4 storage layout.
 The supported production mode for v0.1+ is **slim + opt-in full-renderer
 fallback**. For new Vite apps, the preferred primary renderer is the guarded
 `slim: 'source'` profile; its checked Three r185 minimal and advanced
-regression baselines are 176,256 and 185,490 bytes gzip-9, with enforced caps
-of 184,000 and 194,000 bytes. `pnpm analyze:slim` reports the current exact
-values. Features that still need live TSL compilation boot a full
+regression baselines and caps are single-sourced in
+[`build-tools/slim-budget.json`](build-tools/slim-budget.json).
+`pnpm analyze:slim` reports the current exact values. Features that still need
+live TSL compilation boot a full
 `WebGPURenderer` on the **same `GPUDevice`** and share GPU textures/buffers back
 into slim.
 
@@ -273,8 +274,9 @@ constructor to the fallback throws a configuration error.
 
 Choose `slim: 'source'` for new Vite apps when the application bundler should
 discard unused Three and runtime exports. Choose `slim: true` for the checked,
-single-file prebuilt renderer (261,600-byte gzip-9 r185 regression baseline;
-268,000-byte cap). The guarded
+single-file prebuilt renderer (the gzip-9 r185 regression baseline is
+single-sourced in [`build-tools/slim-budget.json`](build-tools/slim-budget.json)).
+The guarded
 source entry cannot be imported without the plugin, verifies the plugin/runtime
 slim-policy revision, and rejects final
 chunks that retain compiler, stock replay-owned, retained Three Node/TSL, or
