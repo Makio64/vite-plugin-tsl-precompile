@@ -41,9 +41,9 @@ jobs:
             echo "TSLP_SITE_PUBLIC_OUT=$RUNNER_TEMP/deploy-site-public"
             echo "TSLP_SITE_BROWSER_OUT=$RUNNER_TEMP/deploy-site-browser"
           } >> "$GITHUB_ENV"
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the matching three.js examples corpus
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: mrdoob/three.js
           ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
