@@ -70,10 +70,10 @@
 		{
 			"file": "packages/contract/src/kinds.js",
 			"tracker": "P0.3",
-			"reason": "Single kind registry. Growth here is usually correct, but it should be visible.",
-			"baselineLines": 1431,
+			"reason": "Single kind registry. Ratcheted during the workspace merge after selector-collision diagnostics began reporting the divergent variant keys and fields.",
+			"baselineLines": 1449,
 			"linesHeadroom": 0,
-			"maxLines": 1431,
+			"maxLines": 1449,
 			"baselineBranches": 134,
 			"branchesHeadroom": 0,
 			"maxBranches": 134

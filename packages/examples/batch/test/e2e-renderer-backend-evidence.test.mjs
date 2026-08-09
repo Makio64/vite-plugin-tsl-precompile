@@ -89,7 +89,7 @@ test( 'the runner collects settled capture and replay markers and gates dual-bac
 	// brightness round-trip that follows it. Every other mode must still shoot.
 	assert.match( visitSource, /const gradesPixels = mode !== 'capture';/ );
 	assert.match( visitSource, /const shot = gradesPixels \? await dumpCanvas\( page, name \) : null;/ );
-	assert.match( visitSource, /return \{ bright: finalBright,[^\n]+canvasBackends,/ );
+	assert.match( visitSource, /visitResult = \{ bright: finalBright,[^\n]+canvasBackends,/ );
 
 	const runStart = runnerSource.indexOf( 'async function runOne(' );
 	const runEnd = runnerSource.indexOf( 'function summarizeArtifacts(', runStart );
