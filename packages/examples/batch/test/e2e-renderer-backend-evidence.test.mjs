@@ -83,7 +83,12 @@ test( 'the runner collects settled capture and replay markers and gates dual-bac
 	const visitEnd = runnerSource.indexOf( 'function pixelGateEnabledForExample(', visitStart );
 	const visitSource = runnerSource.slice( visitStart, visitEnd );
 	assert.ok( visitSource.indexOf( 'canvasBackends = uniqueRendererBackendValues(' ) > visitSource.indexOf( "trace( 'freeze-complete' )" ) );
-	assert.ok( visitSource.indexOf( 'const shot = await dumpCanvas(' ) > visitSource.indexOf( 'canvasBackends = uniqueRendererBackendValues(' ) );
+	assert.ok( visitSource.indexOf( 'await dumpCanvas(' ) > visitSource.indexOf( 'canvasBackends = uniqueRendererBackendValues(' ) );
+	// The capture pass grades no pixels — PSNR compares stock against replay and
+	// nothing reads `artifactCapture.bright` — so it skips the screenshot and the
+	// brightness round-trip that follows it. Every other mode must still shoot.
+	assert.match( visitSource, /const gradesPixels = mode !== 'capture';/ );
+	assert.match( visitSource, /const shot = gradesPixels \? await dumpCanvas\( page, name \) : null;/ );
 	assert.match( visitSource, /return \{ bright: finalBright,[^\n]+canvasBackends,/ );
 
 	const runStart = runnerSource.indexOf( 'async function runOne(' );

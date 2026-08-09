@@ -15,6 +15,90 @@ with no way for a reader to tell a deliberate historical figure from a forgotten
 
 ---
 
+## 2026-08-02 e2e grading oracle: shader equality cannot replace the pixel gate
+
+A recurring proposal is to grade replay by comparing the WGSL compiled on the
+page against the WGSL emitted by precompile, and drop screenshots entirely. It
+is worth writing down why this is rejected as the *oracle*, and what the useful
+version of it is, because the reasoning is not obvious from the speed argument
+that usually motivates it.
+
+**The speed premise does not hold.** Measured over 2201 recorded example-runs
+(`passTimings` in `packages/examples/batch/results/*.json`), a three-visit
+example costs ~4.5 s median / ~8.2 s mean, and the entire pixel path is a small
+minority of it: all screenshots plus both brightness passes are 4.5% of the mean
+example, and the Node-side PSNR compare is 0.16% (~13 ms, of which the pixel loop
+proper is 3.65 ms). Time is concentrated instead in freeze wait (29.1% of the
+mean, though a median of 2 ms — the mean is carried by the 4.5% of replays that
+hit `freezeTimedOut` at 10–45 s), initial frame (26.4%), fixed settles (24.7% of
+a median example), context+goto (13.2%), and capture flush (10.9%). Removing the
+pixel gate does not touch any of those.
+
+The one substantial saving is indirect: the stock visit exists only to produce
+the PSNR reference, so an example graded without pixels needs two visits instead
+of three — 19.4% of the mean example, ~31% of the median. That is real, but it
+is a consequence of abandoning a pixel reference, not of comparing shaders, and
+the ceiling for the whole idea lands near 24%.
+
+A related correction, since it has been assumed the other way: saved shots are
+~102 KB median, while raw RGBA at 640×480 is 1200 KB. Replacing the compositor
+screenshot with in-page readback moves ~9× *more* data across CDP, and
+`run-e2e.mjs` already records that WebGPU canvas pixels are often unreadable via
+2D-context `drawImage` while the animation loop runs — which is why the
+Playwright screenshot path exists at all.
+
+**The comparison is close to circular.** In replay the slim runtime has no TSL
+compiler: `_vendor-PrecompiledMaterial.js` feeds `artifact.vertexShader` and
+`artifact.fragmentShader` straight into pipeline creation. The WGSL observable on
+the page during replay *is* the artifact's WGSL, so comparing the two mostly
+asserts that the loader did not corrupt a string. The genuinely load-bearing
+question — was the *correct* artifact selected for this shape — is already gated:
+`aux-loader.js` fails with `runtime hash differs from any captured hash for this
+shape` when runtime and captured shape hashes diverge.
+
+**It is blind to the failure class this project actually hits.** Every one of
+these was a real, fixed replay regression that produced byte-identical WGSL and
+wrong pixels: a pass-nodes pipeline clobbering the user's `setViewport`
+(`lines_fat_wireframe`, 10.34 → inf dB); driven-uniform dtype fallback sending
+wrong uniform *values* (`instance_uniform`); storage-buffer wiring
+(`compute_birds`, 5.44 → 13.44 dB); a synthetic capture camera inheriting a
+restrictive `layers` mask and drawing nothing (rain/fluid); VSM moments sharing
+and stale bind groups (13.25 → inf dB); and a background that was literally
+`setClearColor`. Shader equality is necessary, nowhere near sufficient — it would
+have passed all of them silently. Artifacts do carry `bindings`, `uniformPlan`,
+and `renderState` alongside the shaders, so a structural digest is strictly
+stronger than shader text alone, but it still cannot observe draw order, viewport,
+layer masks, sampler/compare state, or uploaded uniform contents.
+
+**The scoped version that is worth building.** Keep pixels as the oracle where
+regressions are expensive to miss — tier1 and the nightly campaign — and use a
+structural digest (selected variant WGSL + hydrated binding layout + per-frame
+uniform bytes, capture vs replay) to drop the stock visit for tier2/tier3, the
+115 examples that are not the PR gate. That harvests the ~31% median saving where
+the risk is acceptable and leaves the oracle intact where it matters. The digest
+should be proven against the pixel gate across a full nightly campaign before it
+is permitted to *replace* any pixel grading.
+
+Harness work landed alongside this analysis: the capture pass no longer takes a
+screenshot or derives brightness from one (both were dead — PSNR grades stock
+against replay and nothing reads `artifactCapture.bright`); `settleAssets()`
+replaces the unconditional asset-settle sleep with a bounded readiness wait on
+the harness pending counters, keeping `ASSET_SETTLE_MS` as a ceiling and
+requiring the counters to stay quiet for `--asset-settle-stable-ms` so a
+sequential load chain's inter-await dip cannot end the settle early; and
+`--shard=INDEX/TOTAL` splits a tier across CI runners by stride, with the tier-1
+gate now a 4-way matrix behind an aggregating job that preserves the required
+check name. Sharding narrows which examples run in a given process, never which
+must exist — each shard still fails closed on a missing or policy-skipped tier
+example, and the tier is green only once every shard is.
+
+One caveat for anyone tuning capture timing here: the suite is measurably flaky
+on an unmodified tree. `webgpu_lights_physical` captured 4, 6, and 7 user
+artifacts across three consecutive pristine runs, `webgpu_clearcoat` graded
+`inf` twice and `51` once, and asset fetches abort intermittently with
+`net::ERR_ABORTED`, flipping pass/fail between identical runs. A single A/B pair
+is not enough to attribute an artifact-count or PSNR change to a code change.
+
 ## 2026-08-02 compiler-free WebGL backend replay
 
 `WebGPURenderer({ forceWebGL: true })` and its automatic WebGPU-unavailable

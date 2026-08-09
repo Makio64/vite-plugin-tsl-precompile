@@ -102,10 +102,26 @@ jobs:
       - name: Test evidence, transform, accessibility, and content contracts
         run: pnpm --filter @tsl-precompile/site test
 
-  tier1-visual:
-    name: Tier-1 visual gate
+  # The gate spends ~91% of its wall clock inside the visual run (574s of a 628s
+  # job on the last measured CI run) and only ~52s on setup, so splitting it
+  # across runners is nearly linear. Shards stride the tier rather than taking
+  # contiguous blocks — runtime is concentrated in a handful of slow examples, so
+  # contiguous chunks would leave one runner doing most of the work.
+  #
+  # In-process parallelism stays off-limits (see MAX_RUNS_PER_BROWSER: concurrent
+  # WebGPU contexts exhaust unified memory), but separate runners share no GPU.
+  #
+  # `--shard` narrows which examples run *here*, never which must exist: each
+  # shard still fails closed if a tier example is missing from the corpus, and
+  # the tier is only green once every shard is (enforced by tier1-visual below).
+  tier1-visual-shard:
+    name: Tier-1 visual gate (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ 1, 2, 3, 4 ]
     steps:
       - name: Configure runner-temporary output paths
         run: echo "TSLP_E2E_OUT=$RUNNER_TEMP/tier1-e2e" >> "$GITHUB_ENV"
@@ -132,11 +148,11 @@ jobs:
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Run configured tier-1 visual subset
-        run: xvfb-run -a pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js"
+        run: xvfb-run -a pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js" --shard=${{ matrix.shard }}/4
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: tier1-visual-results
+          name: tier1-visual-results-shard${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/tier1-e2e/tier1-report.json
             ${{ runner.temp }}/tier1-e2e/coverage-summary.md
@@ -147,6 +163,27 @@ jobs:
             ${{ runner.temp }}/tier1-e2e/evidence/**/artifacts/*
             ${{ runner.temp }}/tier1-e2e/evidence/**/network/*.bin
           if-no-files-found: ignore
+
+  # Keeps "Tier-1 visual gate" as a single required status check while the work
+  # runs in parallel underneath. A matrix job's aggregated result is `success`
+  # only when every leg succeeded, so this restores the whole-tier contract that
+  # each individual shard can no longer assert on its own. `if: always()` is
+  # required or a failed shard would skip this job instead of failing it.
+  tier1-visual:
+    name: Tier-1 visual gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: tier1-visual-shard
+    if: always()
+    steps:
+      - name: Require every tier-1 shard to pass
+        run: |
+          result='${{ needs.tier1-visual-shard.result }}'
+          if [ "$result" != 'success' ]; then
+            echo "::error::Tier-1 shards resolved to '$result'. The tier is green only when all 4 shards pass."
+            exit 1
+          fi
+          echo 'All 4 tier-1 shards passed.'
 
   example-production:
     name: Example builds + preview smokes
