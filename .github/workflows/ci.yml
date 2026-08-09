@@ -34,6 +34,10 @@ jobs:
         run: pnpm test:types
       - name: Slim production budgets
         run: pnpm test:slim:budget
+      - name: Module concentration budgets
+        run: pnpm test:module:budget
+      - name: Declared diagnostic globals
+        run: pnpm test:diagnostic:globals
 
   minimum-node:
     name: Package checks (Node 24 LTS)

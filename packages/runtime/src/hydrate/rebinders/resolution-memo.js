@@ -15,7 +15,7 @@
  * frame objects carry no ids keep today's behavior.
  *
  * First wedge of the P1.9 per-render resolution caching work — see
- * ARCHITECTURE_EVOLUTION.md.
+ * ROADMAP.md.
  *
  * @module ResolutionMemo
  */

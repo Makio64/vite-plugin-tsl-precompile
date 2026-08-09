@@ -1,5 +1,5 @@
 /**
- * Extractor convergence guards for ARCHITECTURE_EVOLUTION §P2.10.
+ * Extractor convergence guards for ROADMAP.md §P2.10.
  *
  * Proves both that the Node harness is stable and that its structural output
  * converges with a genuine browser-captured first-party artifact. Shape

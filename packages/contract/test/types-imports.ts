@@ -28,6 +28,13 @@ import {
 	assertCubeRenderTargetTextureEvidence,
 } from '@tsl-precompile/contract/cube-render-target';
 import {
+	DIAGNOSTIC_GLOBAL_SCHEMA,
+	type DiagnosticGlobalEntry,
+	getDiagnosticGlobal,
+	isProductDiagnosticGlobal,
+	listDiagnosticGlobals,
+} from '@tsl-precompile/contract/diagnostic-globals';
+import {
 	DYNAMIC_BINDING_TARGET,
 	createLiveUniformCallsiteIdentity,
 	createStorageBufferSnapshotHash,
@@ -133,6 +140,9 @@ declare const rendererRenderTarget: object;
 const renderTargetTextureSelector: RendererRenderTargetTextureSelector =
 	createRendererRenderTargetTextureSelector( rendererRenderTarget );
 const projectedSelector: string = projectRenderObjectContextSelector( '{}', null );
+const runtimeDiagnosticGlobals: readonly DiagnosticGlobalEntry[] = listDiagnosticGlobals( { surface: 'runtime' } );
+const harnessDiagnosticEntry: DiagnosticGlobalEntry | null = getDiagnosticGlobal( '__tslpHarnessDiagnostics' );
+const harnessDiagnosticIsProduct: boolean = isProductDiagnosticGlobal( '__tslpHarnessDiagnostics' );
 declare const cubeArtifact: object;
 const textureEvidence: Set<string> = assertCubeRenderTargetTextureEvidence( cubeArtifact );
 const internalPassDescriptor = {
@@ -171,6 +181,7 @@ void [
 	AUXILIARY_MATERIAL_SHAPES,
 	COMPUTE_BINDINGS_VERSION,
 	CUBE_RENDER_TARGET_AUX_CONFIG_SCHEMA,
+	DIAGNOSTIC_GLOBAL_SCHEMA,
 	DYNAMIC_BINDING_TARGET.SAMPLED_TEXTURE,
 	GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR,
 	KIND_STATUS.CODEGEN,
@@ -200,6 +211,9 @@ void [
 	describeRenderContext(),
 	digest,
 	generated,
+	harnessDiagnosticEntry,
+	harnessDiagnosticIsProduct,
+	runtimeDiagnosticGlobals,
 	kindInfo( 'frame.time' ),
 	materializeArtifactVariantSelectorAdapters( {} ),
 	registeredMaterial,
