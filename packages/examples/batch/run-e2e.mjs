@@ -98,7 +98,7 @@ import {
 } from './e2e-artifact-output.mjs';
 import { shouldSkipE2EExample } from './example-skip-policy.mjs';
 import { pixelGateOf, pixelGatePassed } from './e2e-pixel-gate.mjs';
-import { validateE2ESelection } from './e2e-selection.mjs';
+import { parseShardSpec, selectShard, validateE2ESelection } from './e2e-selection.mjs';
 import { discoverLocalExampleCases as discoverSharedLocalExampleCases } from './local-example-discovery.mjs';
 import { describeLocalExampleDiscovery } from './e2e-local-source-contract.mjs';
 import { isTslpWarningMessage } from './e2e-warning-policy.mjs';
@@ -235,6 +235,21 @@ const HAS_EXPLICIT_LIMIT = args.some( ( arg ) => arg.startsWith( '--limit=' ) );
 const HAS_EXPLICIT_OFFSET = args.some( ( arg ) => arg.startsWith( '--offset=' ) );
 const limit = parseIntAtLeast( getArg( '--limit=', '9999' ), 9999, 0 );
 const offset = parseIntAtLeast( getArg( '--offset=', '0' ), 0, 0 );
+// `--shard=INDEX/TOTAL` splits the selection across parallel CI runners. Local
+// parallelism is deliberately avoided (see MAX_RUNS_PER_BROWSER — concurrent
+// WebGPU contexts freeze Apple Silicon on unified memory), but separate runners
+// do not share a GPU, so sharding is the one safe axis of parallelism here.
+let shard = null;
+try {
+
+	shard = parseShardSpec( getArg( '--shard=', '' ) );
+
+} catch ( error ) {
+
+	console.error( `[batch-e2e] ${ error && error.message || error }` );
+	process.exit( 2 );
+
+}
 let port = parseIntAtLeast( getArg( '--port=', '8729' ), 8729, 1 );
 const portRetries = parseIntAtLeast( getArg( '--port-retries=', '100' ), 100, 0 );
 const captureWaitMs = parseIntAtLeast( getArg( '--capture-wait-ms=', '12000' ), 12000, 0 );
@@ -390,7 +405,10 @@ const allExamples = discoveredExamples
 	.filter( ( f ) => ! tierExampleSet || tierExampleSet.has( f ) )
 	.filter( ( f ) => ! filter || f.includes( filter ) || examplePathFor( f ).includes( filter ) )
 	.slice( offset, offset + limit );
-const candidates = localExamplesRoot ? allExamples : allExamples.filter( ( f ) => ! shouldSkip( f ) );
+// Shard after the skip filter so each runner gets a comparable number of
+// examples that actually execute, rather than a slice padded with skips.
+const selectableCandidates = localExamplesRoot ? allExamples : allExamples.filter( ( f ) => ! shouldSkip( f ) );
+const candidates = selectShard( selectableCandidates, shard );
 
 try {
 
@@ -407,6 +425,7 @@ try {
 		pixelGateEnabled,
 		replayOnly,
 		reuseReferenceShot,
+		shard,
 		shouldSkip,
 	} );
 
@@ -3975,6 +3994,64 @@ async function maybeClickStart( page ) {
 
 }
 
+// How long the pending counters must read zero *continuously* before the asset
+// settle is allowed to end early. Aux capture and the loaders run as sequential
+// await chains, so their counters dip to 0 between steps; the freeze gate below
+// bridges the same hazard with LOADER_QUIESCENT_MS. Without a stability floor
+// this would return in the gap between two awaits and screenshot a half-built
+// scene, which is precisely the flake the fixed sleep was buying protection from.
+const ASSET_SETTLE_STABLE_MS = parseIntAtLeast( getArg( '--asset-settle-stable-ms=', '60' ), 60, 0 );
+
+// Bounded readiness wait: resolve as soon as capture/loader work has been quiet
+// for ASSET_SETTLE_STABLE_MS, otherwise spend exactly `budgetMs` — the same wall
+// time the unconditional sleep used to cost. Never waits longer than the budget.
+async function settleAssets( page, budgetMs ) {
+
+	if ( budgetMs <= 0 ) return;
+	const startedAt = Date.now();
+	try {
+
+		await page.waitForFunction(
+			( stableMs ) => {
+
+				const w = window;
+				// Trust the counters only once the harness module has installed
+				// them. Reading `undefined | 0` would otherwise report "quiet"
+				// before any capture work had been queued at all.
+				if ( typeof w.__tslpAuxCapturePending !== 'number' ) return false;
+				const busy = ( w.__tslpPrecompilePending | 0 ) !== 0
+					|| ( w.__tslpAuxCapturePending | 0 ) !== 0
+					|| ( w.__tslpCompilePending | 0 ) !== 0
+					|| ( w.__tslpLoaderPending | 0 ) !== 0;
+				// Real wall clock — the deterministic-time shim freezes Date.now.
+				const now = ( typeof w.__tslpRealNow === 'function' ) ? w.__tslpRealNow() : Date.now();
+				if ( busy ) {
+
+					w.__tslpAssetIdleSince = 0;
+					return false;
+
+				}
+				if ( ! w.__tslpAssetIdleSince ) {
+
+					w.__tslpAssetIdleSince = now;
+					return false;
+
+				}
+				return ( now - w.__tslpAssetIdleSince ) >= stableMs;
+
+			},
+			ASSET_SETTLE_STABLE_MS,
+			{ timeout: budgetMs, polling: 25 },
+		);
+		return;
+
+	} catch ( _ ) { /* never went quiet — honour the remaining fixed budget below */ }
+
+	const remaining = budgetMs - ( Date.now() - startedAt );
+	if ( remaining > 0 ) await new Promise( ( r ) => setTimeout( r, remaining ) );
+
+}
+
 async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION ) {
 
 	try {
@@ -4709,9 +4786,15 @@ async function visitExample( browser, name, mode, waitMs ) {
 		trace( 'initial-frame-complete' );
 
 		// Additional real-time settle so aux capture (Promise chains)
-		// and post-init scene mutations have time to complete.
+		// and post-init scene mutations have time to complete. The window has to
+		// exist, but it does not have to be spent blindly: the harness already
+		// maintains the pending counters that say whether that work is still in
+		// flight, so wait on those and return as soon as they are quiet.
+		// ASSET_SETTLE_MS stays the ceiling — if the counters never settle, or the
+		// harness module never installed them, we spend exactly the old budget.
+		// This can only shorten a visit, never lengthen one.
 		stepStartedAt = Date.now();
-		await new Promise( ( r ) => setTimeout( r, ASSET_SETTLE_MS ) );
+		await settleAssets( page, ASSET_SETTLE_MS );
 		mark( 'assetSettleMs', stepStartedAt );
 		trace( 'asset-settle-complete' );
 
@@ -4815,10 +4898,18 @@ async function visitExample( browser, name, mode, waitMs ) {
 		mark( 'canvasBackendEvidenceMs', stepStartedAt );
 		trace( `canvas-backends-collected (${ canvasBackends.join( ',' ) || 'none' })` );
 
+		// The capture pass exists only to harvest TSL artifacts into `bucket`:
+		// PSNR grades stock-vs-replay, and nothing reads `artifactCapture.bright`.
+		// Skipping the shot here also skips `dumpCanvases`' per-canvas DOM
+		// isolate/restore pass and its 16 ms compositor wait, plus the
+		// `brightFraction` round-trip below (which ships the PNG back into the
+		// page as base64 to decode it) — together ~1.7% of a median example.
+		const gradesPixels = mode !== 'capture';
+
 		stepStartedAt = Date.now();
-		const shot = await dumpCanvas( page, name );
+		const shot = gradesPixels ? await dumpCanvas( page, name ) : null;
 		mark( 'screenshotMs', stepStartedAt );
-		trace( 'screenshot-complete' );
+		trace( gradesPixels ? 'screenshot-complete' : 'screenshot-skipped (capture pass grades no pixels)' );
 		// Re-measure bright from the final screenshot PNG — WebGPU canvas pixels
 		// are often not readable via 2D-context drawImage during the animation loop
 		// (the compositing pipeline lags), so the waitForFrame poll may see 0 even
@@ -5574,6 +5665,7 @@ const casePolicies = Object.fromEntries( candidates.map( ( name ) => [ name, cas
 const configuration = {
 	tier: tier || null,
 	filter: filter || null,
+	shard: shard ? `${ shard.index }/${ shard.total }` : null,
 	offset,
 	limit,
 	replayOnly,
@@ -5587,6 +5679,7 @@ const configuration = {
 	settleFrames: SETTLE_FRAMES,
 	presentSettleMs: PRESENT_SETTLE_MS,
 	assetSettleMs: ASSET_SETTLE_MS,
+	assetSettleStableMs: ASSET_SETTLE_STABLE_MS,
 	brightPollMs: BRIGHT_POLL_MS,
 	officialThreeSourcesRequired,
 	environment: evidenceEnvironment,
