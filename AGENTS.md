@@ -5,7 +5,7 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 ## First Pass
 
 - Start with `ARCHITECTURE.md` for the pipeline model.
-- Use `ARCHITECTURE_EVOLUTION.md` for structural work and sequencing.
+- Use `ROADMAP.md` for structural work and sequencing.
 - Check `git status --short` before editing. The tree is often dirty with generated screenshots and reports; do not revert unrelated changes.
 
 ## Package Map

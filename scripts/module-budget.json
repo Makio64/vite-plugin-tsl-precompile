@@ -1,0 +1,144 @@
+{
+	"schema": "tslp-module-budget@1",
+	"baseline": {
+		"commit": "15a4444c",
+		"recordedOn": "2026-08-02",
+		"reason": "Architecture audit 2026-08-02 step 2: freeze the concentration files at their audited size so new binding kinds and features land in focused modules instead of re-inflating the orchestrators."
+	},
+	"policy": {
+		"branchKeywordPattern": "\\b(?:if|switch|case)\\b",
+		"ratchetSlackLines": 40,
+		"ratchetSlackBranches": 8,
+		"updateCommand": "node scripts/check-module-budgets.mjs --update"
+	},
+	"modules": [
+		{
+			"file": "packages/runtime/src/aux-marker.js",
+			"tracker": "P2.11",
+			"reason": "Aux artifact registration orchestrator; converging with aux-loader.",
+			"baselineLines": 2820,
+			"linesHeadroom": 0,
+			"maxLines": 2820,
+			"baselineBranches": 201,
+			"branchesHeadroom": 0,
+			"maxBranches": 201
+		},
+		{
+			"file": "packages/plugin/src/three-rewrite.js",
+			"tracker": "P0.5",
+			"reason": "Three fork seam; 16 declared rewrite targets across 14 families.",
+			"baselineLines": 2542,
+			"linesHeadroom": 0,
+			"maxLines": 2542,
+			"baselineBranches": 313,
+			"branchesHeadroom": 0,
+			"maxBranches": 313
+		},
+		{
+			"file": "packages/runtime/src/precompile-marker.js",
+			"tracker": "P2.14",
+			"reason": "Highest branch density in the runtime; staged split documented in ROADMAP.md P2.14.",
+			"baselineLines": 2432,
+			"linesHeadroom": 0,
+			"maxLines": 2432,
+			"baselineBranches": 255,
+			"branchesHeadroom": 0,
+			"maxBranches": 255
+		},
+		{
+			"file": "packages/runtime/src/hydrator.js",
+			"tracker": "P0.2",
+			"reason": "Binding orchestrator; regrew 656 to 1439 after its first split because nothing capped it.",
+			"baselineLines": 1439,
+			"linesHeadroom": 0,
+			"maxLines": 1439,
+			"baselineBranches": 118,
+			"branchesHeadroom": 0,
+			"maxBranches": 118
+		},
+		{
+			"file": "packages/plugin/src/dev-capture-server.js",
+			"tracker": "P2.13",
+			"reason": "Browser to local-server trust boundary. Ratcheted 2026-08-02 after \u00a7P2.13 moved the transport guard, byte ceiling, and JSON decode into dev-capture-request.js.",
+			"baselineLines": 1277,
+			"linesHeadroom": 0,
+			"maxLines": 1277,
+			"baselineBranches": 108,
+			"branchesHeadroom": 0,
+			"maxBranches": 108
+		},
+		{
+			"file": "packages/contract/src/kinds.js",
+			"tracker": "P0.3",
+			"reason": "Single kind registry. Growth here is usually correct, but it should be visible.",
+			"baselineLines": 1431,
+			"linesHeadroom": 0,
+			"maxLines": 1431,
+			"baselineBranches": 134,
+			"branchesHeadroom": 0,
+			"maxBranches": 134
+		},
+		{
+			"file": "packages/runtime/src/aux-loader.js",
+			"tracker": "P2.11",
+			"reason": "Texture-wiring predicates overlap slim-support/artifact-texture-wiring.js.",
+			"baselineLines": 1235,
+			"linesHeadroom": 0,
+			"maxLines": 1235,
+			"baselineBranches": 112,
+			"branchesHeadroom": 0,
+			"maxBranches": 112
+		},
+		{
+			"file": "packages/plugin/src/emit-updater.js",
+			"tracker": "P2.8",
+			"reason": "Codegen writer dispatch. Ratcheted 2026-08-02 after \u00a7P2.8 moved the 20 single-write source.kind cases into the DIRECT_SLOT_WRITERS / VELOCITY_SLOT_WRITERS tables.",
+			"baselineLines": 1119,
+			"linesHeadroom": 0,
+			"maxLines": 1119,
+			"baselineBranches": 162,
+			"branchesHeadroom": 0,
+			"maxBranches": 162
+		}
+	],
+	"reportOnly": {
+		"files": [
+			"packages/plugin/src/vendor/compileTSL.js",
+			"packages/plugin/src/vendor/extractUniformPlan.js",
+			"packages/examples/batch/run-e2e.mjs",
+			"packages/examples/batch/e2e-slim-replay-module.mjs"
+		],
+		"trees": [
+			{
+				"root": "packages/contract/src",
+				"label": "contract src",
+				"excludeTests": true
+			},
+			{
+				"root": "packages/plugin/src",
+				"label": "plugin src",
+				"excludeTests": true
+			},
+			{
+				"root": "packages/runtime/src",
+				"label": "runtime src",
+				"excludeTests": true
+			},
+			{
+				"root": "packages/contract/test",
+				"label": "contract tests",
+				"onlyTests": true
+			},
+			{
+				"root": "packages/plugin/test",
+				"label": "plugin tests",
+				"onlyTests": true
+			},
+			{
+				"root": "packages/runtime/test",
+				"label": "runtime tests",
+				"onlyTests": true
+			}
+		]
+	}
+}

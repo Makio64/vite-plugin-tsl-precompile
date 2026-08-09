@@ -26,6 +26,8 @@ export const RELEASE_GATES = Object.freeze( [
 	{ label: 'run complete package suites', command: 'pnpm', args: [ 'test:full' ] },
 	{ label: 'check strict public declarations', command: 'pnpm', args: [ 'test:types' ] },
 	{ label: 'enforce slim production budgets', command: 'pnpm', args: [ 'test:slim:budget' ] },
+	{ label: 'enforce module concentration budgets', command: 'pnpm', args: [ 'test:module:budget' ] },
+	{ label: 'enforce the declared diagnostic-global registry', command: 'pnpm', args: [ 'test:diagnostic:globals' ] },
 	{
 		label: 'run the live tier-1 capture/replay visual gate',
 		command: 'pnpm',

@@ -118,6 +118,59 @@ const SCENE_SCALAR_KINDS = new Set( [
 	'scene.backgroundBlurriness',
 ] );
 
+// `globalThis.__tslpPinnedClock` is the deterministic replay clock. Both the
+// plain and the linearly-scaled `frame.time` slots read it through this exact
+// expression so a snapshot replay and a live frame cannot disagree.
+const PINNED_CLOCK_EXPR = '(typeof globalThis.__tslpPinnedClock === \'number\' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time)';
+
+// Slots whose entire emitted body is `writeYYY(view, off, <fixed expr>);`.
+//
+// These were 20 separate switch cases that differed only in the writer name and
+// the expression. A case here is data, so adding an extractor kind of this shape
+// is one table entry that cannot accidentally fall through, forget its
+// `usedWriters.add()`, or drift from its neighbours. Cases with a guard, a
+// scratch object, a recompute, or a block body stay in the switch below, where
+// their conditions are visible.
+//
+// `value` is a string, or a function of the slot source when the expression
+// depends on the source (Object3DNode's camera-vs-object target).
+// `helper` names a module-level scratch/helper the caller must emit.
+const DIRECT_SLOT_WRITERS = new Map( Object.entries( {
+	'camera.projectionMatrix': { writer: 'writeMat4', value: 'frame.camera.projectionMatrix' },
+	'camera.projectionMatrixInverse': { writer: 'writeMat4', value: 'frame.camera.projectionMatrixInverse' },
+	'camera.viewMatrix': { writer: 'writeMat4', value: 'frame.camera.matrixWorldInverse' },
+	'camera.worldMatrix': { writer: 'writeMat4', value: 'frame.camera.matrixWorld' },
+	'camera.position': { writer: 'writeVec3', value: 'frame.camera.position' },
+	'camera.near': { writer: 'writeF32', value: 'frame.camera.near' },
+	'camera.far': { writer: 'writeF32', value: 'frame.camera.far' },
+	'object.worldMatrix': { writer: 'writeMat4', value: 'frame.object.matrixWorld' },
+	'object.scale': { writer: 'writeVec3', value: 'frame.object.scale' },
+	'object3d.worldMatrix': { writer: 'writeMat4', value: ( src ) => `${ object3DTargetExpr( src ) }.matrixWorld` },
+	'object3d.scale': { writer: 'writeVec3', value: ( src ) => `${ object3DTargetExpr( src ) }.scale` },
+	// The AOT updater must honour the replay clock the same way the hydrator
+	// path does, or a snapshot replay and a live frame disagree on `time`.
+	'frame.time': { writer: 'writeF32', value: PINNED_CLOCK_EXPR },
+	time: { writer: 'writeF32', value: PINNED_CLOCK_EXPR },
+	'frame.deltaTime': { writer: 'writeF32', value: 'frame.deltaTime' },
+	deltaTime: { writer: 'writeF32', value: 'frame.deltaTime' },
+	// Defaults match WebGPURenderer's own when no renderer is present.
+	'renderer.dpr': { writer: 'writeF32', value: 'frame.renderer ? frame.renderer.getPixelRatio() : 1.0' },
+	'renderer.toneMappingExposure': { writer: 'writeF32', value: 'frame.renderer ? frame.renderer.toneMappingExposure : 1.0' },
+	'renderer.size': { writer: 'writeVec2', value: '_tslpRendererScreenSize(frame)', helper: 'size' },
+	'renderer.viewport': { writer: 'writeVec4', value: '_tslpRendererViewport(frame)', helper: 'viewport' },
+	'scene.fog.color': { writer: 'writeColor', value: 'frame.scene.fog.color' },
+} ) );
+
+// TemporalNode velocity slots. All four read a per-frame velocity record that
+// may be absent, so each emits the same `if (_v)` guard around one write; only
+// the record source and the property differ.
+const VELOCITY_SLOT_WRITERS = new Map( Object.entries( {
+	'velocity.currentProjectionMatrix': { record: 'Camera', property: 'currentProjectionMatrix' },
+	'velocity.previousProjectionMatrix': { record: 'Camera', property: 'previousProjectionMatrix' },
+	'velocity.previousCameraViewMatrix': { record: 'Camera', property: 'previousCameraViewMatrix' },
+	'velocity.previousModelWorldMatrix': { record: 'Object', property: 'previousModelWorldMatrix' },
+} ) );
+
 // Provably-static snapshot detection: identity mat3 (texture sampler matrix
 // for an untransformed texture). The frozen snapshot of an identity matrix
 // is the value the live renderer would write each frame anyway, so the
@@ -141,8 +194,25 @@ function isStaticSnapshot( snapshot ) {
  *
  * @returns {?string} emitted write expression, or null when no table applies.
  */
-function emitFromWriterTable( kind, src, off, usedWriters ) {
+function emitFromWriterTable( kind, src, off, usedWriters, rendererHelpers ) {
 
+	const direct = DIRECT_SLOT_WRITERS.get( kind );
+	if ( direct ) {
+
+		if ( direct.helper ) rendererHelpers.add( direct.helper );
+		usedWriters.add( direct.writer );
+		const value = typeof direct.value === 'function' ? direct.value( src ) : direct.value;
+		return `${ direct.writer }(view, ${ off }, ${ value });`;
+
+	}
+	const velocity = VELOCITY_SLOT_WRITERS.get( kind );
+	if ( velocity ) {
+
+		rendererHelpers.add( 'velocity' );
+		usedWriters.add( 'writeMat4' );
+		return `{ const _v = _tslpVelocity${ velocity.record }(frame); if (_v) writeMat4(view, ${ off }, _v.${ velocity.property }); }`;
+
+	}
 	if ( MATERIAL_COLOR_KINDS.has( kind ) ) {
 
 		const prop = src.property || kind.split( '.' )[ 1 ];
@@ -466,69 +536,16 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 	}
 
-	// Writer-template tables first — collapse ~50 identical-shape cases
-	// (material.* color/scalar/vec2, scene.fog.* scalar, scene.* scalar) into
-	// a single lookup. See `emitFromWriterTable` above.
-	const tableWrite = emitFromWriterTable( kind, src, off, usedWriters );
+	// Writer-template tables first. Every slot whose emitted body is a single
+	// `writeYYY(view, off, expr);` — material/scene scalars and colors, camera
+	// matrices, velocity records, renderer screen state, the frame clock — is
+	// data in the tables above, not a case here. What remains in this switch is
+	// exactly the set of slots that need a guard, a recompute, a scratch object,
+	// or a block body, which is what makes the switch worth reading.
+	const tableWrite = emitFromWriterTable( kind, src, off, usedWriters, rendererHelpers );
 	if ( tableWrite !== null ) return tableWrite;
 
 	switch ( kind ) {
-
-		case 'camera.projectionMatrix':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.camera.projectionMatrix);`;
-
-		case 'camera.projectionMatrixInverse':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.camera.projectionMatrixInverse);`;
-
-		case 'camera.viewMatrix':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.camera.matrixWorldInverse);`;
-
-		case 'camera.worldMatrix':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.camera.matrixWorld);`;
-
-		case 'camera.position':
-			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, frame.camera.position);`;
-
-		case 'camera.near':
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.camera.near);`;
-
-		case 'camera.far':
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.camera.far);`;
-
-		case 'velocity.currentProjectionMatrix':
-			rendererHelpers.add( 'velocity' );
-			usedWriters.add( 'writeMat4' );
-			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.currentProjectionMatrix); }`;
-
-		case 'velocity.previousProjectionMatrix':
-			rendererHelpers.add( 'velocity' );
-			usedWriters.add( 'writeMat4' );
-			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.previousProjectionMatrix); }`;
-
-		case 'velocity.previousCameraViewMatrix':
-			rendererHelpers.add( 'velocity' );
-			usedWriters.add( 'writeMat4' );
-			return `{ const _v = _tslpVelocityCamera(frame); if (_v) writeMat4(view, ${ off }, _v.previousCameraViewMatrix); }`;
-
-		case 'velocity.previousModelWorldMatrix':
-			rendererHelpers.add( 'velocity' );
-			usedWriters.add( 'writeMat4' );
-			return `{ const _v = _tslpVelocityObject(frame); if (_v) writeMat4(view, ${ off }, _v.previousModelWorldMatrix); }`;
-
-		case 'object.worldMatrix':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, frame.object.matrixWorld);`;
-
-		case 'object3d.worldMatrix':
-			usedWriters.add( 'writeMat4' );
-			return `writeMat4(view, ${ off }, ${ object3DTargetExpr( src ) }.matrixWorld);`;
 
 		case 'object.worldMatrixInverse':
 			// modelWorldMatrixInverse = matrixWorld.invert() — must compute on the fly.
@@ -573,18 +590,10 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			if ( src.target === 'camera' ) return `{ const _target = ${ object3DTargetExpr( src ) }; writeVec3(view, ${ off }, _target && _target.position ? _target.position : ${ vec3SnapshotLiteral( src.valueSnapshot ) }); }`;
 			return `writeVec3(view, ${ off }, ${ object3DTargetExpr( src ) }.position);`;
 
-		case 'object.scale':
-			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, frame.object.scale);`;
-
 		case 'object.radius':
 			// ModelNode radius uses the rendered object's geometry bounds.
 			usedWriters.add( 'writeF32' );
 			return `{ const _g = frame.object && frame.object.geometry; if (_g && !_g.boundingSphere && typeof _g.computeBoundingSphere === 'function') _g.computeBoundingSphere(); writeF32(view, ${ off }, _g && _g.boundingSphere ? _g.boundingSphere.radius : ${ numberSnapshotLiteral( src.valueSnapshot, 0 ) }); }`;
-
-		case 'object3d.scale':
-			usedWriters.add( 'writeVec3' );
-			return `writeVec3(view, ${ off }, ${ object3DTargetExpr( src ) }.scale);`;
 
 		case 'object3d.viewPosition':
 			// World position transformed into camera space.
@@ -646,15 +655,6 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 		}
 
-		// Frame-scoped uniforms — the extractor emits `frame.<x>`; earlier
-		// hand-written plans used the bare `<x>`. Both paths land here.
-		// Wedge 4: honour `globalThis.__tslpPinnedClock` so the AOT updater
-		// matches the hydrator runtime path during snapshot replay.
-		case 'frame.time':
-		case 'time':
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, (typeof globalThis.__tslpPinnedClock === 'number' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time));`;
-
 		// Wave 6 S1: linear-scaled `frame.time` detected by
 		// extractUniformPlan.classifyByCallback (`uniform(...).onFrameUpdate(
 		// f => f.time * k )`). Scale is constant at extraction time and baked
@@ -666,14 +666,9 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 
 			usedWriters.add( 'writeF32' );
 			const scale = Number.isFinite( src.scale ) ? src.scale : 1;
-			return `writeF32(view, ${ off }, (typeof globalThis.__tslpPinnedClock === 'number' && Number.isFinite(globalThis.__tslpPinnedClock) ? globalThis.__tslpPinnedClock : frame.time) * ${ scale });`;
+			return `writeF32(view, ${ off }, ${ PINNED_CLOCK_EXPR } * ${ scale });`;
 
 		}
-
-		case 'frame.deltaTime':
-		case 'deltaTime':
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.deltaTime);`;
 
 		case 'frame.frameId':
 		case 'frameId':
@@ -687,31 +682,10 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 		// Module-level scratch Vector2 / Vector4 objects are emitted by the
 		// caller (emitUpdaterSource) when rendererHelpers contains 'size' or
 		// 'viewport'. They are reused across frames to avoid GC pressure.
-		case 'renderer.dpr':
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.getPixelRatio() : 1.0);`;
-
-		case 'renderer.size':
-			rendererHelpers.add( 'size' );
-			usedWriters.add( 'writeVec2' );
-			return `writeVec2(view, ${ off }, _tslpRendererScreenSize(frame));`;
-
 		case 'renderer.halfHeight':
 			rendererHelpers.add( 'size' );
 			usedWriters.add( 'writeF32' );
 			return `if (frame.renderer) frame.renderer.getSize(_rSize); writeF32(view, ${ off }, 0.5 * _rSize.y);`;
-
-		case 'renderer.viewport':
-			rendererHelpers.add( 'viewport' );
-			usedWriters.add( 'writeVec4' );
-			return `writeVec4(view, ${ off }, _tslpRendererViewport(frame));`;
-
-		case 'renderer.toneMappingExposure':
-			// toneMappingExposure is a bare `uniform()` with onRenderUpdate that reads
-			// renderer.toneMappingExposure each frame. Default is 1.0 when no renderer
-			// is present (matches three.js's own default for WebGPURenderer.toneMappingExposure).
-			usedWriters.add( 'writeF32' );
-			return `writeF32(view, ${ off }, frame.renderer ? frame.renderer.toneMappingExposure : 1.0);`;
 
 		case 'environment.intensity': {
 
@@ -737,18 +711,6 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			const sourceRef = `__textureUVFlipSource${ constants.length }`;
 			constants.push( `const ${ sourceRef } = ${ frozenJsonLiteral( src ) };` );
 			return `writeTextureUVFlip(view, ${ off }, material && material.precompiledArtifact, ${ sourceRef });`;
-
-		}
-
-		// Scene-scoped uniforms with non-table shapes. The extractor
-		// prefixes with `scene.fog.` or `scene.`; the hydrator carries
-		// `frame.scene` and `frame.scene.fog` as the live references.
-		// `scene.fog.numeric` / `scene.<scalar>` are handled by the
-		// writer-template table above.
-		case 'scene.fog.color': {
-
-			usedWriters.add( 'writeColor' );
-			return `writeColor(view, ${ off }, frame.scene.fog.color);`;
 
 		}
 

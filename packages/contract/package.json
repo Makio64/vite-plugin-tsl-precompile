@@ -26,6 +26,7 @@
 		"./artifact-shape": "./src/artifact-shape.js",
 		"./auxiliary-shapes": "./src/auxiliary-shapes.js",
 		"./light-identities": "./src/light-identities.js",
+    "./diagnostic-globals": "./src/diagnostic-globals.js",
     "./dynamic-bindings": "./src/dynamic-bindings.js",
     "./fragment-outputs": "./src/fragment-outputs.js",
     "./graph-normalize": "./src/graph-normalize.js",

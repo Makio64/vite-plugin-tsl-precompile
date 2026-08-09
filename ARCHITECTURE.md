@@ -254,5 +254,5 @@ Layered so payload drift, ordinary source edits, and toolchain drift fail loudly
 For the structural changes that make the plugins easier to evolve and 100% visual
 fidelity reachable (extracting the slim-support runtime module, splitting the hydrator,
 a shared extractor↔codegen↔runtime contract, de-duplicating the graph hasher, hardening
-the three.js fork seam, …), see [ARCHITECTURE_EVOLUTION.md](./ARCHITECTURE_EVOLUTION.md) —
+the three.js fork seam, …), see [ROADMAP.md](./ROADMAP.md) —
 the prioritized P0→P3 audit.

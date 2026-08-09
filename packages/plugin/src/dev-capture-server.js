@@ -79,6 +79,16 @@ import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { normalizeMarkerSourceProvenance } from './_shared/source-provenance.js';
+import {
+	DEV_CAPTURE_MAX_BODY_BYTES,
+	readCapturePayload,
+	requestError,
+} from './dev-capture-request.js';
+
+// The transport boundary (origin/protocol guard, byte ceiling, JSON decode)
+// lives in dev-capture-request.js so it can be reviewed and tested without the
+// publishing logic below. See ROADMAP.md §P2.13.
+export { DEV_CAPTURE_MAX_BODY_BYTES };
 
 const CAPTURE_PATH = '/__tsl-precompile/capture';
 const RESERVED_ARTIFACT_NAMES = new Set( [
@@ -88,7 +98,6 @@ const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 const CAPTURE_HASH = /^(?:sha256:)?[a-f0-9]{64}$/i;
 const CONFIG_HASH = /^[a-f0-9]{64}$/i;
 const EXACT_PACKAGE_VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
-export const DEV_CAPTURE_MAX_BODY_BYTES = 32 * 1024 * 1024;
 let atomicWriteCounter = 0;
 
 /**
@@ -155,18 +164,9 @@ export function attachDevCapture( server, opts ) {
 
 		try {
 
-			assertTrustedCaptureRequest( req );
-			const body = await readBody( req, DEV_CAPTURE_MAX_BODY_BYTES );
-			let payload;
-			try {
-
-				payload = JSON.parse( body );
-
-			} catch ( error ) {
-
-				throw einval( `request body must be valid JSON: ${ error.message || String( error ) }` );
-
-			}
+			// Stages 1-3: transport guard, bounded read, decode. Nothing below
+			// this line runs until the request has cleared the trust boundary.
+			const payload = await readCapturePayload( req, DEV_CAPTURE_MAX_BODY_BYTES );
 
 			if ( isAuxiliaryFamilyPayload( payload ) ) {
 
@@ -249,164 +249,6 @@ export function attachDevCapture( server, opts ) {
 		}
 
 	} );
-
-}
-
-function assertTrustedCaptureRequest( req ) {
-
-	const host = singleRequestHeader( req, 'host' );
-	if ( ! host ) throw requestError( 400, 'capture request requires a valid Host header' );
-
-	const requestProtocol = req.socket?.encrypted === true ? 'https:' : 'http:';
-	let requestUrl;
-	try {
-
-		requestUrl = new URL( `${ requestProtocol }//${ host }` );
-
-	} catch ( _ ) {
-
-		throw requestError( 400, 'capture request requires a valid Host header' );
-
-	}
-	if (
-		requestUrl.host !== host.toLowerCase()
-		|| requestUrl.username
-		|| requestUrl.password
-		|| requestUrl.pathname !== '/'
-		|| requestUrl.search
-		|| requestUrl.hash
-	) {
-
-		throw requestError( 400, 'capture request requires a valid Host header' );
-
-	}
-
-	const origin = singleRequestHeader( req, 'origin' );
-	if ( ! origin ) throw requestError( 403, 'capture request requires a same-origin Origin header' );
-	let originUrl;
-	try {
-
-		originUrl = new URL( origin );
-
-	} catch ( _ ) {
-
-		throw requestError( 403, 'capture request Origin header is invalid' );
-
-	}
-	if (
-		origin !== originUrl.origin
-		|| originUrl.protocol !== requestProtocol
-		|| originUrl.host !== requestUrl.host
-		|| originUrl.username
-		|| originUrl.password
-	) {
-
-		throw requestError( 403, 'capture request Origin does not match the dev server' );
-
-	}
-
-	const rawFetchSite = req.headers?.[ 'sec-fetch-site' ];
-	const fetchSite = singleRequestHeader( req, 'sec-fetch-site', { required: false } );
-	if ( rawFetchSite !== undefined && ( fetchSite === null || fetchSite.toLowerCase() !== 'same-origin' ) ) {
-
-		throw requestError( 403, 'capture request must use same-origin fetch metadata' );
-
-	}
-
-	const contentType = singleRequestHeader( req, 'content-type', { required: false } );
-	const mediaType = contentType === null ? '' : contentType.split( ';', 1 )[ 0 ].trim().toLowerCase();
-	if ( mediaType !== 'application/json' ) {
-
-		throw requestError( 415, 'capture request Content-Type must be application/json' );
-
-	}
-
-}
-
-function singleRequestHeader( req, name, { required = true } = {} ) {
-
-	const value = req.headers?.[ name ];
-	if ( value === undefined ) return required ? '' : null;
-	if ( Array.isArray( value ) || typeof value !== 'string' ) return required ? '' : null;
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : required ? '' : null;
-
-}
-
-function readBody( req, maxBytes ) {
-
-	return new Promise( ( resolve, reject ) => {
-
-		const chunks = [];
-		let receivedBytes = 0;
-		let settled = false;
-
-		function finish( error, value ) {
-
-			if ( settled ) return;
-			settled = true;
-			if ( error ) reject( error );
-			else resolve( value );
-
-		}
-
-		req.on( 'aborted', () => finish( requestError( 400, 'capture request body was aborted before completion' ) ) );
-		req.on( 'error', ( error ) => finish( requestError(
-			400,
-			`capture request body could not be read: ${ error.message || String( error ) }`,
-		) ) );
-
-		const rawDeclaredLength = req.headers?.[ 'content-length' ];
-		if ( rawDeclaredLength !== undefined ) {
-
-			const declaredLength = singleRequestHeader( req, 'content-length', { required: false } );
-			if (
-				declaredLength === null
-				|| ! /^\d+$/.test( declaredLength )
-				|| ! Number.isSafeInteger( Number( declaredLength ) )
-			) {
-
-				req.resume();
-				finish( requestError( 400, 'capture request Content-Length must be a non-negative safe integer' ) );
-				return;
-
-			}
-			if ( Number( declaredLength ) > maxBytes ) {
-
-				req.resume();
-				finish( requestError( 413, `capture request body exceeds the ${ maxBytes } byte limit` ) );
-				return;
-
-			}
-
-		}
-
-		req.on( 'data', ( chunk ) => {
-
-			if ( settled ) return;
-			receivedBytes += chunk.length;
-			if ( receivedBytes > maxBytes ) {
-
-				chunks.length = 0;
-				req.resume();
-				finish( requestError( 413, `capture request body exceeds the ${ maxBytes } byte limit` ) );
-				return;
-
-			}
-			chunks.push( chunk );
-
-		} );
-		req.on( 'end', () => finish( null, Buffer.concat( chunks, receivedBytes ).toString( 'utf8' ) ) );
-
-	} );
-
-}
-
-function requestError( statusCode, message ) {
-
-	const err = new Error( message );
-	err.statusCode = statusCode;
-	return err;
 
 }
 
