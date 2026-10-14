@@ -149,7 +149,7 @@ jobs:
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
       - name: Run configured tier-1 visual subset
         run: xvfb-run -a pnpm test:e2e:tier1 -- --three-repo="$GITHUB_WORKSPACE/three.js" --shard=${{ matrix.shard }}/4
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: tier1-visual-results-shard${{ matrix.shard }}
@@ -206,7 +206,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: Run batch diagnostics, example builds, and preview smokes
         run: xvfb-run -a pnpm test:examples:ci
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: example-production-results
@@ -257,7 +257,7 @@ jobs:
       - name: Assert tracked release generators are committed
         if: always()
         run: git diff --exit-code -- packages/runtime/build packages/plugin/skill
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: fresh-project-smoke-${{ matrix.artifact }}-results

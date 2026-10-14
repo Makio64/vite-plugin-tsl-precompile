@@ -86,14 +86,14 @@ jobs:
       - name: Verify landing and examples evidence in full Chromium
         run: xvfb-run -a pnpm --filter @tsl-precompile/site test:static
       - run: xvfb-run -a pnpm --filter @tsl-precompile/site test:live
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: deploy-site-browser-${{ github.sha }}
           path: ${{ runner.temp }}/deploy-site-browser/**
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
           name: deploy-site-evidence-${{ github.sha }}
