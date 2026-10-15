@@ -68,7 +68,7 @@ export {
 	getTextureResolutionDebugHook, hasAux, hashNodeGraphSync,
 	hydrateNodeBuilderState, installTextureLoaderTracking, listAux,
 	loadAux, registerArtifact, registerAuxArtifact,
-	registerAuxArtifacts, registerLiveTexture, registerPrecompiledArtifact,
+	registerAuxArtifacts, registerLiveTexture, registerPrecompiledArtifact, createPrecompiledShadowSupport,
 	registerPrecompiledArtifacts, setSlimRenderFallback, setTextureResolutionDebugHook,
 	unregisterPrecompiledArtifacts, writeBytes, writeColor,
 	writeColorRGBA, writeF32, writeI32,
@@ -76,6 +76,8 @@ export {
 	writeU32, writeVec2, writeVec3,
 	writeVec4,
 } from './index.js';
+
+export { __applyPrecompiledCallsite } from './apply-precompiled.js';
 
 export {
 	linkGeneratedLightIdentitySource,
@@ -101,3 +103,11 @@ export function setupViewportTextureClasses( classes: {
 } ): void;
 
 export function wireViewportTextureRefs<TArtifact>( artifact: TArtifact ): TArtifact;
+
+/** @internal Generated slim tables without renderer-owned registry shapes. */
+export function __registerAuxArtifactsOnly<TArtifact = unknown>( entries: Iterable<import('./index.js').AuxArtifactRegistration<TArtifact>> ): void;
+
+export {
+	ExtrudeGeometry, PMREMNode, RGBA_ASTC_4x4_Format, RGBA_BPTC_Format, RGBFormat,
+	Shape, Source, TextureSource, Uint16BufferAttribute, UnsignedInt101111Type, WebGPUBackend,
+} from "three/webgpu";

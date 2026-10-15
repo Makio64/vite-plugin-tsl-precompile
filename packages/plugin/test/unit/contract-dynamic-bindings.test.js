@@ -57,6 +57,43 @@ test( 'dynamicBindingDescriptor resolves prefix kinds with the original kind pre
 	const light = dynamicBindingDescriptor( 'light.position' );
 	assert.equal( light.kind, 'light.position' );
 	assert.equal( light.phase, DYNAMIC_BINDING_PHASE.UPDATE_BEFORE );
+	const again = dynamicBindingDescriptor( 'camera.projectionMatrix' );
+	assert.deepEqual( again, cam );
+	assert.notEqual( again, cam, 'public prefix descriptors retain independent frozen records' );
+	assert.notEqual( again.required, cam.required );
+	assert.ok( Object.isFrozen( cam ) && Object.isFrozen( cam.required ) && Object.isFrozen( cam.optional ) );
+
+} );
+
+test( 'collecting derived bindings reuses descriptor metadata and retains live source references', () => {
+
+	const sources = [ 'camera.projectionMatrix', 'light.position', 'material.roughness', 'future.unsupported' ].map( kind => ( { kind } ) );
+	const artifact = { uniformPlan: [ { name: 'render', slots: sources.map( ( source, offset ) => ( { name: `slot${ offset }`, offset, source } ) ) } ] };
+	const freeze = Object.freeze;
+	let freezeCalls = 0;
+	let bindings;
+	try {
+
+		Object.freeze = value => { freezeCalls ++; return freeze( value ); };
+		bindings = collectArtifactDynamicBindings( artifact );
+		assert.equal( isDynamicBindingKind( 'camera.projectionMatrix' ), true );
+
+	} finally {
+
+		Object.freeze = freeze;
+
+	}
+	assert.equal( freezeCalls, 0, 'collection and membership checks do not clone/freeze public descriptors' );
+	assert.equal( bindings.length, 3 );
+	for ( let index = 0; index < bindings.length; index ++ ) {
+
+		const entry = bindings[ index ];
+		const descriptor = dynamicBindingDescriptor( sources[ index ].kind );
+		assert.equal( entry.source, sources[ index ] );
+		assert.equal( entry.kind, sources[ index ].kind );
+		for ( const key of [ 'target', 'phase', 'owner', 'resolver' ] ) assert.equal( entry[ key ], descriptor[ key ] );
+
+	}
 
 } );
 

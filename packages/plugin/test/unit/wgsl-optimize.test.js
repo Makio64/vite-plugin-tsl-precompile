@@ -142,6 +142,28 @@ test( 'cyclic inputs fail before every optimization-mode traversal', () => {
 		packNumericArrays: false,
 	} ), expected );
 	assert.throws( () => createWgslStringPool( [ cyclicArray ] ), expected );
+	assert.throws( () => createWgslStringPool( [ cyclicObject ], { minifyWgsl: false } ), expected );
+
+} );
+
+test( 'shader pooling retains shared occurrences, frozen inputs and fresh shader values on later calls', () => {
+
+	const first = '@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(0.25, 0.5, 0.75, 1.0); }';
+	const second = first.replace( '0.25', '0.125' );
+	const shared = { fragmentShader: first };
+	const snapshot = Object.freeze( [ 1, 2, 3, null, false, 'literal', undefined ] );
+	const input = Object.freeze( { first: shared, nested: Object.freeze( [ snapshot, shared ] ) } );
+	const initial = createWgslStringPool( [ input ] );
+	assert.equal( initial.refs.has( minifyWgslSource( first ) ), true, 'both shared occurrences contribute to the pool' );
+	assert.equal( shared.fragmentShader, first );
+	assert.equal( input.nested[ 0 ], snapshot );
+
+	shared.fragmentShader = second;
+	const next = createWgslStringPool( [ input ] );
+	assert.equal( next.refs.has( minifyWgslSource( second ) ), true );
+	assert.equal( next.refs.has( minifyWgslSource( first ) ), false, 'a later pool cannot reuse stale shader text' );
+	assert.equal( initial.refs.has( minifyWgslSource( first ) ), true, 'the earlier pool stays independent' );
+	assert.deepEqual( createWgslStringPool( [ input ], { minifyWgsl: false } ).strings, [ second ] );
 
 } );
 
@@ -254,6 +276,220 @@ test( 'binary snapshots use the narrowest exact raw scalar representation', () =
 
 } );
 
+test( 'repeated numeric blocks decode exactly across supported strides and long runs', () => {
+
+	for ( const width of [ 1, 2, 3, 4, 8, 16, 32 ] ) {
+
+		const block = Array.from( { length: width }, ( _, index ) => index + 1 );
+		const data = Array.from( { length: width * ( width === 1 ? 70000 : 512 ) }, ( _, index ) => block[ index % width ] );
+		data.push( ...block.map( value => value + 100 ) );
+		const input = { arrayType: 'Uint8Array', data };
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+		assert.ok( code.length < 2000, `stride ${ width } should use a compact recipe` );
+		parse( code, { sourceType: 'module', allowReturnOutsideFunction: true } );
+		const decoded = Function( code )();
+		assert.deepEqual( decoded, input );
+		assert.equal( Array.isArray( decoded.data ), true );
+
+	}
+
+} );
+
+test( 'repeated block encoding preserves signed, unsigned and floating point snapshots', () => {
+
+	const cases = [
+		[ 'Int8Array', [ -128, 127 ] ], [ 'Uint8Array', [ 0, 255 ] ], [ 'Uint8ClampedArray', [ 0, 255 ] ],
+		[ 'Int16Array', [ -32768, 32767 ] ], [ 'Uint16Array', [ 0, 65535 ] ],
+		[ 'Int32Array', [ -2147483648, 2147483647 ] ], [ 'Uint32Array', [ 0, 4294967295 ] ],
+		[ 'Float32Array', [ Math.fround( 0.3 ), Math.fround( -1.7 ) ] ],
+		[ 'Float64Array', [ Math.PI, -Number.MIN_VALUE, 1e-6, 1e-7, 1e20, 1e21, Number.MAX_VALUE, -Number.MAX_VALUE ] ],
+	];
+	for ( const [ arrayType, pattern ] of cases ) {
+
+		const data = Array.from( { length: 2048 }, ( _, index ) => pattern[ index % pattern.length ] );
+		const input = { first: { arrayType, data }, alias: { arrayType, data }, separate: { arrayType, data: [ ...data ] } };
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+		assert.ok( code.length < 2000, `${ arrayType } should pack repeated exact values` );
+		const result = Function( code )();
+		assert.deepEqual( result, input );
+		assert.equal( result.first.data, result.alias.data );
+		assert.notEqual( result.first.data, result.separate.data );
+		result.first.data[ 0 ] = 42;
+		assert.equal( result.separate.data[ 0 ], pattern[ 0 ] );
+
+	}
+
+} );
+
+test( 'numeric block packing preserves unmatched tails and avoids growing incompressible data', () => {
+
+	const values = [
+		Array.from( { length: 1025 }, ( _, index ) => index % 3 ),
+		Array.from( { length: 1025 }, ( _, index ) => Math.fround( Math.sin( index ) ) ),
+	];
+	for ( const data of values ) {
+
+		const input = { arrayType: 'Float32Array', data };
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+		assert.deepEqual( Function( code )(), input );
+		assert.ok( code.length < JSON.stringify( input ).length );
+
+	}
+
+} );
+
+test( 'large texture snapshots allocate on first read and preserve assignment, aliases and frozen reads', () => {
+
+	const data = Array.from( { length: 16384 }, ( _, index ) => index % 256 );
+	const snapshot = values => ( { width: 64, height: 64, arrayType: 'Uint8Array', data: values } );
+	const input = { first: snapshot( data ), alias: snapshot( data ), separate: snapshot( [ ...data ] ) };
+	const { declarations, expression } = emitOptimizedJsonExpression( input );
+	let decodes = 0;
+	const result = Function( 'atob', `${ declarations.join( '\n' ) }\nreturn ${ expression };` )( value => { decodes ++; return atob( value ); } );
+	assert.equal( decodes, 0, 'importing unused fallback textures must not allocate their pixels' );
+	assert.ok( Object.keys( result.first ).includes( 'data' ) );
+	Object.freeze( result.first );
+	assert.deepEqual( result.first.data, data );
+	assert.equal( decodes, 1 );
+	assert.equal( result.first.data, result.alias.data, 'shared captured arrays keep their identity' );
+	assert.equal( decodes, 1, 'repeated reads reuse the decoded array' );
+	result.alias.data = [ 42 ];
+	assert.deepEqual( result.alias.data, [ 42 ] );
+	assert.deepEqual( result.first.data, data, 'assigning a property does not replace another owner\'s array' );
+	assert.equal( decodes, 1 );
+	assert.deepEqual( result.separate.data, data );
+	assert.notEqual( result.first.data, result.separate.data );
+	assert.equal( decodes, 2, 'equal but distinct snapshots retain separate mutable arrays' );
+	assert.deepEqual( JSON.parse( JSON.stringify( result ) ), { ...input, alias: snapshot( [ 42 ] ) } );
+
+} );
+
+test( 'replacing an unread fallback snapshot avoids decoding and mixed-use aliases stay eager', () => {
+
+	const data = Array.from( { length: 16384 }, ( _, index ) => index % 256 );
+	const snapshot = { width: 64, height: 64, arrayType: 'Uint8Array', data };
+	for ( const mixed of [ false, true ] ) {
+
+		const input = { snapshot, ...( mixed ? { attribute: { arrayType: 'Uint8Array', arraySnapshot: data } } : {} ) };
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		let decodes = 0;
+		const result = Function( 'atob', `${ declarations.join( '\n' ) }\nreturn ${ expression };` )( value => { decodes ++; return atob( value ); } );
+		assert.equal( decodes, mixed ? 1 : 0 );
+		if ( mixed ) assert.equal( result.snapshot.data, result.attribute.arraySnapshot );
+		else {
+
+			result.snapshot.data = [ 1 ];
+			assert.deepEqual( result.snapshot.data, [ 1 ] );
+			assert.equal( decodes, 0 );
+
+		}
+
+	}
+
+} );
+
+function palettePixels( colors, length, repeat = 1 ) {
+
+	let seed = 12345;
+	let color;
+	return Array.from( { length }, ( _, index ) => {
+
+		if ( index % ( colors[ 0 ].length * repeat ) === 0 ) {
+
+			seed = ( Math.imul( seed, 1664525 ) + 1013904223 ) >>> 0;
+			color = colors[ ( seed >>> 16 ) % colors.length ];
+
+		}
+		return color[ index % color.length ];
+
+	} );
+
+}
+
+test( 'exact texture palettes preserve numeric types, channel counts and repeated index blocks', () => {
+
+	const types = {
+		Int8Array: value => value % 255 - 127,
+		Uint8Array: value => value % 256,
+		Uint8ClampedArray: value => value % 256,
+		Int16Array: value => value * 37 - 18000,
+		Uint16Array: value => value * 61,
+		Int32Array: value => value * 1000003 - 1800000000,
+		Uint32Array: value => value * 1000003 + 2000000000,
+		Float32Array: value => Math.fround( Math.sin( value ) ),
+		Float64Array: value => Math.sin( value ) * Math.PI,
+	};
+	for ( const [ arrayType, number ] of Object.entries( types ) ) for ( const channels of [ 2, 3, 4 ] ) {
+
+		const colors = Array.from( { length: 256 }, ( _, index ) => Array.from( { length: channels }, ( _, channel ) => number( index * channels + channel ) ) );
+		const data = palettePixels( colors, 4096 * channels );
+		const input = { width: 64, height: 64, arrayType, data };
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+		assert.ok( code.includes( 'if(p)' ), `${ arrayType }/${ channels } exercises palette decoding` );
+		parse( code, { sourceType: 'module', allowReturnOutsideFunction: true } );
+		assert.deepEqual( Function( code )(), input );
+		const repeated = { ...input, data: palettePixels( colors, data.length, 4 ) };
+		const packed = emitOptimizedJsonExpression( repeated );
+		assert.ok( packed.declarations.join( '\n' ).includes( 'if(p)' ), 'palette indices also use repeated-block decoding' );
+		assert.deepEqual( Function( packed.declarations.join( '\n' ) + `\nreturn ${ packed.expression };` )(), repeated );
+
+	}
+
+} );
+
+test( 'palette texture data stays lazy and preserves aliases, mutation, replacement and frozen reads', () => {
+
+	const colors = Array.from( { length: 251 }, ( _, value ) => [ value, 255 - value, value % 128, 255 ] );
+	const data = palettePixels( colors, 16384 );
+	const snapshot = values => ( { width: 64, height: 64, arrayType: 'Uint8Array', data: values } );
+	const input = { first: snapshot( data ), alias: snapshot( data ), separate: snapshot( [ ...data ] ), replaced: snapshot( [ ...data ] ) };
+	const before = JSON.stringify( input );
+	const { declarations, expression } = emitOptimizedJsonExpression( input );
+	const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+	assert.ok( code.includes( 'if(p)' ) );
+	assert.ok( code.length < data.length * 2, 'one compact immutable payload serves distinct mutable arrays' );
+	let decodes = 0;
+	const result = Function( 'atob', code )( value => { decodes ++; return atob( value ); } );
+	assert.equal( decodes, 0 );
+	result.replaced.data = [ 42 ];
+	Object.freeze( result.first );
+	assert.deepEqual( result.first.data, data );
+	assert.equal( decodes, 1, 'one blob read materializes the final Array directly' );
+	assert.equal( result.first.data, result.alias.data );
+	assert.notEqual( result.first.data, result.separate.data );
+	assert.equal( decodes, 2 );
+	result.alias.data[ 0 ] = 7;
+	assert.equal( result.first.data[ 0 ], 7 );
+	assert.equal( result.separate.data[ 0 ], data[ 0 ] );
+	assert.deepEqual( JSON.parse( JSON.stringify( result.replaced ) ), snapshot( [ 42 ] ) );
+	assert.equal( decodes, 2, 'replacement skips the unread palette' );
+	assert.equal( JSON.stringify( input ), before, 'emission keeps the captured input unchanged' );
+
+} );
+
+test( 'texture palettes retain the ordinary encoding for high color counts and unprofitable palettes', () => {
+
+	const cases = [
+		{ width: 64, height: 64, arrayType: 'Uint16Array', data: Array.from( { length: 16384 }, ( _, index ) => index ) },
+		{ width: 64, height: 64, arrayType: 'Uint8Array', data: new Array( 16384 ).fill( 42 ) },
+		{ width: 64, height: 64, arrayType: 'Uint8Array', data: Array.from( { length: 16384 }, ( _, index ) => index % 4 ) },
+	];
+	for ( const input of cases ) {
+
+		const { declarations, expression } = emitOptimizedJsonExpression( input );
+		const code = declarations.join( '\n' ) + `\nreturn ${ expression };`;
+		assert.ok( ! code.includes( 'if(p)' ) );
+		assert.deepEqual( Function( code )(), input );
+		assert.ok( code.length < JSON.stringify( input ).length );
+
+	}
+
+} );
+
 test( 'binary snapshots pool identical raw blobs without aliasing distinct mutable arrays', () => {
 
 	const snapshot = Array.from( { length: 512 }, ( _, index ) => Math.fround( Math.sin( index ) * 1000 ) );
@@ -338,8 +574,8 @@ test( 'packed artifact modules preserve the public artifact and dynamic-binding 
 
 	assert.match( source, /const __tslp_decode=/ );
 	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
-	assert.doesNotMatch( source, /^import /m, 'the execution fixture is self-contained' );
-	const generated = await import( `data:text/javascript;base64,${ Buffer.from( source ).toString( 'base64' ) }` );
+	const executable = source.replace( '"@tsl-precompile/contract/dynamic-bindings"', JSON.stringify( import.meta.resolve( '@tsl-precompile/contract/dynamic-bindings' ) ) );
+	const generated = await import( `data:text/javascript;base64,${ Buffer.from( executable ).toString( 'base64' ) }` );
 	const emittedSnapshot = generated.artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].arraySnapshot;
 	assert.equal( Array.isArray( emittedSnapshot ), true );
 	assert.deepEqual( emittedSnapshot, snapshot );
@@ -541,6 +777,101 @@ test( 'createWgslStringPool pools repeated WGSL across separate artifacts', () =
 
 } );
 
+test( 'WGSL pooling shares exact function text across different shaders without changing shader bytes', () => {
+
+	const helper = `fn sharedLighting(value: vec3<f32>) -> vec3<f32> { ${ 'let unused = value.x; '.repeat( 12 ) } return value; }`;
+	const shaders = [ 1, 2, 3 ].map( value => `${ helper }\n@fragment fn main() -> @location(0) vec4<f32> { return vec4<f32>(sharedLighting(vec3<f32>(${ value }.0)), 1.0); }` );
+	const inputs = [ ...shaders.map( fragmentShader => ( { fragmentShader } ) ), { fragmentShader: shaders[ 0 ] } ];
+	const pool = createWgslStringPool( inputs );
+	const declarations = pool.expressions.map( ( expression, index ) => `const __tslp_wgslPool${ index } = ${ expression };` ).join( '\n' );
+	const resolved = Function( `${ declarations }\nreturn [${ pool.strings.map( ( _, index ) => `__tslp_wgslPool${ index }` ).join( ',' ) }];` )();
+	assert.deepEqual( resolved, pool.strings, 'dependencies precede composed whole-shader exports' );
+	let emitted = declarations;
+	for ( const input of inputs ) {
+
+		const { declarations: local, expression } = emitOptimizedJsonExpression( input, { externalWgslRefs: pool.refs } );
+		const source = `${ declarations }\n${ local.join( '\n' ) }\nreturn ${ expression };`;
+		assert.equal( Function( source )().fragmentShader, minifyWgslSource( input.fragmentShader ) );
+		assert.ok( getExternalWgslRefIdentifiers( expression ).length > 0 );
+		emitted += expression;
+
+	}
+	assert.ok( emitted.length < inputs.map( value => JSON.stringify( { fragmentShader: minifyWgslSource( value.fragmentShader ) } ) ).join( '' ).length );
+	assert.doesNotThrow( () => parse( declarations, { sourceType: 'module' } ) );
+
+} );
+
+test( 'shared shader text retains comments and escaped bytes when minification is disabled', () => {
+
+	const helper = `fn common() { /* Unicode café, quote ", slash \\ and newline\n${ 'literal fn boundary in comment; '.repeat( 8 ) } */ }`;
+	const inputs = [ { vertexShader: `${ helper }\nfn first() {}` }, { vertexShader: `${ helper }\nfn second() {}` } ];
+	const pool = createWgslStringPool( inputs, { minifyWgsl: false } );
+	const declarations = pool.expressions.map( ( expression, index ) => `const __tslp_wgslPool${ index } = ${ expression };` ).join( '\n' );
+	for ( const input of inputs ) {
+
+		const { expression } = emitOptimizedJsonExpression( input, { minifyWgsl: false, externalWgslRefs: pool.refs } );
+		assert.deepEqual( Function( `${ declarations }\nreturn ${ expression };` )(), input );
+
+	}
+	const disabled = createWgslStringPool( inputs, { dedupeWgsl: false } );
+	assert.equal( disabled.refs.size, 0 );
+	assert.deepEqual( disabled.expressions, [] );
+
+} );
+
+test( 'the shared string pool factors selector fields across material variants and auxiliary artifacts losslessly', () => {
+
+	const scene = { description: 'shared scene topology with Unicode café, quote ", slash \\ and newline\n'.repeat( 4 ) };
+	const camera = { array: false, arrayViewCount: 0, coordinateSystem: 2001, projection: 'perspective' };
+	const selectors = [ 1, 2, 3 ].map( sampleCount => JSON.stringify( {
+		camera, scene, target: { sampleCount }, version: 'render-object-selector@1',
+	} ) );
+	const material = {
+		renderContextSelectors: [ selectors[ 0 ] ],
+		variants: { next: { renderContextSelectors: [ selectors[ 1 ] ] } },
+	};
+	const auxiliary = [ { artifact: { renderContextSelectors: [ selectors[ 2 ], selectors[ 0 ] ] } } ];
+	const inputs = [ material, auxiliary ];
+	const before = JSON.stringify( inputs );
+	const pool = createWgslStringPool( inputs );
+	const declarations = pool.expressions.map( ( expression, index ) => `const __tslp_wgslPool${ index }=${ expression };` ).join( '\n' );
+	const actualStrings = Function( `${ declarations }return [${ pool.strings.map( ( _, index ) => `__tslp_wgslPool${ index }` ) }];` )();
+	assert.deepEqual( actualStrings, pool.strings, 'all composed exports retain their exact original bytes' );
+	assert.ok( pool.strings.includes( `{"camera":${ JSON.stringify( camera ) }` ), 'compact selector fields use the ordinary dedupe threshold' );
+	assert.ok( pool.strings.includes( `,"scene":${ JSON.stringify( scene ) }` ), 'different selectors share an exact field fragment' );
+	let emitted = declarations;
+	for ( const input of inputs ) {
+
+		const { declarations: local, expression } = emitOptimizedJsonExpression( input, { externalWgslRefs: pool.refs } );
+		const source = `${ declarations }\n${ local.join( '\n' ) }\nreturn ${ expression };`;
+		assert.deepEqual( Function( source )(), input );
+		assert.ok( getExternalWgslRefIdentifiers( expression ).length > 0 );
+		assert.doesNotThrow( () => parse( source, { sourceType: 'script', allowReturnOutsideFunction: true } ) );
+		emitted += expression;
+
+	}
+	assert.ok( emitted.length < before.length, 'shared fragments reduce emitted source including declarations' );
+	assert.equal( JSON.stringify( inputs ), before, 'captured records are not mutated' );
+	assert.equal( createWgslStringPool( inputs, { dedupeWgsl: false } ).refs.size, 0 );
+
+} );
+
+test( 'selector pooling preserves noncanonical, opaque, primitive, and escaped JSON strings', () => {
+
+	const canonical = '{"__proto__":{"tag":"' + 'escaped \\" and \\n data '.repeat( 12 ) + '"},"version":"future-selector"}';
+	const untouched = [ 'opaque-selector', '{invalid}', ' {"a":1}', '{"a":1e2}', '{"a":1,"a":2}', '[]', 'null', 'true', '"text"' ];
+	const input = { renderContextSelectors: [ ...untouched, canonical, canonical, '{}', '{}' ], metadata: 'unrelated'.repeat( 64 ) };
+	const pool = createWgslStringPool( [ input ], { minifyWgsl: false } );
+	const declarations = pool.expressions.map( ( expression, index ) => `const __tslp_wgslPool${ index }=${ expression };` );
+	const emitted = emitOptimizedJsonExpression( input, { externalWgslRefs: pool.refs } );
+	const actual = Function( `${ declarations.join( '\n' ) }\n${ emitted.declarations.join( '\n' ) }\nreturn ${ emitted.expression };` )();
+	assert.deepEqual( actual, input );
+	assert.ok( pool.refs.has( canonical ), 'unknown schema strings may share bytes without changing their interpretation' );
+	for ( const value of untouched ) assert.equal( pool.refs.has( value ), false, 'noncanonical selector stays inline' );
+	assert.equal( pool.refs.has( input.metadata ), false, 'ordinary metadata does not acquire new pooling candidates' );
+
+} );
+
 test( 'emitArtifactModule imports and references the shared WGSL pool', () => {
 
 	const shader = '@vertex fn main(  ) -> @builtin( position ) vec4<f32> { return vec4<f32>( 0.0 ); }';
@@ -608,5 +939,71 @@ test( 'alias-aware emission reduces and parses a checked artifact module', () =>
 	assert.ok( Buffer.byteLength( optimizedSource ) < Buffer.byteLength( baselineSource ) );
 	assert.match( optimizedSource, /const __tslp_ref\d+ = / );
 	assert.doesNotThrow( () => parse( optimizedSource, { sourceType: 'module' } ) );
+
+} );
+
+
+test( 'WGSL private temporaries compact without changing bindings or entry points', () => {
+
+	const shader = `struct Uniforms { nodeUniform0: f32 }; @group(0) @binding(0) var<uniform> object: Uniforms;
+var<private> nodeVar0: f32; var<private> nodeVar12: f32;
+@fragment fn main() -> @location(0) vec4<f32> { nodeVar0 = object.nodeUniform0; nodeVar12 = nodeVar0 + 1.0; return vec4<f32>(nodeVar12); }`;
+	const compact = minifyWgslSource( shader );
+	assert.match( compact, /var<private>v0:f32;var<private>v12:f32;/ );
+	assert.match( compact, /v0=object.nodeUniform0;v12=v0 \+ 1.0;/ );
+	assert.match( compact, /@group\(0\)@binding\(0\)var<uniform>object:Uniforms;/ );
+	assert.match( compact, /@fragment fn main\(\)->@location\(0\)vec4<f32>/ );
+	assert.equal( minifyWgslSource( compact ), compact, 'repeated optimization is stable' );
+	const emitted = emitOptimizedJsonExpression( { fragmentShader: shader }, { minifyWgsl: false } );
+	assert.equal( Function( `return ${ emitted.expression };` )().fragmentShader, shader );
+
+} );
+
+test( 'WGSL temporary names never collide with any existing identifier', () => {
+
+	const shader = `var<private> nodeVar0:f32; var<private> nodeVar1:f32; var<private> nodeVar2:f32;
+struct Other { v2: f32 };
+fn other(v1: f32) -> f32 { return v1; }
+@fragment fn main()->@location(0) vec4<f32> { let v0 = 2.0; nodeVar0 = v0; nodeVar1 = other(v0); nodeVar2 = 1.0; return vec4<f32>(nodeVar0 + nodeVar1 + nodeVar2); }`;
+	const compact = minifyWgslSource( shader );
+	for ( const name of [ 'nodeVar0', 'nodeVar1', 'nodeVar2' ] ) assert.ok( compact.includes( `var<private>${ name }:f32;` ) );
+
+} );
+
+test( 'WGSL interface and member names protect matching private temporaries', () => {
+
+	const shader = `var<private> nodeVar0:f32; var<private> nodeVar1:f32; var<private> nodeVar2:f32;
+struct Payload { nodeVar0: f32 };
+fn helper(nodeVar1: f32) -> f32 { let data = Payload(nodeVar1); return data.nodeVar0; }
+@fragment fn main()->@location(0) vec4<f32> { nodeVar2 = helper(1.0); return vec4<f32>(nodeVar2); }`;
+	const compact = minifyWgslSource( shader );
+	assert.match( compact, /var<private>nodeVar0:f32;/ );
+	assert.match( compact, /var<private>nodeVar1:f32;/ );
+	assert.match( compact, /struct Payload\{nodeVar0:f32\}/ );
+	assert.match( compact, /fn helper\(nodeVar1:f32\)/ );
+	assert.match( compact, /data.nodeVar0/ );
+	assert.match( compact, /var<private>v2:f32;/ );
+
+} );
+
+test( 'WGSL compaction respects Unicode identifier boundaries and local shadows', () => {
+
+	const shader = `var<private> nodeVar0:f32;
+fn helper() -> f32 { let nodeVar0 = 2.0; return nodeVar0; }
+@fragment fn main()->@location(0) vec4<f32> { let πnodeVar0 = 1.0; let nodeVar0π = 3.0; nodeVar0 = helper(); return vec4<f32>(nodeVar0 + πnodeVar0 + nodeVar0π); }`;
+	const compact = minifyWgslSource( shader );
+	assert.match( compact, /var<private>v0:f32;/ );
+	assert.match( compact, /let v0=2.0;return v0;/ );
+	assert.match( compact, /v0 \+ πnodeVar0 \+ nodeVar0π/ );
+
+} );
+
+test( 'WGSL workgroup, storage and solely local temporaries keep their names', () => {
+
+	const shader = `@group(0) @binding(0) var<storage,read_write> nodeVar0:array<f32>;
+var<workgroup> nodeVar1:array<f32,4>;
+@compute @workgroup_size(1) fn main(){ var nodeVar2:f32 = 1.0; nodeVar1[0] = nodeVar2; nodeVar0[0] = nodeVar1[0]; }`;
+	const compact = minifyWgslSource( shader );
+	for ( const name of [ 'nodeVar0', 'nodeVar1', 'nodeVar2' ] ) assert.ok( compact.includes( name ) );
 
 } );

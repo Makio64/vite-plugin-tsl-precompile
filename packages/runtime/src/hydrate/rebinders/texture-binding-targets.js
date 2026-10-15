@@ -60,32 +60,17 @@ export function rebindTextureBindingTargets( binding, texture ) {
 
 }
 
-export function textureBindingResourceSignature( target, renderer ) {
-
-	const texture = target && target.texture || null;
-	const backend = renderer && renderer.backend && typeof renderer.backend.get === 'function' ? renderer.backend : null;
-	const data = texture && backend ? backend.get( texture ) : null;
-	return {
-		texture,
-		gpuTexture: data ? data.texture || null : null,
-		version: texture && Number.isFinite( texture.version ) ? texture.version : null,
-	};
-
-}
-
 export function invalidateOnTextureResourceChange( target, renderer, lastSeen ) {
 
 	if ( ! target || ! lastSeen ) return;
-	const current = textureBindingResourceSignature( target, renderer );
+	const texture = target.texture || null;
+	const backend = renderer && renderer.backend && typeof renderer.backend.get === 'function' ? renderer.backend : null;
+	const data = texture && backend ? backend.get( texture ) : null;
+	const gpuTexture = data ? data.texture || null : null;
+	const version = texture && Number.isFinite( texture.version ) ? texture.version : null;
 	const previous = lastSeen.get( target );
-	lastSeen.set( target, current );
-	if ( ! previous ) return;
-	if ( previous.texture !== current.texture ||
-		previous.gpuTexture !== current.gpuTexture ||
-		previous.version !== current.version ) {
-
-		invalidateTextureBindingTarget( target );
-
-	}
+	if ( previous && previous.texture === texture && previous.gpuTexture === gpuTexture && previous.version === version ) return;
+	lastSeen.set( target, { texture, gpuTexture, version } );
+	if ( previous ) invalidateTextureBindingTarget( target );
 
 }

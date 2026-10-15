@@ -1,4 +1,5 @@
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { assertArtifactThreeEmitterIdentity, createThreeEmitterHashFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
@@ -36,7 +37,13 @@ export async function loadArtifactDirectory( artifactsDirectory, opts = {} ) {
 
 		try {
 
-			return await loadArtifactDirectoryOnce( artifactsDirectory, opts );
+			const loaded = await loadArtifactDirectoryOnce( artifactsDirectory, opts );
+			if ( opts.expectedEmitter ) for ( const item of [ ...Object.values( loaded.manifest ), ...Object.values( loaded.auxManifest ) ] ) {
+
+				assertArtifactThreeEmitterIdentity( item.entry.artifact || item.entry, opts.expectedEmitter, `Artifact in ${ artifactsDirectory }` );
+
+			}
+			return loaded;
 
 		} catch ( error ) {
 
@@ -517,7 +524,7 @@ function assertAuxiliaryProvenanceAgreement( artifactsDir, manifestEntry, envelo
 	const envelopeHasProvenance = envelope.threeVersion !== undefined || envelope.pluginVersion !== undefined;
 	if ( ! manifestHasProvenance && ! envelopeHasProvenance ) return; // Legacy capture; build compatibility rejects it later.
 
-	for ( const field of [ 'threeVersion', 'pluginVersion' ] ) {
+	for ( const field of [ 'threeVersion', 'pluginVersion', ...Object.keys( createThreeEmitterHashFields( envelope ) ) ] ) {
 
 		if ( typeof manifestEntry[ field ] !== 'string' || manifestEntry[ field ].length === 0 ) {
 
@@ -554,6 +561,7 @@ function assertAuxiliaryProvenanceAgreement( artifactsDir, manifestEntry, envelo
 		throw manifestError( artifactsDir, `${ label } envelope threeVersion does not match artifact sourceThreeVersion.` );
 
 	}
+	assertArtifactThreeEmitterIdentity( artifact, envelope, label );
 	if ( artifact.sourceHashVersion !== envelope.pluginVersion ) {
 
 		throw manifestError( artifactsDir, `${ label } envelope pluginVersion does not match artifact sourceHashVersion.` );

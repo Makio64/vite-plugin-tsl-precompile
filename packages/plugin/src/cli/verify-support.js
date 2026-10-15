@@ -10,7 +10,7 @@ import {
 	instrumentLiveContextDependencies,
 	instrumentLiveUniformIdentities,
 } from '../babel-transform.js';
-import { canonicalModuleIdentity, markerSourceRevision } from '../_shared/module-identity.js';
+import { canonicalModuleIdentity, isProjectRootModule, markerSourceRevision } from '../_shared/module-identity.js';
 import {
 	normalizeMarkerSourceProvenance,
 	recomputeRecordedMarkerSourceRevision,
@@ -156,7 +156,8 @@ export async function collectExpectedMarkerCoverage( {
 
 			const fileMarkers = collectAuthoredMarkers( source, filename, sourceRoot );
 			let transformedSource = source;
-			if ( autoMark ) {
+			const projectModule = isProjectRootModule( filename, sourceRoot );
+			if ( autoMark && projectModule ) {
 
 				const marked = autoMarkSource( transformedSource, {
 					filename,
@@ -173,7 +174,9 @@ export async function collectExpectedMarkerCoverage( {
 				} );
 
 			}
-			const markerBootstrap = injectMarkerBootstrapSource( transformedSource, { filename } );
+			const markerBootstrap = projectModule
+				? injectMarkerBootstrapSource( transformedSource, { filename } )
+				: { touched: false };
 			if ( markerBootstrap.touched ) transformedSource = markerBootstrap.code;
 			const liveUniformIdentities = instrumentLiveUniformIdentities( transformedSource, {
 				filename,

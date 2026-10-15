@@ -28,6 +28,10 @@ import {
 	suppressWebGPUFramebufferCopiesDuringCompile,
 } from './compile-async-double-pass.js';
 import { beginRenderObjectHarvest } from './render-object-observer.js';
+import { isolateCaptureAttachmentPipelines } from './capture-attachment-pipelines.js';
+import { beginSyntheticCaptureRenderObjects } from './capture-render-object-lifecycle.js';
+import { withFreshShadowCaptureFrame } from './capture-shadow-frame.js';
+import { assertFullscreenQuadCapture, renderCapturedFullscreenQuad } from './capture-fullscreen-quad.js';
 export { beginRenderObjectHarvest };
 import { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
 export { deriveComputeBindingsDescriptor } from '../compute-bindings.js';
@@ -146,6 +150,7 @@ function describeBinding( binding ) {
 	} else if ( binding.isStorageBuffer ) {
 
 		descriptor.kind = 'storage-buffer';
+		if ( binding.nodeUniform?.bufferCount === 0 ) descriptor.runtimeSized = true;
 		const attribute = binding.attribute || null;
 		descriptor.byteLength = attribute && attribute.array
 			? attribute.array.byteLength
@@ -703,7 +708,6 @@ export function extractArtifact( cacheKey, state, material = null, object = null
 	const uniformPlan = extractUniformPlan( state, extractionContext && typeof extractionContext === 'object'
 		? { ...extractionContext, material, object }
 		: { material, object } );
-	patchMaterialSpecificUniformPlan( uniformPlan, materialShape );
 	annotateLiveUniformIdentities( uniformPlan, material, extractionContext );
 	// For each compute-storage buffer the user wired through a material
 	// `*Node` slot (e.g. `material.colorNode = uv().mul( colors.element( i ) )`),
@@ -866,37 +870,6 @@ function serializeNodeAttributes( nodeAttributes, options = {} ) {
 		return entry;
 
 	} );
-
-}
-
-function patchMaterialSpecificUniformPlan( uniformPlan, materialShape ) {
-
-	if ( materialShape !== 'points' || ! Array.isArray( uniformPlan ) ) return;
-
-	for ( const group of uniformPlan ) {
-
-		const slots = Array.isArray( group.slots ) ? group.slots : [];
-		const hasViewport = slots.some( ( slot ) => slot.source && slot.source.kind === 'renderer.viewport' );
-		const hasDpr = slots.some( ( slot ) => slot.source && slot.source.kind === 'renderer.dpr' );
-		if ( ! hasViewport || ! hasDpr ) continue;
-
-		for ( const slot of slots ) {
-
-			const source = slot.source || {};
-			if ( source.kind !== 'uniform.live' || source.name !== null || slot.dtype !== 'number' ) continue;
-
-			// PointsNodeMaterial's private `scale` UniformNode is not exported from
-			// three.js, but its role is stable: half the renderer's logical height.
-			// Serialise that explicit source so production artifacts don't freeze the
-			// capture-time 128px snapshot.
-			slot.source = {
-				kind: 'renderer.halfHeight',
-				valueSnapshot: source.valueSnapshot,
-			};
-
-		}
-
-	}
 
 }
 
@@ -1227,6 +1200,13 @@ function findLiveNodePathOnMaterial( material, target ) {
 
 	if ( ! material || ! target || typeof material !== 'object' ) return null;
 	const rootKeys = Object.keys( material ).filter( ( key ) => key.endsWith( 'Node' ) ).sort();
+	// Prefer an authored direct owner over a path through a generated shader
+	// expression. Wrapping colorNode must not change how thresholdNode binds.
+	for ( const rootKey of rootKeys ) {
+
+		try { if ( material[ rootKey ] === target ) return [ rootKey ]; } catch ( _ ) { /* getter */ }
+
+	}
 	for ( const rootKey of rootKeys ) {
 
 		let root = null;
@@ -2234,6 +2214,8 @@ function sceneMaterialOwnsMRTNode( scene, mrtNode ) {
  *   application's real render. Complete material families are preferred
  *   atomically over synthetic extraction.
  * @param {boolean} [options.skipWarmupRender=false] - Skip the extra synthetic render after compileAsync.
+ * @param {Object} [options.fullscreenQuad] - Sole isolated native QuadMesh to
+ *   draw instead of compileAsync(Scene), preserving native fullscreen topology.
  * @return {Promise<Array<PrecompiledArtifact>>}
  */
 export async function compileTSL( renderer, scene, camera, options = {} ) {
@@ -2254,14 +2236,35 @@ export async function compileTSL( renderer, scene, camera, options = {} ) {
 	const myLock = new Promise( ( resolve ) => { releaseLock = resolve; } );
 	renderer[ lockKey ] = prevLock.then( () => myLock );
 	let result;
+	let restoreAttachmentPipelines = () => {};
+	let disposeSyntheticRenderObjects = () => {};
 	try {
 
 		await prevLock;
+		assertFullscreenQuadCapture( options.fullscreenQuad, scene, options );
+		restoreAttachmentPipelines = isolateCaptureAttachmentPipelines( renderer );
+		disposeSyntheticRenderObjects = beginSyntheticCaptureRenderObjects( renderer, scene, { fullscreenQuad: options.fullscreenQuad } );
 		result = await compileTSLInner( renderer, scene, camera, options, manager );
 
 	} finally {
 
-		releaseLock();
+		try {
+
+			disposeSyntheticRenderObjects();
+
+		} finally {
+
+			try {
+
+				restoreAttachmentPipelines();
+
+			} finally {
+
+				releaseLock();
+
+			}
+
+		}
 
 	}
 	return result;
@@ -2355,14 +2358,47 @@ function cachedComputeState( manager, computeNode, requireExisting = false ) {
 
 }
 
+async function extractStandaloneComputes( renderer, manager, nodes, resources ) {
+
+	const artifacts = [];
+	artifacts.byComputeNode = new Map();
+	artifacts.byMesh = new Map();
+	artifacts.byMaterialUuid = new Map();
+	artifacts.byMaterialVariants = new Map();
+	for ( const node of nodes ) {
+
+		let state = cachedComputeState( manager, node, true );
+		if ( ! state ) {
+
+			await renderer.computeAsync( node );
+			state = cachedComputeState( manager, node );
+
+		}
+		if ( ! state ) throw new Error( 'compileTSL: standalone compute has no cached builder state after dispatch.' );
+		const artifact = extractComputeArtifact( artifacts.length + 1, state, node, resources?.get( node ) );
+		artifacts.push( artifact );
+		artifacts.byComputeNode.set( node, artifact );
+
+	}
+	annotateAnonymousStorageResourceIdentity( artifacts.map( artifact => artifact.uniformPlan ) );
+	return artifacts;
+
+}
+
 async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
+	const fullscreenQuad = options.fullscreenQuad || null;
+	assertFullscreenQuadCapture( fullscreenQuad, scene, options );
 	const explicitComputeNodes = Array.isArray( options.computeNodes ) ? options.computeNodes.slice() : [];
 	const observedComputeNodes = Array.isArray( options.observedComputeNodes ) ? options.observedComputeNodes.slice() : [];
 	const computeBindingResources = options.computeBindingResources;
 	if ( computeBindingResources !== undefined && ( ! computeBindingResources || typeof computeBindingResources.get !== 'function' ) ) throw new TypeError(
 		'compileTSL: options.computeBindingResources must be a Map or WeakMap keyed by compute-node identity',
 	);
+	// Standalone compute capture must not compile the caller's scene. That
+	// scene may still be assembling and can contain unrelated render programs
+	// with transient targets, pending resource loads, or uncaptured variants.
+	if ( options.computeOnly === true ) return extractStandaloneComputes( renderer, manager, explicitComputeNodes, computeBindingResources );
 	const computeNodes = explicitComputeNodes.slice();
 	const computeNodeSet = new Set( computeNodes );
 	const explicitComputeNodeSet = new Set( computeNodes );
@@ -2635,7 +2671,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	// renderer.currentSamples (Line2NodeMaterial's alpha-to-coverage branch)
 	// sees 0 samples and captures the non-MSAA shader variant. Borrow the same
 	// private framebuffer target during warm-up so extraction matches live render.
-	if ( ! captureRendererOutput && ! mrtWarmupRT && ! prevRenderTarget && renderer && renderer.needsFrameBufferTarget === true &&
+	if ( ! fullscreenQuad && ! captureRendererOutput && ! mrtWarmupRT && ! prevRenderTarget && renderer && renderer.needsFrameBufferTarget === true &&
 		typeof renderer._getFrameBufferTarget === 'function' &&
 		typeof renderer.setRenderTarget === 'function' ) {
 
@@ -2760,10 +2796,19 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 		);
 		try {
 
-			await renderer.compileAsync( scene, camera );
+			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
+			if ( fullscreenQuad ) {
+
+				// Native r186 fullscreen draws force single-sample screen output and
+				// install QuadMesh's vertex node. compileAsync(Scene) observes neither.
+				internalRenderDepth ++;
+				try { renderCapturedFullscreenQuad( renderer, fullscreenQuad ); } finally { internalRenderDepth --; }
+
+			} else await renderer.compileAsync( scene, camera );
 
 		} finally {
 
+			globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
 			restoreSyntheticNodeUpdates();
 			restoreCompileFramebufferCopy();
 			restoreObjectPipeline();
@@ -2832,13 +2877,18 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 				}
 
-			} else if ( ! options.skipWarmupRender ) {
+			} else if ( ! options.skipWarmupRender && ! fullscreenQuad ) {
 
 				// renderer.render() is the non-deprecated entry; compileAsync
 				// above already ran `init` so the sync form is safe.
 				internalRenderDepth ++;
 				globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
-				try { renderer.render( scene, camera ); } finally {
+				try {
+
+					if ( options.freshShadowFrame === true ) withFreshShadowCaptureFrame( renderer, () => renderer.render( scene, camera ) );
+					else renderer.render( scene, camera );
+
+				} finally {
 
 					internalRenderDepth --;
 					globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
@@ -2968,6 +3018,10 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 	const familyOwners = ( family ) => {
 
 		const owners = new Set( family && family.material ? [ family.material ] : [] );
+		// A shadow override borrows caster properties but is a separate render
+		// program. A supplied beauty family must not suppress the local shadow
+		// family merely because both refer to that caster as a binding owner.
+		if ( classifyMaterialShape( family && family.material ) === 'shadow-depth' ) return owners;
 		for ( const variant of family && family.variants || [] ) for ( const sourceMaterial of variant.sourceMaterials || variant.userMaterials || [] ) owners.add( sourceMaterial );
 		return owners;
 
@@ -3183,6 +3237,15 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	for ( const entry of extractionEntries ) {
 
+		// A caster is a binding owner of a shadow program, not that program's
+		// material. Explicit material capture must not merge unrelated auxiliary
+		// states from the renderer cache; auxiliary capture selects those itself.
+		const requestedOwners = isAuxiliaryArtifactShape( classifyMaterialShape( entry.material ) )
+			? [ entry.material ]
+			: [ entry.material, ...( entry.sourceMaterials || entry.userMaterials || [] ) ];
+		if ( Array.isArray( options.materials ) && ! options.materials.some( material =>
+			requestedOwners.includes( material )
+		) ) continue;
 		const { cacheKey, state, material, meshes } = entry;
 		const sourceMaterials = [ ...new Set( entry.sourceMaterials || entry.userMaterials || [] ) ];
 		const userMaterialCandidates = entry.userMaterials && entry.userMaterials.length > 0 ? entry.userMaterials : sourceMaterials;
@@ -3209,6 +3272,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 			...( velocityProjectionSources.length > 0 ? { velocityProjectionSources } : {} ),
 		} : null;
 		const artifact = extractArtifact( cacheKey, state, material, meshes[ 0 ] || null, extractionContext );
+		if ( Array.isArray( options.materialShapes ) && ! options.materialShapes.includes( artifact.materialShape ) ) continue;
 		if ( vsmPassOwner ) {
 
 			const internalPass = createVsmInternalPassDescriptor( artifact, vsmPassOwner, renderer );
@@ -3279,6 +3343,7 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 		}
 
+		if ( artifact.shaderLanguage ) artifact.variantKey = createBackendAwareVariantKey( cacheKey, artifact.shaderLanguage, artifact );
 		artifacts.push( artifact );
 		const isAuxiliary = isAuxiliaryArtifactShape( artifact.materialShape );
 		if ( material && isAuxiliary ) {
@@ -3381,6 +3446,9 @@ async function compileTSLInner( renderer, scene, camera, options, manager ) {
 
 	for ( const variantList of byAuxiliaryMaterialVariants.values() ) {
 
+		// Shadow capture owns cache-key disambiguation across exact caster
+		// selectors, including variants of Three's shared override material.
+		if ( options.deferShadowFamilyMerge === true && variantList.every( artifact => artifact.materialShape === 'shadow-depth' ) ) continue;
 		for ( const artifact of variantList ) attachArtifactVariantFamily( artifact, variantList );
 
 	}
@@ -3427,9 +3495,17 @@ function captureActiveRendererOutputIdentity( renderer, observations ) {
 	}
 	const frameBufferTarget = renderer._getFrameBufferTarget();
 	const texture = frameBufferTarget && ( frameBufferTarget.texture || frameBufferTarget.textures && frameBufferTarget.textures[ 0 ] );
-	const quadData = texture && renderer._quadCache && typeof renderer._quadCache.get === 'function'
-		? renderer._quadCache.get( texture )
-		: null;
+	const cache = renderer._quadCache;
+	const targetQuad = cache && typeof cache.get === 'function' ? cache.get( frameBufferTarget ) : null;
+	const textureQuad = texture && cache && typeof cache.get === 'function' ? cache.get( texture ) : null;
+	if ( targetQuad && textureQuad && targetQuad !== textureQuad ) {
+
+		throw new Error( 'compileTSL: active renderer output target and texture identify different cached quads.' );
+
+	}
+	// r187 owns the quad by exact RenderTarget; earlier native releases own it
+	// by that target's exact color texture. Never select from another cache key.
+	const quadData = targetQuad || textureQuad || null;
 	const material = quadData && quadData.quad && quadData.quad.material || null;
 	const materialUuid = material && material.uuid || null;
 	const matches = materialUuid

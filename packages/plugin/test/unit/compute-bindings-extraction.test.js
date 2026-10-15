@@ -163,6 +163,23 @@ test( 'extractComputeArtifact derives exact public entries from live resource id
 
 } );
 
+test( 'compute extraction distinguishes runtime-sized storage from fixed shader arrays', () => {
+
+	for ( const bufferCount of [ 0, 1 ] ) {
+
+		const values = fixture();
+		values.positionsNode.bufferCount = bufferCount;
+		const artifact = extractComputeArtifact( 1, values.state, values.node, {
+			positions: values.positions, threshold: values.threshold, output: values.output, input: values.input,
+		} );
+		const entry = artifact.computeBindings.entries.find( entry => entry.key === 'positions' );
+		assert.equal( entry.runtimeSized === true, bufferCount === 0 );
+		assert.equal( validateArtifact( artifact ).ok, true );
+
+	}
+
+} );
+
 test( 'one exact texture identity may expose storage, sampled, and sampler targets', () => {
 
 	const values = fixture( { sharedTexture: true } );
@@ -236,6 +253,32 @@ test( 'compute binding derivation fails closed on unmatched and ambiguous public
 		() => deriveComputeBindingsDescriptor( artifact, values.state, { invalid: 1 } ),
 		/resource "invalid" must be an object identity/,
 	);
+
+} );
+
+test( 'standalone compute capture reuses dispatched kernels without touching an unfinished scene', async () => {
+
+	const values = fixture();
+	let reads = 0;
+	const renderer = {
+		_nodes: {
+			has: () => true,
+			get: node => { reads ++; return node === values.node ? { nodeBuilderState: values.state } : {}; },
+		},
+		compileAsync() { throw new Error( 'must not compile unrelated render materials' ); },
+		computeAsync() { throw new Error( 'must not redispatch a cached kernel' ); },
+		setRenderTarget() { throw new Error( 'must not mutate render state' ); },
+	};
+	const scene = { traverse() { throw new Error( 'scene is still assembling' ); } };
+	const artifacts = await compileTSL( renderer, scene, {}, {
+		computeOnly: true,
+		computeNodes: [ values.node ],
+		computeBindingResources: new Map( [ [ values.node, values.resources ] ] ),
+	} );
+	assert.equal( reads, 1 );
+	assert.equal( artifacts.length, 1 );
+	assert.equal( artifacts.byComputeNode.get( values.node ), artifacts[ 0 ] );
+	assert.equal( artifacts.byMaterialUuid.size, 0 );
 
 } );
 

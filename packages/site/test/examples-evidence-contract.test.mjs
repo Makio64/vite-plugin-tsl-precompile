@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import sharp from 'sharp';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 import {
 	E2E_EVIDENCE_SCHEMA_VERSION,
@@ -41,6 +42,7 @@ import {
 	resolveCanonicalSitePublicRoot,
 	resolveCanonicalStockReport,
 	SITE_EVIDENCE_TOTAL_KEYS,
+	PUBLIC_EVIDENCE_CASE_COUNT,
 	verifyBuiltSiteFeaturedEvidence,
 	verifyPublishedSiteEvidence,
 	verifyPublicFileHash,
@@ -49,11 +51,39 @@ import {
 const REPO_ROOT = resolve( import.meta.dirname, '../../..' );
 const CATALOGUE_PATH = resolve( REPO_ROOT, 'packages/examples/batch/example-catalogue.json' );
 const CATALOGUE = readEvidenceCatalogue( CATALOGUE_PATH );
+// Negative checks need a complete local cohort and a few upstream cases, not
+// hundreds of fresh cases each. Keep the real catalogue in the integration check.
+// The safe-file gate requires the derived catalogue to remain inside the repo;
+// use ignored dependency scratch space and remove it when the file completes.
+const FIXTURE_CACHE_ROOT = resolve( REPO_ROOT, 'node_modules/.cache' );
+mkdirSync( FIXTURE_CACHE_ROOT, { recursive: true } );
+const FIXTURE_CATALOGUE_ROOT = mkdtempSync( join( FIXTURE_CACHE_ROOT, 'site-evidence-' ) );
+after( () => rmSync( FIXTURE_CATALOGUE_ROOT, { recursive: true, force: true } ) );
+const BOUNDARY_CATALOGUE_PATH = join( FIXTURE_CATALOGUE_ROOT, 'catalogue.json' );
+const boundaryCases = JSON.parse( readFileSync( CATALOGUE_PATH, 'utf8' ) );
+boundaryCases.cases = boundaryCases.cases.filter( ( entry ) =>
+	entry.source.project === 'shadow-debug' ||
+	[ 'webgpu_clearcoat', 'webgpu_shadowmap_array' ].includes( entry.id ),
+);
+writeFileSync( BOUNDARY_CATALOGUE_PATH, JSON.stringify( boundaryCases ) );
+const BOUNDARY_CATALOGUE = readEvidenceCatalogue( BOUNDARY_CATALOGUE_PATH );
+
+function loadBoundaryEvidence( resultsRoot ) {
+
+	return loadCanonicalExamplesEvidence( {
+		resultsRoot,
+		cataloguePath: BOUNDARY_CATALOGUE_PATH,
+		expectedCaseCount: BOUNDARY_CATALOGUE.caseCount,
+		repositoryRoot: REPO_ROOT,
+	} );
+
+}
+
 const CAMPAIGN_ID = 'campaign-contract-fixture';
 const SLIM_BUNDLE_PATH = resolve( REPO_ROOT, 'packages/runtime/build/three.webgpu.slim.js' );
 const SLIM_BUNDLE = { absolutePath: SLIM_BUNDLE_PATH, sha256: sha256( readFileSync( SLIM_BUNDLE_PATH ) ) };
-const OFFICIAL_COMMIT = '2431a09f46f34c560bc8e44b33be0e567723d5b9';
-const OFFICIAL_TREE = 'db4af93e35bd10c43f957137f7fb44c138e52ea0';
+const OFFICIAL_COMMIT = THREE_RELEASE_PROFILES.stable.gitCommit;
+const OFFICIAL_TREE = THREE_RELEASE_PROFILES.stable.gitTree;
 const OFFICIAL_THREE_PROOF_FILES = [ {
 	path: 'build/three.webgpu.js',
 	bytes: 42,
@@ -114,12 +144,6 @@ function png() {
 
 	return Buffer.from( FIXTURE_PNG );
 
-	/* c8 ignore next 4 */
-	return Buffer.from(
-		'iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAYAAAA10dzkAAAH2ElEQVR4Ae3BAQGAMAACME4Ggz2YnTUI285z3y8AAMxoAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApjQAAExpAACY0gAAMKUBAGBKAwDAlAYAgCkNAABTGgAApvxQlQWvnKq5NAAAAABJRU5ErkJggg==',
-		'base64',
-	);
-
 }
 
 function categoryOf( name ) {
@@ -137,28 +161,28 @@ function categoryOf( name ) {
 
 }
 
-function catalogueBinding() {
+function catalogueBinding( catalogue ) {
 
 	return {
-		schemaVersion: CATALOGUE.schemaVersion,
-		threeVersion: CATALOGUE.threeVersion,
-		sha256: CATALOGUE.sha256,
-		caseCount: CATALOGUE.caseCount,
-		caseIdsSha256: CATALOGUE.caseIdsSha256,
-		upstreamCaseCount: CATALOGUE.upstreamCaseNames.length,
-		upstreamCaseNamesSha256: CATALOGUE.upstreamCaseNamesSha256,
+		schemaVersion: catalogue.schemaVersion,
+		threeVersion: catalogue.threeVersion,
+		sha256: catalogue.sha256,
+		caseCount: catalogue.caseCount,
+		caseIdsSha256: catalogue.caseIdsSha256,
+		upstreamCaseCount: catalogue.upstreamCaseNames.length,
+		upstreamCaseNamesSha256: catalogue.upstreamCaseNamesSha256,
 	};
 
 }
 
-function fixtureCohorts() {
+function fixtureCohorts( catalogue ) {
 
 	const groups = new Map( [ [ 'upstream', {
 		kind: 'three',
 		project: null,
-		names: CATALOGUE.records.filter( ( record ) => record.sourceKind === 'three' ).map( ( record ) => record.name ),
+		names: catalogue.records.filter( ( record ) => record.sourceKind === 'three' ).map( ( record ) => record.name ),
 	} ] ] );
-	for ( const record of CATALOGUE.records.filter( ( entry ) => entry.sourceKind === 'local' ) ) {
+	for ( const record of catalogue.records.filter( ( entry ) => entry.sourceKind === 'local' ) ) {
 
 		const project = record.source.project;
 		if ( ! groups.has( project ) ) groups.set( project, { kind: 'local', project, names: [] } );
@@ -298,13 +322,14 @@ function localSources( project ) {
 
 }
 
-function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
+function createCampaignFixture( root, { semanticGatePass = true, catalogue = BOUNDARY_CATALOGUE } = {} ) {
 
 	const cohortReferences = [];
 	const rows = [];
+	const sourceSnapshot = repositorySources();
 	let upstream = null;
 	let cohortIndex = 0;
-	for ( const [ id, cohort ] of fixtureCohorts() ) {
+	for ( const [ id, cohort ] of fixtureCohorts( catalogue ) ) {
 
 		cohortIndex ++;
 		const runId = `run-${ String( cohortIndex ).padStart( 2, '0' ) }`;
@@ -318,13 +343,13 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			caseNames: cohort.names,
 		};
 			const threeCheckout = {
-				revision: '185',
-				packageVersion: '0.185.1',
+				revision: THREE_RELEASE_PROFILES.stable.revision,
+				packageVersion: THREE_RELEASE_PROFILES.stable.packageVersion,
 				git: { available: true, head: OFFICIAL_COMMIT, clean: true },
 				sourceVerification: OFFICIAL_SOURCE_VERIFICATION,
 				sourceFingerprint: OFFICIAL_THREE_SOURCES.sha256,
 			};
-			const sources = repositorySources();
+			const sources = structuredClone( sourceSnapshot );
 			if ( cohort.kind === 'local' ) {
 
 				const local = localSources( cohort.project );
@@ -406,7 +431,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 					userArtifacts: artifactMetrics.userArtifactCount,
 					auxArtifacts: artifactMetrics.auxArtifactCount,
 				} );
-			const catalogueRecord = CATALOGUE.records.find( ( record ) => record.name === name );
+			const catalogueRecord = catalogue.records.find( ( record ) => record.name === name );
 			rows.push( {
 				id: catalogueRecord.id,
 				name,
@@ -438,7 +463,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			runId,
 			campaignId: CAMPAIGN_ID,
 			canonical: id === 'upstream',
-			catalogue: catalogueBinding(),
+			catalogue: catalogueBinding( catalogue ),
 			corpus,
 			threeCheckout,
 			slimBundle: SLIM_BUNDLE,
@@ -507,15 +532,15 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 	const corpus = {
 		kind: 'aggregate',
 		exact: true,
-		caseCount: CATALOGUE.caseCount,
-		caseNamesSha256: caseIdsFingerprint( CATALOGUE.records.map( ( record ) => record.name ) ),
+		caseCount: catalogue.caseCount,
+		caseNamesSha256: caseIdsFingerprint( catalogue.records.map( ( record ) => record.name ) ),
 		cohortCount: cohortReferences.length,
 	};
 	const evidenceSet = {
 		schemaVersion: E2E_EVIDENCE_SCHEMA_VERSION,
 		campaignId: CAMPAIGN_ID,
 		canonical: true,
-		catalogue: catalogueBinding(),
+		catalogue: catalogueBinding( catalogue ),
 		corpus,
 		cohorts: cohortReferences,
 	};
@@ -526,7 +551,7 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 		runId: upstream.manifest.runId,
 		campaignId: CAMPAIGN_ID,
 		canonical: true,
-		catalogue: catalogueBinding(),
+		catalogue: catalogueBinding( catalogue ),
 		corpus,
 		threeCheckout: upstream.manifest.threeCheckout,
 		slimBundle: upstream.manifest.slimBundle,
@@ -542,8 +567,8 @@ function createCampaignFixture( root, { semanticGatePass = true } = {} ) {
 			sha256: sha256( evidenceSetBytes ),
 		},
 		totals: {
-			rows: CATALOGUE.caseCount,
-			evidenceRows: CATALOGUE.caseCount,
+			rows: catalogue.caseCount,
+			evidenceRows: catalogue.caseCount,
 			pass: rows.filter( ( row ) => row.verdict === 'pass' ).length,
 			diagnostic: rows.filter( ( row ) => row.verdict === 'diagnostic' ).length,
 			fail: 0,
@@ -601,11 +626,33 @@ test( 'accepts one exact portable schema-2 campaign', ( t ) => {
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-site-evidence-valid-' ) );
 	t.after( () => rmSync( root, { recursive: true, force: true } ) );
-	createCampaignFixture( root );
+	createCampaignFixture( root, { catalogue: CATALOGUE } );
 	const loaded = loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } );
-	assert.equal( loaded.caseByName.size, 254 );
-	assert.equal( loaded.cohortById.size, 7 );
-	assert.equal( loaded.rowsByName.size, 254 );
+	assert.equal( loaded.caseByName.size, PUBLIC_EVIDENCE_CASE_COUNT );
+	assert.equal( loaded.cohortById.size, fixtureCohorts( CATALOGUE ).size );
+	assert.equal( loaded.rowsByName.size, PUBLIC_EVIDENCE_CASE_COUNT );
+	const ordinary = loaded.caseByName.get( 'webgpu_clearcoat.html' ).comparison;
+	const masked = loaded.caseByName.get( 'webgpu_shadowmap_array.html' ).comparison;
+	assert.equal( ordinary.comparedPixels, 640 * 480 );
+	assert.equal( masked.comparedPixels, 640 * 480 - 230 * 210 );
+	assert.equal( masked.ignoredRegions.length, 1, 'equal image hashes cannot reuse another route\'s pixel policy' );
+
+} );
+
+test( 'small boundary campaigns exercise the same validator without changing the public corpus gate', ( t ) => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-site-evidence-boundary-' ) );
+	t.after( () => rmSync( root, { recursive: true, force: true } ) );
+	createCampaignFixture( root );
+	const loaded = loadBoundaryEvidence( root );
+	assert.equal( loaded.caseByName.size, BOUNDARY_CATALOGUE.caseCount );
+	assert.equal( loaded.cohortById.size, 2 );
+	assert.ok( BOUNDARY_CATALOGUE.caseCount < CATALOGUE.caseCount );
+	assert.throws( () => loadCanonicalExamplesEvidence( {
+		resultsRoot: root,
+		cataloguePath: BOUNDARY_CATALOGUE_PATH,
+		repositoryRoot: REPO_ROOT,
+	} ), new RegExp( `public evidence requires exactly ${ PUBLIC_EVIDENCE_CASE_COUNT }` ) );
 
 } );
 
@@ -625,8 +672,31 @@ test( 'site publication rejects stale local source bytes even when snapshot hash
 
 	} );
 	assert.throws(
-		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+		() => loadBoundaryEvidence( root ),
 		/local source .* is stale/,
+	);
+
+} );
+
+test( 'repository snapshot reuse cannot hide a changed later cohort or a later load', ( t ) => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-site-stale-repository-' ) );
+	t.after( () => rmSync( root, { recursive: true, force: true } ) );
+	const fixture = createCampaignFixture( root );
+	loadBoundaryEvidence( root );
+	rewriteCampaignCohort( root, fixture, 'shadow-debug', ( { report, manifest } ) => {
+
+		for ( const sources of [ report.evidence.sources, manifest.sources ] ) {
+
+			sources.repository.files[ 0 ].sha256 = '0'.repeat( 64 );
+			sources.repository.sha256 = fingerprintJson( sources.repository.files );
+
+		}
+
+	} );
+	assert.throws(
+		() => loadBoundaryEvidence( root ),
+		/repository source .* is stale/,
 	);
 
 } );
@@ -671,7 +741,7 @@ test( 'site publication re-derives current thresholds and diagnostic exemptions'
 
 			} );
 			assert.throws(
-				() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+				() => loadBoundaryEvidence( root ),
 				mutation.pattern,
 			);
 
@@ -692,7 +762,7 @@ test( 'site publication re-runs the current whole-run canonical predicate', ( t 
 
 	} );
 	assert.throws(
-		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+		() => loadBoundaryEvidence( root ),
 		/configuration drifted from the current canonical policy: pixelGateEnabled=false/,
 	);
 
@@ -769,8 +839,8 @@ test( 'site publication requires official source verification for every local co
 
 			} );
 			assert.throws(
-				() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
-				/evidence cohort "shadow-debug" did not verify served sources against the official Three r185 Git tree/,
+				() => loadBoundaryEvidence( root ),
+				/evidence cohort "shadow-debug" did not verify served sources against the official Three r186 Git tree/,
 			);
 
 		} );
@@ -837,7 +907,7 @@ test( 'site publication decodes artifact evidence and recomputes its metrics', a
 
 			} );
 			assert.throws(
-				() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+				() => loadBoundaryEvidence( root ),
 				mutation.pattern,
 			);
 
@@ -853,7 +923,7 @@ test( 'semantic evidence failures cannot be presented as canonical passes', ( t 
 	t.after( () => rmSync( root, { recursive: true, force: true } ) );
 	createCampaignFixture( root, { semanticGatePass: false } );
 	assert.throws(
-		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+		() => loadBoundaryEvidence( root ),
 		/semantic gate did not pass its semantic evidence gate/,
 	);
 	const contradictory = passingSemanticGate();
@@ -875,7 +945,7 @@ test( 'refuses to publish an exact campaign with a failing aggregate row', ( t )
 	coverage.totals.fail ++;
 	writeJson( fixture.coveragePath, coverage );
 	assert.throws(
-		() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+		() => loadBoundaryEvidence( root ),
 		/refuses to publish 1 failing visual-evidence case/,
 	);
 
@@ -885,7 +955,6 @@ test( 'current catalogue and slim bundle must be regular repository files', ( t 
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-site-evidence-current-inputs-' ) );
 	t.after( () => rmSync( root, { recursive: true, force: true } ) );
-	createCampaignFixture( root );
 	const externalBundle = join( root, 'external-slim.js' );
 	writeFileSync( externalBundle, readFileSync( SLIM_BUNDLE_PATH ) );
 	assert.throws(
@@ -928,6 +997,16 @@ test( 'current catalogue and slim bundle must be regular repository files', ( t 
 test( 'rejects tampered shots, row bindings, cohort roots, and manifest bytes', async ( t ) => {
 
 	const mutations = [
+		{
+			label: 'later equal-content shot is still verified',
+			pattern: /size drifted|hash drifted/,
+			mutate( root, fixture ) {
+
+				const row = fixture.rows.filter( ( entry ) => entry.sourceKind === 'three' ).at( -1 );
+				writeFileSync( resolve( root, row.evidenceRoot, row.replay.file ), 'tampered' );
+
+			},
+		},
 		{
 			label: 'shot bytes',
 			pattern: /size drifted|hash drifted/,
@@ -1086,7 +1165,7 @@ test( 'rejects tampered shots, row bindings, cohort roots, and manifest bytes', 
 			const fixture = createCampaignFixture( root );
 			mutation.mutate( root, fixture, subtest );
 			assert.throws(
-				() => loadCanonicalExamplesEvidence( { resultsRoot: root, cataloguePath: CATALOGUE_PATH } ),
+				() => loadBoundaryEvidence( root ),
 				mutation.pattern,
 			);
 

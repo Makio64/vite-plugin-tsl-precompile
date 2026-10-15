@@ -1,3 +1,4 @@
+import { createEffectPassCaptureName } from '@tsl-precompile/contract/output-config';
 /**
  * @module SlimSupport/PostprocessWire
  *
@@ -53,7 +54,7 @@ export function wirePrecompiledPostprocess( args = {} ) {
 		const effectIndex = indexByHandler.get( handler.name ) || 0;
 		indexByHandler.set( handler.name, effectIndex + 1 );
 
-		const { wired, missed } = wireRegisteredEffectNode( handler, node, effectIndex );
+		const { wired, missed } = wireEffectNodeInPipeline( handler, node, effectIndex, root.__tslpAuxName || null );
 		allWired.push( ...wired );
 		allMissed.push( ...missed );
 
@@ -74,6 +75,12 @@ export function wirePrecompiledPostprocess( args = {} ) {
  * @return {{ wired: Array<{shape: string, name?: string, configHash: string}>, missed: Array<{shape: string, reason: string}> }}
  */
 export function wireRegisteredEffectNode( handler, node, effectIndex = 0 ) {
+
+	return wireEffectNodeInPipeline( handler, node, effectIndex, null );
+
+}
+
+function wireEffectNodeInPipeline( handler, node, effectIndex, pipelineName ) {
 
 	const wired = [];
 	const missed = [];
@@ -100,11 +107,12 @@ export function wireRegisteredEffectNode( handler, node, effectIndex = 0 ) {
 
 	}
 
-	for ( const subPass of subPasses ) {
+	for ( const [ passIndex, subPass ] of subPasses.entries() ) {
 
 		if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) continue;
 
-		const entry = pickAuxForShape( subPass.shape, effectIndex );
+		const captureName = createEffectPassCaptureName( pipelineName, handler.name, effectIndex, passIndex );
+		const entry = captureName ? findAux( subPass.shape, captureName ) : pickAuxForShape( subPass.shape, effectIndex );
 		if ( ! entry ) {
 
 			missed.push( { shape: subPass.shape, reason: 'no aux artifact registered for shape' } );

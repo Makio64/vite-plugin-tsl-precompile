@@ -54,7 +54,7 @@ function makeFakeCanvas( width = 256, height = 256 ) {
 
 }
 
-test( 'slim-runtime: bundle imports + WebGPURenderer constructs', async () => {
+test( 'slim-runtime: bundle imports + WebGPURenderer constructs', async t => {
 
 	const slim = await import( '../../../runtime/build/three.webgpu.slim.js' );
 	assert.equal( typeof slim.WebGPURenderer, 'function', 'WebGPURenderer must be exported' );
@@ -62,18 +62,20 @@ test( 'slim-runtime: bundle imports + WebGPURenderer constructs', async () => {
 	assert.equal( typeof slim.hydrateNodeBuilderState, 'function', 'hydrateNodeBuilderState must be exported' );
 
 	const renderer = new slim.WebGPURenderer( { canvas: makeFakeCanvas(), antialias: false } );
+	t.after( () => renderer.dispose() );
 	assert.ok( renderer );
 	await renderer.init();
 	assert.ok( renderer.backend, 'renderer.backend must be initialised' );
-	renderer.dispose();
+	await renderer.dispose();
 
 } );
 
-test( 'slim-runtime: PrecompiledMaterial with a minimal artifact survives getForRender', async () => {
+test( 'slim-runtime: PrecompiledMaterial with a minimal artifact survives getForRender', async t => {
 
 	const slim = await import( '../../../runtime/build/three.webgpu.slim.js' );
 
 	const renderer = new slim.WebGPURenderer( { canvas: makeFakeCanvas(), antialias: false } );
+	t.after( () => renderer.dispose() );
 	await renderer.init();
 
 	// Build a minimal artifact — just enough WGSL + empty bindings to flow
@@ -102,15 +104,16 @@ test( 'slim-runtime: PrecompiledMaterial with a minimal artifact survives getFor
 	// renderer.compileAsync walks the scene and hydrates each material.
 	// If our Nodes.js rewrite is broken, it fires here.
 	await renderer.compileAsync( scene, camera );
-	renderer.dispose();
+	await renderer.dispose();
 
 } );
 
-test( 'slim-runtime: getForRender throws loud on a non-precompiled material', async () => {
+test( 'slim-runtime: getForRender throws loud on a non-precompiled material', async t => {
 
 	const slim = await import( '../../../runtime/build/three.webgpu.slim.js' );
 
 	const renderer = new slim.WebGPURenderer( { canvas: makeFakeCanvas(), antialias: false } );
+	t.after( () => renderer.dispose() );
 	await renderer.init();
 
 	// Bare Material — NOT precompiled, has no isNodeMaterial flag. Some
@@ -127,23 +130,12 @@ test( 'slim-runtime: getForRender throws loud on a non-precompiled material', as
 	scene.add( mesh );
 	const camera = new slim.PerspectiveCamera( 45, 1, 0.1, 100 );
 
-	let caught = null;
-	try {
-
-		await renderer.compileAsync( scene, camera );
-
-	} catch ( err ) {
-
-		caught = err;
-
-	}
-	assert.ok( caught, 'non-precompiled node-material should throw at compileAsync' );
-	assert.match(
-		String( caught.message ),
-		/tsl-precompile\/slim|PrecompiledMaterial/i,
-		'error must come from our precompile bypass, not a generic crash',
-	);
-	renderer.dispose();
+	await assert.rejects( renderer.compileAsync( scene, camera ), /tsl-precompile\/slim|PrecompiledMaterial/i,
+		'error must come from our precompile bypass, not a generic crash' );
+	await renderer.dispose();
+	for ( const resource of [ mat, mesh.geometry, mesh ] ) assert.equal( resource._listeners?.dispose?.length || 0, 0 );
+	mat.dispose();
+	mesh.geometry.dispose();
 
 } );
 

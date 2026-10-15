@@ -32,6 +32,7 @@ import { createRendererOutputConfig } from '@tsl-precompile/contract/output-conf
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { installRangeAttributeCapture } from './range-attribute-capture.js';
 import { getDevCaptureStatus, waitForDevCaptureSettled } from './dev-capture-outcome.js';
+import { waitForMaterialCaptures } from './dev-material-capture-settlement.js';
 
 const DEFAULT_DEV_ENDPOINT = '/__tsl-precompile/capture';
 const INIT_WRAPPED_FLAG = '__tslpSetupInitWrapped';
@@ -480,6 +481,12 @@ export function setupPrecompile( opts = {} ) {
 		if ( ! waitOpts || typeof waitOpts !== 'object' ) {
 
 			throw new TypeError( 'setupPrecompile.waitForCaptureSettled: options must be an object when provided.' );
+
+		}
+		if ( Object.hasOwn( waitOpts, 'materials' ) ) {
+
+			await waitForMaterialCaptures( waitOpts.materials, waitOpts );
+			return getDevCaptureStatus();
 
 		}
 		const settled = await waitForDevCaptureSettled( {

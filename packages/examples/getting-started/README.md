@@ -67,3 +67,26 @@ version. Re-run `dev` to refresh it after either:
 
 The plugin's build will fail with "no artifact for 'getting-started'" or a
 hash-mismatch warning if the committed artifact is stale.
+
+## Small full-vs-precompiled comparison
+
+```sh
+pnpm --filter examples-getting-started compare
+```
+
+Requires local Chrome and the workspace's batch Playwright dependency. Builds the
+existing scene in full compatibility and source-slim production modes, measures
+them sequentially in Chrome, then serves a live comparison at
+`http://127.0.0.1:5186`. Use `TSLP_DEMO_PORT` to select another port. Stop with Ctrl-C.
+The comparison leaves captured artifacts unchanged.
+
+Each mode gets three alternating rounds at 640×480 with DPR 1, 30 warm-up frames
+and 90 samples per round. The table reports median-of-round medians and p95s;
+raw samples and two same-pose screenshots live in `dist/comparison/`. GPU timing
+uses WebGPU timestamp queries; CPU timing excludes GPU readback. Shader-node count
+means unique nodes processed by NodeBuilder during startup, not scene objects or
+all retained JavaScript objects. First-render CPU is instrumented and can benefit
+from browser/driver caches. These short runs describe this scene and machine.
+
+`compare -- --skip-build` reuses the builds for another measurement.
+`compare -- --skip-build --serve-only` reopens the saved report without measuring.

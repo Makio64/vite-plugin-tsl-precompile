@@ -4,6 +4,8 @@ import type {
 	StringRecord,
 } from './types.js';
 
+export const MATERIAL_UNIFORM_TYPES: Readonly<Record<string, 'color' | 'f32' | 'vec2'>>;
+
 export const LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA: 'uniform-callsite@1';
 export const LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY: '@tsl-precompile/runtime/live-uniform-node-identity@1';
 export const STORAGE_BUFFER_SNAPSHOT_HASH_SCHEMA: 'storage-buffer-snapshot@1';
@@ -60,4 +62,5 @@ export function isDynamicBindingKind( kind: unknown ): kind is string;
 export function validateDynamicBindingSource( source: StringRecord | null | undefined ): ContractIssue[];
 export function createStorageBufferSnapshotHash( entry: StringRecord | null | undefined ): string | null;
 export function validateStorageBufferSnapshot( entry: StringRecord | null | undefined ): ContractIssue[];
-export function collectArtifactDynamicBindings( artifact: StringRecord | null | undefined ): StringRecord[];
+export function collectArtifactDynamicBindings( artifact: StringRecord | null | undefined, options?: { texturesOnly?: boolean } ): StringRecord[];
+export const GENERATED_SHARED_UNIFORM_GROUP_KEY: unique symbol;

@@ -136,13 +136,8 @@ function normalizeChromiumGpuInfo( gpu ) {
 
 }
 
-export async function launchEvidenceBrowser( chromium, {
-	args = [],
-	headless = true,
-	platform = process.platform,
-} = {} ) {
+export function evidenceBrowserChannelPolicy( platform = process.platform ) {
 
-	const launchArgs = evidenceBrowserLaunchArgs( args, platform );
 	// Linux evidence is pinned to Playwright's installed Chromium revision. A
 	// runner's system Chrome can accept the SwiftShader flags yet report WebGPU
 	// as unavailable, making the environment non-reproducible. Keep system
@@ -155,6 +150,18 @@ export async function launchEvidenceBrowser( chromium, {
 		? { launchChannel: 'chrome', evidenceChannel: 'chrome' }
 		: { launchChannel: 'chromium', evidenceChannel: 'playwright-chromium' };
 
+	return [ primary, fallback ];
+
+}
+
+export async function launchEvidenceBrowser( chromium, {
+	args = [],
+	headless = true,
+	platform = process.platform,
+} = {} ) {
+
+	const launchArgs = evidenceBrowserLaunchArgs( args, platform );
+	const [ primary, fallback ] = evidenceBrowserChannelPolicy( platform );
 	let browser = await chromium.launch( {
 		channel: primary.launchChannel,
 		headless,

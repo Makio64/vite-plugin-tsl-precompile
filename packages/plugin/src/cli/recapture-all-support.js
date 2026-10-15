@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { collectRecapturePMREMFamilies, recapturePMREMFamilyMissingShapes } from './recapture-pmrem-obligations.js';
 
 const EXAMPLE_NAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const DEFAULT_RECAPTURE_PORT = 8999;
@@ -721,6 +722,7 @@ function readArtifactInventory( entry ) {
 	}
 	const identities = [];
 	const auxiliaryShapes = [];
+	const pmremEnvelopes = [];
 	for ( const name of Object.keys( manifest ) ) {
 
 		if ( name !== '__aux' ) identities.push( `material:${ name }` );
@@ -741,6 +743,14 @@ function readArtifactInventory( entry ) {
 				: key.slice( 0, key.lastIndexOf( ':' ) );
 			if ( shape.length === 0 ) throw new Error( `Could not identify auxiliary shape ${ JSON.stringify( key ) } in ${ manifestPath}` );
 			auxiliaryShapes.push( shape );
+			if ( shape.startsWith( 'pmrem-' ) ) {
+
+				if ( typeof manifestEntry.file !== 'string' || ! manifestEntry.file ) throw new TypeError( `PMREM inventory entry ${ key } is missing its artifact file.` );
+				const artifactPath = resolve( entry.artifactsDir, manifestEntry.file );
+				assertSafeExistingComponents( entry.artifactsDir, artifactPath, 'PMREM artifact' );
+				pmremEnvelopes.push( JSON.parse( readFileSync( artifactPath, 'utf8' ) ) );
+
+			}
 
 		}
 
@@ -751,6 +761,7 @@ function readArtifactInventory( entry ) {
 		name: entry.exampleName,
 		identities: Object.freeze( identities ),
 		auxiliaryShapes: Object.freeze( auxiliaryShapes ),
+		pmremFamilies: collectRecapturePMREMFamilies( pmremEnvelopes ),
 	} );
 
 }
@@ -837,7 +848,10 @@ export function assertRecaptureAuxiliaryObligations( inventories, examples ) {
 		const required = [ ...new Set( example.requiredAuxiliaryShapes || [] ) ].sort();
 		const inventory = byName.get( example.name );
 		const present = new Set( inventory?.auxiliaryShapes || [] );
-		const missing = required.filter( ( shape ) => ! present.has( shape ) );
+		const missing = [
+			...required.filter( ( shape ) => ! present.has( shape ) ),
+			...recapturePMREMFamilyMissingShapes( inventory?.pmremFamilies ),
+		];
 		report.push( Object.freeze( {
 			name: example.name,
 			required: Object.freeze( required ),

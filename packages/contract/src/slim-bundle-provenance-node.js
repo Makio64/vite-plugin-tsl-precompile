@@ -12,6 +12,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 
 import { stableJsonStringify } from './stable-json.js';
+import { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from './slim-three-policy.js';
 
 export const SLIM_BUNDLE_SOURCE_SCHEMA = 'tslp-slim-bundle-sources@1';
 export const SLIM_BUNDLE_PROVENANCE_SCHEMA = 'tslp-slim-bundle-provenance@1';
@@ -42,6 +43,48 @@ export class SlimBundleProvenanceError extends Error {
 		this.code = code;
 
 	}
+
+}
+
+/** Identify a pinned development renderer even when a package install omits Git. */
+export async function computeThreeReleaseFingerprint( packageRoot ) {
+
+	const files = [ ...await listFiles( resolve( packageRoot, 'src' ) ), ...await listFiles( resolve( packageRoot, 'build' ) ) ]
+		.map( file => ( { file, path: normalizeLogicalPath( relative( packageRoot, file ) ) } ) )
+		.sort( ( a, b ) => compareCodeUnits( a.path, b.path ) );
+	const hash = createHash( 'sha256' );
+	let bytes = 0;
+	for ( const entry of files ) {
+
+		const contents = await readFile( entry.file );
+		bytes += contents.length;
+		hash.update( `${ entry.path }\0${ contents.length }\0${ sha256Bytes( contents ) }\n` );
+
+	}
+	return { sha256: hash.digest( 'hex' ), fileCount: files.length, bytes };
+
+}
+
+/** Version-only matching cannot distinguish Three's pre-release source branch. */
+export async function readSlimThreeReleaseProfile( packageRoot, { sourceCommit } = {} ) {
+
+	const pkg = JSON.parse( await readFile( resolve( packageRoot, 'package.json' ), 'utf8' ) );
+	const constants = await readFile( resolve( packageRoot, 'src/constants.js' ), 'utf8' );
+	const revision = /export\s+const\s+REVISION\s*=\s*['"]([^'"]+)['"]/.exec( constants )?.[ 1 ];
+	if ( pkg.name !== 'three' || ! revision ) throw new Error( `Invalid Three source root: ${ packageRoot }` );
+	if ( pkg.version === THREE_RELEASE_PROFILES.stable.packageVersion ) {
+
+		const profile = resolveSlimThreeRelease( { packageVersion: pkg.version, revision, sourceCommit } );
+		if ( profile ) return profile;
+
+	} else if ( pkg.version === THREE_RELEASE_PROFILES.development.packageVersion && revision === THREE_RELEASE_PROFILES.development.revision ) {
+
+		const profile = THREE_RELEASE_PROFILES.development;
+		const fingerprint = await computeThreeReleaseFingerprint( packageRoot );
+		if ( fingerprint.sha256 === profile.sourceFingerprint && ( sourceCommit === undefined || sourceCommit === profile.gitCommit ) ) return profile;
+
+	}
+	throw new Error( `Unsupported Three source ${ pkg.version } / ${ revision } at ${ packageRoot }; use the pinned r186 release or r187dev snapshot.` );
 
 }
 
@@ -77,6 +120,21 @@ export function createSlimBundleSourceInputs( {
 		runtimeSourceDirectory: resolve( runtimePackageRoot, 'src' ),
 		contractSourceDirectory: resolve( contractPackageRoot, 'src' ),
 		rewriteImplementationFiles: [
+			...[
+				'three-rewrite-ast.js',
+				'three-rewrite-node-primitives.js',
+				'three-rewrite-renderer-lifecycle.js',
+				'three-rewrite-webgpu-bindings.js',
+				'three-rewrite-webgpu-only.js',
+				'three-rewrite-pipeline-async-scope.js',
+			].map( name => ( {
+				name: `src/${ name }`,
+				file: resolve( pluginPackageRoot, 'src', name ),
+			} ) ),
+			{
+				name: 'src/three-rewrite-compilation-loop.js',
+				file: resolve( pluginPackageRoot, 'src/three-rewrite-compilation-loop.js' ),
+			},
 			{
 				name: 'build-tools/slim-rewrite.js',
 				file: resolve( pluginPackageRoot, 'build-tools/slim-rewrite.js' ),
@@ -104,6 +162,8 @@ export function createSlimBundleSourceInputs( {
 
 export function createSlimBundleVersionIdentity( {
 	threeVersion,
+	threeRevision,
+	threeCommit,
 	policyVersion,
 	artifactToolchainVersion,
 	buildToolchainVersion = SLIM_BUNDLE_BUILD_TOOLCHAIN_VERSION,
@@ -111,6 +171,8 @@ export function createSlimBundleVersionIdentity( {
 
 	return normalizeVersions( {
 		three: threeVersion,
+		...( threeRevision === undefined ? {} : { threeRevision } ),
+		...( threeCommit === undefined ? {} : { threeCommit } ),
 		policy: policyVersion,
 		artifactToolchain: artifactToolchainVersion,
 		buildToolchain: buildToolchainVersion,
@@ -530,13 +592,21 @@ function normalizeVersions( versions, code = SLIM_BUNDLE_PROVENANCE_ERROR_CODES.
 	}
 	const normalized = {};
 	for ( const key of VERSION_KEYS ) normalized[ key ] = assertNonEmptyString( versions[ key ], `${ label }.${ key }`, code );
+	if ( versions.threeRevision !== undefined || versions.threeCommit !== undefined ) {
+
+		const profile = resolveSlimThreeRelease( { packageVersion: normalized.three, revision: versions.threeRevision, sourceCommit: versions.threeCommit } );
+		if ( ! profile || profile.channel !== 'development' ) throw provenanceError( code, `${ label } has an unverified development Three identity` );
+		normalized.threeRevision = profile.revision;
+		normalized.threeCommit = profile.gitCommit;
+
+	}
 	return normalized;
 
 }
 
 function assertVersionIdentity( actual, expected, label, code ) {
 
-	for ( const key of VERSION_KEYS ) {
+	for ( const key of [ ...VERSION_KEYS, 'threeRevision', 'threeCommit' ] ) {
 
 		if ( actual[ key ] === expected[ key ] ) continue;
 		throw provenanceError(

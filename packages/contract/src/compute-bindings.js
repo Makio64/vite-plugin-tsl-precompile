@@ -113,6 +113,10 @@ function uniformSlotAt( artifact, group, slot ) {
 
 function validateStorageBufferEntry( entry, path, errors ) {
 
+	if ( entry.runtimeSized !== undefined && typeof entry.runtimeSized !== 'boolean' ) errors.push( issue(
+		'compute-bindings.entry.runtime-sized', `${ path }.runtimeSized must be a boolean`, `${ path }.runtimeSized`,
+	) );
+
 	if ( ! ACCESS_MODE_SET.has( entry.access ) ) errors.push( issue(
 		'compute-bindings.entry.access',
 		`${ path }.access must be one of ${ MATERIAL_COMPUTE_ACCESS_MODES.join( ', ' ) }`,
@@ -237,6 +241,10 @@ function validateStorageBufferArtifact( entry, descriptor, ordered, path, errors
 		`${ path }.access`,
 	) );
 	const ref = ordered.ref;
+	if ( ( entry.runtimeSized === true ) !== ( descriptor.runtimeSized === true ) ||
+		( entry.runtimeSized === true ) !== ( ref?.runtimeSized === true ) ) errors.push( issue(
+		'compute-bindings.artifact.runtime-sized', `${ path }.runtimeSized must match the captured binding and uniform plan`, `${ path }.runtimeSized`,
+	) );
 	for ( const field of [ 'arrayType', 'count', 'itemSize' ] ) {
 
 		if ( ! ref || ref[ field ] !== entry[ field ] ) errors.push( issue(

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import * as t from '@babel/types';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_TYPES_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 
 import {
@@ -452,7 +452,7 @@ export async function inspectTslPrecompileProject( options = {} ) {
 		'three-version': installCommands,
 		'three-types-version': packageManagerCommandDescriptors( commandSet, 'installTypes', {
 			code: 'install-three-types',
-			action: `Install @types/three exactly at ${ SLIM_THREE_PACKAGE_VERSION } as a development dependency.`,
+			action: `Install @types/three exactly at ${ SLIM_THREE_TYPES_PACKAGE_VERSION } as a development dependency.`,
 		} ),
 		'artifact-verification': packageManagerCommandDescriptors( commandSet, 'verify', {
 			code: 'artifact-verification',
@@ -620,7 +620,7 @@ function addDependencyChecks( checks, state, commands ) {
 	const installRemediation = commands.install
 		|| 'Choose the application package manager, then install matching vite-plugin-tsl-precompile and @tsl-precompile/runtime releases with exact three.js.';
 	const installTypesRemediation = commands.installTypes
-		|| `Choose the application package manager, then install @types/three exactly at ${ SLIM_THREE_PACKAGE_VERSION } as a development dependency.`;
+		|| `Choose the application package manager, then install @types/three exactly at ${ SLIM_THREE_TYPES_PACKAGE_VERSION } as a development dependency.`;
 	const pluginPlacement = state.plugin.declared?.section;
 	addCheck( checks, {
 		id: 'plugin-package',
@@ -672,14 +672,14 @@ function addDependencyChecks( checks, state, commands ) {
 	} );
 	if ( state.typescriptProject ) {
 
-		const exactTypesDeclared = state.typesThree.declared?.spec === SLIM_THREE_PACKAGE_VERSION;
-		const exactTypesInstalled = state.typesThree.installed?.version === SLIM_THREE_PACKAGE_VERSION;
+		const exactTypesDeclared = state.typesThree.declared?.spec === SLIM_THREE_TYPES_PACKAGE_VERSION;
+		const exactTypesInstalled = state.typesThree.installed?.version === SLIM_THREE_TYPES_PACKAGE_VERSION;
 		addCheck( checks, {
 			id: 'three-types-version',
 			status: exactTypesDeclared && exactTypesInstalled ? 'pass' : 'fail',
 			summary: exactTypesDeclared && exactTypesInstalled
-				? `@types/three is declared and resolved exactly at ${ SLIM_THREE_PACKAGE_VERSION }.`
-				: `This TypeScript project must declare and resolve @types/three exactly at ${ SLIM_THREE_PACKAGE_VERSION }.`,
+				? `@types/three is declared and resolved exactly at ${ SLIM_THREE_TYPES_PACKAGE_VERSION }.`
+				: `This TypeScript project must declare and resolve @types/three exactly at ${ SLIM_THREE_TYPES_PACKAGE_VERSION }.`,
 			nextAction: installTypesRemediation,
 		} );
 
@@ -1551,12 +1551,12 @@ function createCommandSetForManager( {
 						[ 'npm', 'install', '--save-exact', runtimeSpecifier, `three@${ SLIM_THREE_PACKAGE_VERSION }` ],
 					];
 	const installTypesArgv = manager === 'pnpm'
-		? [ 'pnpm', 'add', '-D', `@types/three@${ SLIM_THREE_PACKAGE_VERSION }`, '--save-exact' ]
+		? [ 'pnpm', 'add', '-D', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`, '--save-exact' ]
 		: manager === 'yarn'
-			? [ 'yarn', 'add', '--dev', '--exact', `@types/three@${ SLIM_THREE_PACKAGE_VERSION }` ]
+			? [ 'yarn', 'add', '--dev', '--exact', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }` ]
 			: manager === 'bun'
-				? [ 'bun', 'add', '--dev', '--exact', `@types/three@${ SLIM_THREE_PACKAGE_VERSION }` ]
-				: [ 'npm', 'install', '--save-dev', '--save-exact', `@types/three@${ SLIM_THREE_PACKAGE_VERSION }` ];
+				? [ 'bun', 'add', '--dev', '--exact', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }` ]
+				: [ 'npm', 'install', '--save-dev', '--save-exact', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }` ];
 	const recaptureTemplateArgv = [
 		...execArgv,
 		'tsl-precompile-recapture',
@@ -1595,12 +1595,12 @@ function createCommandSetForManager( {
 					? `bun add --dev ${ pluginSpecifier } && bun add --exact ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION }`
 					: `npm install --save-dev ${ pluginSpecifier } && npm install --save-exact ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION }`,
 		installTypes: manager === 'pnpm'
-			? `pnpm add -D @types/three@${ SLIM_THREE_PACKAGE_VERSION } --save-exact`
+			? `pnpm add -D @types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION } --save-exact`
 			: manager === 'yarn'
-				? `yarn add --dev --exact @types/three@${ SLIM_THREE_PACKAGE_VERSION }`
+				? `yarn add --dev --exact @types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`
 				: manager === 'bun'
-					? `bun add --dev --exact @types/three@${ SLIM_THREE_PACKAGE_VERSION }`
-				: `npm install --save-dev --save-exact @types/three@${ SLIM_THREE_PACKAGE_VERSION }`,
+					? `bun add --dev --exact @types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`
+				: `npm install --save-dev --save-exact @types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`,
 		installSkill: `${ exec } tsl-precompile-install-skill --json`,
 		doctor: `${ exec } tsl-precompile-doctor ${ doctorOptions }`,
 		recapture: [

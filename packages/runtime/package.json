@@ -207,9 +207,9 @@
   "scripts": {
     "build:slim": "rollup -c rollup.config.js",
     "build": "rollup -c rollup.config.js",
-    "test": "node --test --test-concurrency=2 --test-reporter=dot test/*.test.js",
-    "test:quick": "node --test --test-concurrency=2 --test-reporter=dot test/*.test.js",
-    "test:full": "node --test --test-concurrency=2 test/*.test.js",
+    "test": "node ../../scripts/test.mjs quick --scope=runtime",
+    "test:quick": "node ../../scripts/test.mjs quick --scope=runtime",
+    "test:full": "node ../../scripts/test.mjs full --scope=runtime",
     "prepublishOnly": "TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm run build && pnpm run test:full"
   },
   "dependencies": {
@@ -222,8 +222,8 @@
     "vite-plugin-tsl-precompile": "workspace:*"
   },
   "peerDependencies": {
-    "@types/three": "0.185.1",
-    "three": "0.185.1"
+    "@types/three": "0.186.0",
+    "three": "0.186.0 || 0.186.1"
   },
   "peerDependenciesMeta": {
     "@types/three": { "optional": true },

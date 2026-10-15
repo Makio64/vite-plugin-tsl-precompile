@@ -95,10 +95,32 @@ function extractUpdaterSetEntries( src ) {
 
 }
 
+/**
+ * Literal `'foo.bar': ...` keys inside `new Map(Object.entries({ ... }))`
+ * writer tables. Direct and velocity writers use this form because their
+ * values carry writer-specific metadata rather than simple set membership.
+ */
+function extractUpdaterMapEntries( src ) {
+
+	const out = new Set();
+	const mapRe = /new Map\(\s*Object\.entries\(\s*\{([\s\S]*?)\}\s*\)\s*\)/g;
+	let m;
+	while ( ( m = mapRe.exec( src ) ) !== null ) {
+
+		const keyRe = /['"`]([\w][\w.]*)['"`]\s*:/g;
+		let key;
+		while ( ( key = keyRe.exec( m[ 1 ] ) ) !== null ) out.add( key[ 1 ] );
+
+	}
+	return out;
+
+}
+
 const extractorKinds = extractLiteralKinds( extractorSrc );
 const updaterCases = new Set( [
 	...extractUpdaterCases( updaterSrc ),
 	...extractUpdaterSetEntries( updaterSrc ),
+	...extractUpdaterMapEntries( updaterSrc ),
 	...LIGHT_SLOT_KINDS,
 ] );
 const blockedKinds = new Set( Object.keys( BLOCKED_KINDS ) );

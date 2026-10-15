@@ -294,3 +294,19 @@ test( 'classifier integrates with collectArtifactDynamicBindings end-to-end', ()
 	assert.equal( ctx.materialTextureBindings.length, 1 );
 
 } );
+
+test( 'compact writable textures use the shared source owner without traversing unrelated slots', () => {
+
+	const source = { kind: 'material.map', property: 'map' };
+	const group = { name: 'compute', textures: [ { name: 'output', store: true, source } ] };
+	Object.defineProperty( group, 'slots', { get() { throw new Error( 'texture hydration must not walk slots' ); } } );
+	Object.defineProperty( group, 'storageBuffers', { get() { throw new Error( 'texture hydration must not walk buffers' ); } } );
+	const artifact = { uniformPlan: [ group ] };
+	const entry = indexDynamicTextureBindings( artifact ).get( 'compute::output' );
+	assert.deepEqual( entry, collectArtifactDynamicBindings( artifact, { texturesOnly: true } )[ 0 ] );
+	const context = freshContext( { artifact } );
+	const binding = { isSampledTexture: true, store: true };
+	classifyDynamicTextureBinding( entry, binding, { kind: 'sampled-texture', name: 'output', store: true }, context );
+	assert.equal( context.materialTextureBindings[ 0 ].binding, binding );
+
+} );

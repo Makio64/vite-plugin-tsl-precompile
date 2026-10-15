@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   batch:
-    name: Exact 254-case evidence campaign
+    name: Exact catalogue evidence campaign
     if: github.event_name == 'schedule' || inputs.mode == 'canonical-campaign'
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -40,11 +40,17 @@ jobs:
             echo "TSLP_SITE_PUBLIC_OUT=$RUNNER_TEMP/nightly-site-public"
           } >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select shared stable Three release
+        id: three-release
+        run: >-
+          node --input-type=module -e
+          "import { THREE_RELEASE_PROFILES } from './packages/contract/src/slim-three-policy.js';
+          console.log('commit=' + THREE_RELEASE_PROFILES.stable.gitCommit);" >> "$GITHUB_OUTPUT"
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: mrdoob/three.js
-          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          ref: ${{ steps.three-release.outputs.commit }}
           path: three.js
           fetch-depth: 1
           sparse-checkout: |
@@ -59,7 +65,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Canonical 209-case stock-renderer sweep
+      - name: Canonical upstream stock-renderer sweep
         run: >-
           xvfb-run -a node packages/examples/batch/run.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"
@@ -67,7 +73,7 @@ jobs:
           --canonical-evidence
       - name: Build slim bundle with rewrite fallbacks fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
-      - name: Run exact upstream and six-local-cohort capture/replay campaign
+      - name: Run exact upstream and local-cohort capture/replay campaign
         run: xvfb-run -a pnpm test:e2e:campaign -- --three-repo="$GITHUB_WORKSPACE/three.js"
       - name: Generate site data from the same immutable evidence
         run: pnpm --filter @tsl-precompile/site data

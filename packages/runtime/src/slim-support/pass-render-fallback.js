@@ -92,14 +92,14 @@ function forwardOutputStageState( slimRenderer, fullRenderer ) {
 
 }
 
-function withMappedSceneMaterials( scene, callback, materialMapper ) {
+export function withMappedSceneMaterials( scene, callback, materialMapper ) {
 
 	if ( ! scene || typeof materialMapper !== 'function' ) return callback();
 
 	const swaps = [];
-	const mapMaterial = ( material ) => {
+	const mapMaterial = ( material, override = false ) => {
 
-		const mapped = materialMapper( material );
+		const mapped = materialMapper( material, { override } );
 		return mapped && mapped !== material ? mapped : material;
 
 	};
@@ -143,7 +143,7 @@ function withMappedSceneMaterials( scene, callback, materialMapper ) {
 
 		if ( scene.overrideMaterial ) {
 
-			const mapped = mapMaterial( scene.overrideMaterial );
+			const mapped = mapMaterial( scene.overrideMaterial, true );
 			if ( mapped !== scene.overrideMaterial ) {
 
 				swaps.push( { object: scene, material: scene.overrideMaterial, override: true } );

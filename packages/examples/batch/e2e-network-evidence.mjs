@@ -521,7 +521,10 @@ function createCollectorState( {
 function track( state, promise ) {
 
 	state.pending.add( promise );
-	void promise.finally( () => state.pending.delete( promise ) );
+	void promise.then(
+		() => state.pending.delete( promise ),
+		() => state.pending.delete( promise ),
+	);
 	return promise;
 
 }
@@ -965,35 +968,45 @@ async function installCollector( state ) {
 		state.expectedByRequestKey = buildExpectedFixtureMap( state.fixture );
 
 	}
-	state.routeHandler = ( route ) => track(
-		state,
-		state.mode === 'capture' ? captureRoute( state, route ) : replayRoute( state, route ),
-	);
-	await state.context.route( NETWORK_ROUTE_PATTERN, state.routeHandler );
-	state.routeInstalled = true;
-	state.webSocketHandler = async ( socket ) => {
+	const collector = collectorApi( state );
+	try {
 
-		const url = typeof socket?.url === 'function' ? socket.url() : '';
-		if ( isCrossOriginWebSocketUrl( url, state.pageUrl ) ) {
+		state.routeHandler = ( route ) => track(
+			state,
+			state.mode === 'capture' ? captureRoute( state, route ) : replayRoute( state, route ),
+		);
+		await state.context.route( NETWORK_ROUTE_PATTERN, state.routeHandler );
+		state.routeInstalled = true;
+		state.webSocketHandler = async ( socket ) => {
 
-			state.webSocketsRejected ++;
-			state.issues.push( `cross-origin WebSocket input cannot be content-snapshotted: ${ url }` );
-			if ( typeof socket?.close === 'function' ) {
+			const url = typeof socket?.url === 'function' ? socket.url() : '';
+			if ( isCrossOriginWebSocketUrl( url, state.pageUrl ) ) {
 
-				await socket.close( { code: 1008, reason: 'cross-origin network evidence required' } );
+				state.webSocketsRejected ++;
+				state.issues.push( `cross-origin WebSocket input cannot be content-snapshotted: ${ url }` );
+				if ( typeof socket?.close === 'function' ) {
+
+					await socket.close( { code: 1008, reason: 'cross-origin network evidence required' } );
+
+				}
+				return;
 
 			}
-			return;
+			if ( typeof socket?.connectToServer === 'function' ) socket.connectToServer();
 
-		}
-		if ( typeof socket?.connectToServer === 'function' ) socket.connectToServer();
+		};
+		await state.context.routeWebSocket( NETWORK_ROUTE_PATTERN, state.webSocketHandler );
+		state.webSocketRouteInstalled = true;
+		installEventHandlers( state );
+		state.state = 'active';
+		return collector;
 
-	};
-	await state.context.routeWebSocket( NETWORK_ROUTE_PATTERN, state.webSocketHandler );
-	state.webSocketRouteInstalled = true;
-	installEventHandlers( state );
-	state.state = 'active';
-	return collectorApi( state );
+	} catch ( error ) {
+
+		await collector.dispose();
+		throw error;
+
+	}
 
 }
 
@@ -1176,6 +1189,7 @@ function collectorApi( state ) {
 		},
 		async dispose() {
 
+			if ( state.state === 'disposed' ) return;
 			state.state = 'disposed';
 			detachEventHandlers( state );
 			if ( state.routeInstalled && typeof state.context.unroute === 'function' ) {
@@ -1187,6 +1201,17 @@ function collectorApi( state ) {
 				} catch {}
 
 			}
+			// Route/response tasks can still own request objects and large bodies.
+			// Settle them before dropping state so they cannot refill cleared maps.
+			await drainPending( state );
+			state.records.clear();
+			state.bodies.clear();
+			state.expectedByRequestKey?.clear();
+			state.fixture = null;
+			state.loadBody = null;
+			state.context = null;
+			state.routeHandler = null;
+			state.webSocketHandler = null;
 
 		},
 	};

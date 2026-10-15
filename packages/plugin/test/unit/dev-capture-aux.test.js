@@ -22,7 +22,9 @@ import { POSTPROCESS_EFFECT_AUXILIARY_SHAPES } from '@tsl-precompile/contract/au
 import { INTERNAL_PASS_SHAPES } from '@tsl-precompile/contract/internal-pass';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { computeArtifactContentHash } from '../../src/hash.js';
+import { createThreeEmitterHashFields, createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { MARKER_SOURCE_PROVENANCE_SCHEMA } from '../../src/_shared/source-provenance.js';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 const SIGNED_SELECTOR_A = stableJsonStringify( {
 	version: 'render-object-selector@1',
@@ -55,7 +57,8 @@ function makeSignedArtifact( options = {} ) {
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 		sourceGraphHash: options.sourceGraphHash || 'f'.repeat( 64 ),
 		sourceHashVersion: options.sourceHashVersion || '0.1.0',
-		sourceThreeVersion: options.sourceThreeVersion || '0.185.1',
+		sourceThreeVersion: options.sourceThreeVersion || SLIM_THREE_PACKAGE_VERSION,
+		...createThreeEmitterSourceFields( { threeVersion: options.sourceThreeVersion, threeRevision: options.sourceThreeRevision, threeCommit: options.sourceThreeCommit } ),
 		renderContextSignature: selector,
 		sourceValidationMode: options.sourceValidationMode || 'runtime-graph',
 	};
@@ -102,6 +105,7 @@ function makeSignedPayload( name, sourceIdentity, sourceRevision, artifact ) {
 		hash: computeArtifactContentHash( artifact, {
 			shape: `material:${ name }`,
 			threeVersion: artifact.sourceThreeVersion,
+			...createThreeEmitterHashFields( { threeVersion: artifact.sourceThreeVersion, threeRevision: artifact.sourceThreeRevision, threeCommit: artifact.sourceThreeCommit } ),
 			pluginVersion: artifact.sourceHashVersion,
 		} ),
 		sourceIdentity,
@@ -150,7 +154,7 @@ async function postJSON( port, path, body, options = {} ) {
 
 	const preserveAuxSignature = body.__preserveAuxSignature === true;
 	const payload = typeof body.materialShape === 'string' ? {
-		threeVersion: '0.185.1',
+		threeVersion: SLIM_THREE_PACKAGE_VERSION,
 		pluginVersion: '0.1.0',
 		...body,
 	} : body;
@@ -164,11 +168,13 @@ async function postJSON( port, path, body, options = {} ) {
 			...payload.artifact,
 			artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 			sourceThreeVersion: payload.threeVersion,
+			...createThreeEmitterSourceFields( payload ),
 			sourceHashVersion: payload.pluginVersion,
 		};
 		payload.hash = computeArtifactContentHash( payload.artifact, {
 			shape: payload.materialShape,
 			threeVersion: payload.threeVersion,
+			...createThreeEmitterHashFields( payload ),
 			pluginVersion: payload.pluginVersion,
 		} );
 
@@ -424,6 +430,69 @@ test( 'dev-capture: accepts same-origin JSON and rejects untrusted browser reque
 
 		http.close();
 		rmSync( artifactsDir, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'dev-capture: only the server verified release selects accepted user and aux versions', async () => {
+
+	for ( const configured of [ undefined, THREE_RELEASE_PROFILES.development ] ) {
+
+		const release = configured || THREE_RELEASE_PROFILES.stable;
+		const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-dc-release-' ) );
+		const vite = makeFakeViteServer();
+		assert.throws( () => attachDevCapture( makeFakeViteServer(), {
+			artifactsDir, verifiedThreeRelease: { ...THREE_RELEASE_PROFILES.development },
+		} ), /canonical verified Three release/ );
+		attachDevCapture( vite, { artifactsDir, verifiedThreeRelease: configured } );
+		const { http, port } = await spinUpServer( vite );
+		try {
+
+			const emitter = { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit };
+			const artifact = makeSignedArtifact( { sourceThreeVersion: release.packageVersion, ...createThreeEmitterSourceFields( emitter ) } );
+			const accepted = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload( 'current-release', undefined, undefined, artifact ) );
+			assert.equal( accepted.status, 200, accepted.text );
+			const auxiliary = await postJSON( port, '/__tsl-precompile/capture', {
+				materialShape: 'background', configHash: 'a'.repeat( 64 ), threeVersion: release.packageVersion, ...createThreeEmitterHashFields( emitter ),
+				artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+			} );
+			assert.equal( auxiliary.status, 200, auxiliary.text );
+			if ( release.channel === 'development' ) {
+
+				const legacy = makeSignedPayload( 'ambiguous-old-stable', undefined, undefined, makeSignedArtifact( { sourceThreeVersion: release.packageVersion } ) );
+				const rejected = await postJSON( port, '/__tsl-precompile/capture', legacy );
+				assert.equal( rejected.status, 400 );
+				assert.match( rejected.json.error, /sourceThreeRevision.*Recapture/ );
+				const manifest = JSON.parse( readFileSync( join( artifactsDir, 'manifest.json' ), 'utf8' ) );
+				const record = Object.values( manifest.__aux )[ 0 ];
+				assert.equal( record.threeRevision, emitter.threeRevision );
+				assert.equal( record.threeCommit, emitter.threeCommit );
+
+			}
+			for ( const version of [ '0.185.1', ...Object.values( THREE_RELEASE_PROFILES ).map( value => value.packageVersion ) ].filter( value => value !== release.packageVersion ) ) {
+
+				const claimed = makeSignedPayload( `wrong-${ version }`, undefined, undefined, makeSignedArtifact( { sourceThreeVersion: version } ) );
+				claimed.verifiedThreeRelease = THREE_RELEASE_PROFILES.development;
+				const rejected = await postJSON( port, '/__tsl-precompile/capture', claimed );
+				assert.equal( rejected.status, 400 );
+				assert.match( rejected.json.error, /sourceThreeVersion.*current exact baseline/ );
+				const rejectedAux = await postJSON( port, '/__tsl-precompile/capture', {
+					materialShape: 'background', configHash: 'b'.repeat( 64 ), threeVersion: version,
+					artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+					verifiedThreeRelease: THREE_RELEASE_PROFILES.development,
+				} );
+				assert.equal( rejectedAux.status, 400 );
+				assert.match( rejectedAux.json.error, /threeVersion.*current exact baseline/ );
+
+			}
+
+		} finally {
+
+			http.close();
+			rmSync( artifactsDir, { recursive: true, force: true } );
+
+		}
 
 	}
 
@@ -728,7 +797,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache, UUID, and
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 		sourceGraphHash: 'f'.repeat( 64 ),
 		sourceHashVersion: '0.1.0',
-		sourceThreeVersion: '0.185.1',
+		sourceThreeVersion: SLIM_THREE_PACKAGE_VERSION,
 		renderContextSignature: selector,
 		sourceValidationMode: 'runtime-graph',
 	} );
@@ -738,7 +807,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache, UUID, and
 		const firstArtifact = makeArtifact( 'private-cache-a', 'capture-texture-a', 2.1473 );
 		const firstHash = computeArtifactContentHash( firstArtifact, {
 			shape: 'material:signed-repeatable',
-			threeVersion: '0.185.1',
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 			pluginVersion: '0.1.0',
 		} );
 		const first = await postJSON( port, '/__tsl-precompile/capture', {
@@ -756,7 +825,7 @@ test( 'dev-capture: equivalent signed recapture ignores private cache, UUID, and
 		const repeatedArtifact = makeArtifact( 'private-cache-b', 'capture-texture-b', 2.4621 );
 		const repeatedHash = computeArtifactContentHash( repeatedArtifact, {
 			shape: 'material:signed-repeatable',
-			threeVersion: '0.185.1',
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 			pluginVersion: '0.1.0',
 		} );
 		assert.notEqual( repeatedHash, firstHash, 'the raw content hash records the captured fallback clock' );
@@ -1171,7 +1240,7 @@ test( 'dev-capture: auxiliary captures retain WGSL and GLSL backend variants wit
 		);
 		const expectedHash = computeArtifactContentHash( stored.artifact, {
 			shape: materialShape,
-			threeVersion: '0.185.1',
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 			pluginVersion: '0.1.0',
 		} );
 		assert.equal( entry.hash, expectedHash );
@@ -1235,7 +1304,7 @@ test( 'dev-capture: aux background payload writes aux-<shape>-<hash>.json + mani
 		assert.ok( entry, 'aux manifest should be keyed by shape:configHash' );
 		assert.equal( entry.shape, 'background' );
 		assert.equal( entry.configHash, configHash );
-		assert.equal( entry.threeVersion, '0.185.1' );
+		assert.equal( entry.threeVersion, SLIM_THREE_PACKAGE_VERSION );
 		assert.equal( entry.pluginVersion, '0.1.0' );
 		const envelope = JSON.parse( readFileSync( join( artifactsDir, entry.file ), 'utf8' ) );
 		assert.equal( envelope.threeVersion, entry.threeVersion );
@@ -1319,12 +1388,13 @@ test( 'dev-capture: rejects a tampered signed auxiliary payload', async () => {
 			vertexShader: 'vertex',
 			fragmentShader: 'original',
 			artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
-			sourceThreeVersion: '0.185.1',
+			sourceThreeVersion: SLIM_THREE_PACKAGE_VERSION,
 			sourceHashVersion: '0.1.0',
 		};
 		const hash = computeArtifactContentHash( artifact, {
 			shape: 'background',
 			threeVersion: artifact.sourceThreeVersion,
+			...createThreeEmitterHashFields( { threeVersion: artifact.sourceThreeVersion, threeRevision: artifact.sourceThreeRevision, threeCommit: artifact.sourceThreeCommit } ),
 			pluginVersion: artifact.sourceHashVersion,
 		} );
 		artifact.fragmentShader = 'tampered';
@@ -1496,7 +1566,8 @@ test( 'dev-capture: aux payload requires exact Three/toolchain provenance', asyn
 			artifact: { uniformPlan: [] },
 		} );
 		assert.equal( stale.status, 400 );
-		assert.match( stale.json.error, /threeVersion.*current exact baseline 0\.185\.1/ );
+		assert.match( stale.json.error, /threeVersion.*current exact baseline/ );
+		assert.ok( stale.json.error.includes( SLIM_THREE_PACKAGE_VERSION ) );
 
 		const oldToolchain = await postJSON( port, '/__tsl-precompile/capture', {
 			materialShape: 'background',
@@ -1534,7 +1605,15 @@ test( 'dev-capture: signed user payload requires the current exact Three/toolcha
 			staleThreeArtifact,
 		) );
 		assert.equal( staleThree.status, 400 );
-		assert.match( staleThree.json.error, /sourceThreeVersion.*current exact baseline 0\.185\.1/ );
+		assert.match( staleThree.json.error, /sourceThreeVersion.*current exact baseline/ );
+		assert.ok( staleThree.json.error.includes( SLIM_THREE_PACKAGE_VERSION ) );
+
+		const previousStable = makeSignedArtifact( { sourceThreeVersion: '0.185.1' } );
+		const previousStableResponse = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
+			'previous-stable', 'src/previous-stable.js:precompile:0', 'c'.repeat( 64 ), previousStable,
+		) );
+		assert.equal( previousStableResponse.status, 400, 'historical signed payloads are not relabelled as the current release' );
+		assert.ok( previousStableResponse.json.error.includes( SLIM_THREE_PACKAGE_VERSION ) );
 
 		const staleToolchainArtifact = makeSignedArtifact( { sourceHashVersion: 'old-toolchain' } );
 		const staleToolchain = await postJSON( port, '/__tsl-precompile/capture', makeSignedPayload(
@@ -1664,7 +1743,7 @@ test( 'dev-capture: rejects a mismatched declared artifact-content hash', async 
 			hash: 'a'.repeat( 64 ),
 			artifact: {
 				artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
-				sourceThreeVersion: '0.185.1',
+				sourceThreeVersion: SLIM_THREE_PACKAGE_VERSION,
 				sourceHashVersion: '0.1.0',
 				vertexShader: 'vertex',
 				fragmentShader: 'fragment',

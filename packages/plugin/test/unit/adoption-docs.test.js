@@ -99,7 +99,7 @@ test( 'public starts are audit-first, honest about distribution, and compatibili
 
 		const source = read( path );
 		assert.match( source, /not published|not on npm/i, `${ path } must disclose pre-release package availability` );
-		const audit = source.search( /Before installing(?: packages| or editing)?|Before mutation/i );
+		const audit = source.search( /Before installing(?: packages| or editing)?|Before mutation|PHASE 1 — READ ONLY/i );
 		const install = source.indexOf( 'pnpm add -D vite-plugin-tsl-precompile@alpha' );
 		assert.equal( audit >= 0 && install > audit, true, `${ path } must audit before package mutation` );
 

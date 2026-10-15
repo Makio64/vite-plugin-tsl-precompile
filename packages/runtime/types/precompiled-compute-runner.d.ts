@@ -10,6 +10,8 @@ export interface PrecompiledComputeBindingEntry {
 	count?: number;
 	itemSize?: number;
 	byteLength?: number;
+	/** The captured WGSL storage array has no compile-time length. */
+	runtimeSized?: boolean;
 	textureType?: '2d' | '2d-array' | '3d' | 'cube';
 	dtype?: string;
 }

@@ -200,6 +200,68 @@ export function getSceneTopologyMap( cache, scene, create = false ) {
 
 }
 
+const TOPOLOGY_CAPTURE_CONTEXT_FIELDS = Object.freeze( [
+	'material',
+	'scene',
+	'camera',
+	'object',
+	'renderer',
+	'renderTarget',
+	'mrt',
+] );
+
+/**
+ * Remember one material that was collapsed into an existing stock-material
+ * topology representative. The caller has already proved equivalence with
+ * createStockMaterialTopologyKey(); this helper deliberately does not merge
+ * candidates across pending items or topology keys.
+ */
+export function rememberTopologyCaptureCandidate( pendingItem, candidate ) {
+
+	if ( ! pendingItem || ! candidate?.material || candidate.material === pendingItem.material ) return false;
+	let candidates = pendingItem.topologyCaptureCandidates;
+	if ( ! Array.isArray( candidates ) ) {
+
+		candidates = [];
+		Object.defineProperty( pendingItem, 'topologyCaptureCandidates', {
+			value: candidates,
+			configurable: true,
+		} );
+
+	}
+	let stored = candidates.find( ( entry ) => entry.material === candidate.material );
+	if ( ! stored ) {
+
+		stored = {};
+		candidates.push( stored );
+
+	}
+	for ( const field of TOPOLOGY_CAPTURE_CONTEXT_FIELDS ) stored[ field ] = candidate[ field ] ?? null;
+	return true;
+
+}
+
+/**
+ * Replace an unobserved traversal-first topology representative with the
+ * first equivalent sibling that reached Renderer.renderObject(). This keeps
+ * capture names stable while ensuring the runtime observer and the material
+ * passed to precompile() have the same identity.
+ */
+export function promoteObservedTopologyCaptureCandidate( pendingItem, observedMaterials ) {
+
+	if ( ! pendingItem || ! observedMaterials || typeof observedMaterials.has !== 'function' ) return false;
+	if ( pendingItem.material && observedMaterials.has( pendingItem.material ) ) return false;
+	const candidates = Array.isArray( pendingItem.topologyCaptureCandidates )
+		? pendingItem.topologyCaptureCandidates
+		: [];
+	const observed = candidates.find( ( candidate ) => candidate.material && observedMaterials.has( candidate.material ) );
+	if ( ! observed ) return false;
+	for ( const field of TOPOLOGY_CAPTURE_CONTEXT_FIELDS ) pendingItem[ field ] = observed[ field ] ?? null;
+	if ( pendingItem.material && ! pendingItem.material.name && pendingItem.name ) pendingItem.material.name = pendingItem.name;
+	return true;
+
+}
+
 function stablePrimitiveRecord( value ) {
 
 	if ( value === undefined || value === null ) return [];

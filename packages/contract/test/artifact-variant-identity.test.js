@@ -15,6 +15,31 @@ import { stableJsonStringify } from '../src/stable-json.js';
 
 const PRIVATE_CACHE_KEY = 'shared-three-cache-key';
 
+test( 'MRT layouts disambiguate process-local keys while retaining selector collision checks', () => {
+
+	const first = artifact( SHADER_LANGUAGES.WGSL );
+	Object.assign( first, { mrtOutputCount: 2, mrtOutputNames: [ 'output', 'normal' ] } );
+	first.variantKey = createBackendAwareVariantKey( first.cacheKey, first.shaderLanguage, first );
+	const second = structuredClone( first );
+	second.mrtOutputNames = [ 'output', 'velocity' ];
+	second.fragmentShader = second.fragmentShader.replace( '1.0', '0.5' );
+	second.renderContextSelectors = [ stableJsonStringify( { version: 'render-object-selector@1', mrt: { names: second.mrtOutputNames } } ) ];
+	second.variantKey = createBackendAwareVariantKey( second.cacheKey, second.shaderLanguage, second );
+	assert.notEqual( first.variantKey, second.variantKey );
+	mergeArtifactVariantFamily( first, [ first, second ] );
+	assert.equal( collectArtifactVariantCandidates( first ).length, 2 );
+	assert.equal( validateArtifact( first, { requireShaders: true } ).ok, true );
+	const conflicting = structuredClone( second );
+	conflicting.fragmentShader = conflicting.fragmentShader.replace( '0.5', '0.25' );
+	conflicting.cacheKey = 'another-private-key';
+	conflicting.variantKey = createBackendAwareVariantKey( conflicting.cacheKey, conflicting.shaderLanguage, conflicting );
+	assert.throws( () => mergeArtifactVariantFamily( first, conflicting ), { code: 'TSLP_ARTIFACT_VARIANT_SELECTOR_COLLISION' } );
+	const corrupted = structuredClone( second );
+	corrupted.mrtOutputNames = [ 'output', 'wrong' ];
+	assert.equal( validateArtifact( corrupted ).ok, false );
+
+} );
+
 function selector( backend ) {
 
 	return stableJsonStringify( {

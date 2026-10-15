@@ -10,7 +10,7 @@ Generated evidence: https://makio64.github.io/vite-plugin-tsl-precompile/example
 ## Fit
 
 - Requires Node >=24.0.0, Vite >=6.4.3 <9, `WebGPURenderer`, TSL NodeMaterials, and
-  exactly `three@0.185.1` for the current alpha.
+  exactly `three@0.186.1` for the current alpha.
 - The plugin and runtime must use matching releases.
 - Do not silently migrate a WebGL-only, non-Vite, or non-TSL app.
 
@@ -35,8 +35,8 @@ The first alpha packages are not published to npm yet. If the registry returns
 use the project's package manager. pnpm:
 
     pnpm add -D vite-plugin-tsl-precompile@alpha
-    pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
-    pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+    pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
+    pnpm add -D @types/three@0.186.0 --save-exact  # TypeScript only
     pnpm exec tsl-precompile-install-skill --json
     pnpm exec tsl-precompile-doctor --json --source src
 

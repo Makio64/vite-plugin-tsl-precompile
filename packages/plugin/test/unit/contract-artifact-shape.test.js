@@ -40,6 +40,22 @@ test( 'fingerprintArtifactShape collects sorted group/slot/texture kinds', () =>
 
 } );
 
+test( 'fingerprintArtifactShape distinguishes fixed and runtime-sized storage bindings', () => {
+
+	const fixed = {
+		bindings: [ { name: 'compute', bindings: [ { name: 'output', kind: 'storage-buffer', byteLength: 128 } ] } ],
+		uniformPlan: [ { name: 'compute', storageBuffers: [ { name: 'output', count: 16, itemSize: 2 } ], orderedBindings: [ { type: 'storage-buffer', name: 'output' } ] } ],
+	};
+	const dynamic = structuredClone( fixed );
+	dynamic.bindings[ 0 ].bindings[ 0 ].runtimeSized = true;
+	dynamic.uniformPlan[ 0 ].storageBuffers[ 0 ].runtimeSized = true;
+	dynamic.uniformPlan[ 0 ].orderedBindings[ 0 ].runtimeSized = true;
+	const diff = diffArtifactShapes( fingerprintArtifactShape( fixed ), fingerprintArtifactShape( dynamic ) );
+	assert.equal( diff.ok, false );
+	assert.equal( diff.extra.filter( row => row.includes( 'runtimeSized' ) ).length, 3 );
+
+} );
+
 test( 'diffArtifactShapes reports missing and extra rows', () => {
 
 	const expected = fingerprintArtifactShape( {

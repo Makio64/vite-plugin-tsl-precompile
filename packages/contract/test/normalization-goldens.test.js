@@ -82,3 +82,15 @@ test( 'normalization is a pure function of its input', () => {
 	}
 
 } );
+
+test( 'auxiliary v1 payload bytes retain legacy config encoding and node shape', async () => {
+
+	const { createNodeGraphHashPayload, createPlainConfigHashPayload } = await import( '@tsl-precompile/contract/graph-normalize' );
+	const options = { shape: 'pmrem', threeVersion: '0.184.0', pluginVersion: '0.1.0' };
+	assert.equal(
+		createPlainConfigHashPayload( { z: undefined, a: [ undefined, NaN, { b: 2, a: 1 } ] }, options ),
+		'plain-v1\npmrem\n0.184.0\n0.1.0\n{"a":[,null,{"a":1,"b":2}],"z":undefined}',
+	);
+	assert.equal( createNodeGraphHashPayload( null, options ), 'node-v1\npmrem\n0.184.0\n0.1.0\nnull' );
+
+} );

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parseSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
+import { resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
 
 import { readSafeContainedFile } from './e2e-evidence.mjs';
 
@@ -87,6 +88,23 @@ export function slimBundleHashOptions( bundle ) {
 	return {
 		threeVersion: stamp.versions.three,
 		pluginVersion: stamp.versions.artifactToolchain,
+		...( stamp.versions.threeRevision ? {
+			threeRevision: stamp.versions.threeRevision,
+			threeCommit: stamp.versions.threeCommit,
+		} : {} ),
 	};
+
+}
+
+export function slimBundleReleaseProfile( bundle ) {
+
+	const options = slimBundleHashOptions( bundle );
+	const profile = resolveSlimThreeRelease( {
+		packageVersion: options.threeVersion,
+		revision: options.threeRevision,
+		sourceCommit: options.threeCommit,
+	} );
+	if ( ! profile ) throw new Error( 'Slim bundle does not identify a supported stable release or the exact pinned development release.' );
+	return profile;
 
 }

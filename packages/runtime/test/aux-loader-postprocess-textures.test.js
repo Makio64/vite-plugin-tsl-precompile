@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { attachPostprocessObject3DTargets, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes } from '../src/aux-loader.js';
+import { attachPostprocessObject3DTargets, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, createPostprocessTextureAttacher } from '../src/aux-loader.js';
 import { attachLiveNodeDependency } from '../src/slim-support/node-dependencies.js';
 
 function makeArtifact() {
@@ -17,6 +17,49 @@ function makeArtifact() {
 	};
 
 }
+
+test( 'deep shared post graphs retain their live pass texture, camera and render hook', () => {
+
+	const texture = { isTexture: true, name: 'output' };
+	const camera = { name: 'deep-pass-camera' };
+	const pass = {
+		isPassNode: true, camera,
+		_textures: { output: texture },
+		updateBefore() {},
+	};
+	let deep = pass;
+	for ( let index = 0; index < 2500; index ++ ) deep = { input: deep };
+	const root = { deep, shallow: pass };
+	attachLiveNodeDependency( pass, root );
+	const artifact = attachPostprocessTextureRefs( makeArtifact(), root );
+	attachPostprocessUpdateBeforeNodes( artifact, root );
+	const material = attachPostprocessObject3DTargets( {}, root );
+	assert.equal( artifact._textureRefs.get( 'captured-output' ), texture );
+	assert.deepEqual( artifact._liveUpdateBeforeNodes, [ pass ] );
+	assert.equal( material.__tslpObject3DTargets.camera, camera );
+
+} );
+
+test( 'sub-pass preparation shares one texture scan, while later attachment sees replacements', () => {
+
+	let reads = 0;
+	let texture = { isTexture: true, name: 'output' };
+	const root = { get input() { reads ++; return texture; } };
+	const attach = createPostprocessTextureAttacher( root );
+	const first = attach( makeArtifact() );
+	const second = attach( makeArtifact() );
+	assert.equal( reads, 1 );
+	assert.equal( first._textureRefs.get( 'captured-output' ), texture );
+	assert.equal( second._textureRefs.get( 'captured-output' ), texture );
+	assert.notEqual( first._textureRefs, second._textureRefs );
+
+	texture = { isTexture: true, name: 'output' };
+	attachPostprocessTextureRefs( first, root );
+	assert.equal( reads, 2 );
+	assert.equal( first._textureRefs.get( 'captured-output' ), texture );
+	assert.notEqual( second._textureRefs.get( 'captured-output' ), texture );
+
+} );
 
 test( 'attachPostprocessTextureRefs binds PassNode and effect render-target textures by name', () => {
 

@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        three-version: [locked, latest]
+        three-version: [locked, latest, development]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -29,6 +29,17 @@ jobs:
           node-version: 24.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Resolve pinned development snapshot
+        id: development-profile
+        if: matrix.three-version == 'development'
+        run: |
+          node --input-type=module -e 'import { THREE_RELEASE_PROFILES } from "@tsl-precompile/contract/slim-three-policy"; process.stdout.write("commit=" + THREE_RELEASE_PROFILES.development.gitCommit + "\n");' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: matrix.three-version == 'development'
+        with:
+          repository: mrdoob/three.js
+          ref: ${{ steps.development-profile.outputs.commit }}
+          path: three-development
       - name: Install latest three.js for compat probe
         if: matrix.three-version == 'latest'
         run: pnpm --filter @tsl-precompile/runtime add three@latest --save-dev
@@ -36,8 +47,23 @@ jobs:
         if: matrix.three-version == 'latest'
         run: pnpm --filter vite-plugin-tsl-precompile add three@latest --save-dev
       - name: Probe vendored extractor surfaces
+        if: matrix.three-version != 'development'
         run: pnpm vendor:probe
+      - name: Probe exact development source and vendored extractor surfaces
+        if: matrix.three-version == 'development'
+        env:
+          TSLP_THREE_SOURCE_ROOT: ${{ github.workspace }}/three-development
+          TSLP_THREE_SOURCE_COMMIT: ${{ steps.development-profile.outputs.commit }}
+        run: pnpm vendor:probe -- --profile=development
       - name: Run per-file rewrite shape tests
+        if: ${{ !cancelled() }}
+        env:
+          TSLP_THREE_SOURCE_ROOT: ${{ matrix.three-version == 'development' && format('{0}/three-development', github.workspace) || '' }}
+          TSLP_THREE_SOURCE_COMMIT: ${{ steps.development-profile.outputs.commit }}
         run: pnpm test:three-rewrite
       - name: Build slim bundle with rewrite fallbacks fatal
+        if: ${{ !cancelled() }}
+        env:
+          TSLP_THREE_SOURCE_ROOT: ${{ matrix.three-version == 'development' && format('{0}/three-development', github.workspace) || '' }}
+          TSLP_THREE_SOURCE_COMMIT: ${{ steps.development-profile.outputs.commit }}
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim

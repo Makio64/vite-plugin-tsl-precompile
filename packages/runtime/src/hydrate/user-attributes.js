@@ -47,6 +47,7 @@ import {
 	storageEntryAnonymousResourceIdentity,
 } from './storage-buffer-identity.js';
 import { resolveTypedArrayCtor } from './typed-arrays.js';
+import { cloneBindingRecordFromDescriptors } from './binding-record-clone.js';
 import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
 
 /**
@@ -62,12 +63,12 @@ import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
  * storage-buffer `orderedBindings[].ref` aliases remain intact.
  *
  * @param {Object} artifact
- * @param {{ resetLiveNodeSidecars?: boolean }} [options]
+ * @param {{ resetLiveNodeSidecars?: boolean, forceArtifactView?: boolean }} [options]
  * @returns {Object}
  */
 export function createHydrationBindingArtifactView( artifact, options = {} ) {
 
-	if ( ! artifact || typeof artifact !== 'object' || ! hasLocalBindingRecords( artifact, options.resetLiveNodeSidecars === true ) ) return artifact;
+	if ( ! artifact || typeof artifact !== 'object' || ! hasLocalBindingRecords( artifact, options.resetLiveNodeSidecars === true || options.forceArtifactView === true ) ) return artifact;
 
 	const clonedRecords = new WeakMap();
 	const clonedSources = new WeakMap();
@@ -267,7 +268,7 @@ function cloneRecord( record, replacements = null, mutableLiveSidecars = false, 
 			: { value, enumerable: true, configurable: true, writable: true };
 
 	}
-	return Object.create( Object.getPrototypeOf( record ), descriptors );
+	return cloneBindingRecordFromDescriptors( Object.getPrototypeOf( record ), descriptors );
 
 }
 
@@ -695,7 +696,7 @@ function attributeMatchesEntry( candidate, entry ) {
 	// them. Accept (3 → 4) while keeping every other field exact.
 	if ( wantSize && candidate.itemSize !== wantSize
 		&& ! ( candidate.itemSize === 3 && wantSize === 4 ) ) return false;
-	if ( wantCount && candidate.count !== wantCount ) return false;
+	if ( entry.runtimeSized !== true && wantCount && candidate.count !== wantCount ) return false;
 	if ( wantArray
 		&& candidate.array
 		&& candidate.array.constructor

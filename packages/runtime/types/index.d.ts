@@ -167,6 +167,8 @@ export interface DevCaptureStatus {
 }
 
 export interface WaitForCaptureSettledOptions {
+	/** Wait only for these already-marked materials; useful before disposing transient GPU resources. */
+	materials?: readonly object[];
 	/** Baseline used to distinguish a new capture wave from earlier activity. */
 	since?: DevCaptureStatus | null;
 	/** Maximum wait before rejecting. Default: `30_000`. */
@@ -183,7 +185,7 @@ export interface SetupPrecompileResult {
 	/** Resolves once the marker is installed and the dev renderer is registered. */
 	ready: Promise<void>;
 	/** Capture aux artifacts (background, PMREM, MRT pass nodes, etc.). No-op unless `aux` was truthy. */
-	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<unknown[]>;
+	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<AuxCaptureResult[]>;
 	/** Return a synchronous snapshot of development capture activity. */
 	captureStatus: () => DevCaptureStatus;
 	/** Resolve when a new capture wave has completed and remained idle. */
@@ -208,7 +210,7 @@ export interface InstallPrecompileMarkerOptions {
 }
 
 export function installPrecompileMarker( three: unknown, opts?: InstallPrecompileMarkerOptions ): void;
-/** Register the dev renderer and resolve once real-render harvesting is ready. */
+/** Register the dev renderer and resolve once real-render harvesting is ready; await before a one-shot render. */
 export function setDevRenderer( renderer: unknown, three?: unknown ): Promise<void>;
 export function clearDevRenderer(): void;
 
@@ -285,12 +287,17 @@ export function writeBytes( view: DataView, byteOffset: number, source: ArrayBuf
 export interface HashVersionOptions {
 	shape: string;
 	threeVersion: string;
+	/** Required as a pair for a verified development emitter; stable hashes omit both. */
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion: string;
 }
 
 export interface MaterialHashOptions {
 	name: string;
 	threeVersion: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	/** Backward-compatible spelling for the artifact toolchain version. */
 	pluginVersion?: string;
 	toolchainVersion?: string;
@@ -328,11 +335,15 @@ export interface AuxCaptureOptions extends Record<string, unknown> {
 	 * does not retain its source scene or requested size.
 	 */
 	pmremSceneSizes?: readonly number[];
+	/** Original cube/equirectangular inputs when the scene retains only generated PMREM textures. */
+	pmremSourceTextures?: readonly unknown[];
 	/** The `three/webgpu` module namespace; root `three`.PMREMGenerator is not capture-compatible. */
 	three?: unknown;
 	/** Optional `three/tsl` namespace; loaded lazily during dev capture when omitted. */
 	tsl?: unknown;
 	threeVersion?: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion?: string;
 }
 
@@ -349,6 +360,8 @@ export interface AuxArtifactRegistration<TArtifact = unknown> {
 	artifact: TArtifact;
 	name?: string;
 	threeVersion?: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion?: string;
 }
 
@@ -372,8 +385,14 @@ export function precompileAuxiliary(
 	camera: unknown,
 	opts?: AuxCaptureOptions,
 ): Promise<AuxCaptureResult[]>;
-export function registerAuxArtifact<TArtifact = unknown>( shape: string, configHash: string, artifact: TArtifact, opts?: { name?: string; threeVersion?: string; pluginVersion?: string } ): void;
-export function registerAuxArtifacts<TArtifact = unknown>( entries: Iterable<AuxArtifactRegistration<TArtifact>> ): void;
+export function registerAuxArtifact<TArtifact = unknown>( shape: string, configHash: string, artifact: TArtifact, opts?: { name?: string; threeVersion?: string; threeRevision?: string; threeCommit?: string; pluginVersion?: string } ): void;
+export function registerAuxArtifacts<TArtifact = unknown>(
+	entries: Iterable<AuxArtifactRegistration<TArtifact>>,
+	/** @internal Factory emitted only for captured slim PMREM passes. */
+	createPMREMGenerator?: ( renderer: any ) => any,
+	/** @internal Factory emitted only for captured slim shadow passes. */
+	createShadowSupport?: ( renderer: any ) => any,
+): void;
 export function loadAux<TArtifact = unknown>( shape: string, configHash: string ): TArtifact;
 export function hasAux( shape: string, configHash: string ): boolean;
 export function listAux(): AuxArtifactSummary[];

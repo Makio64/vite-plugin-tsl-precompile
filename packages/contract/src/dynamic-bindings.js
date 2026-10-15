@@ -2,11 +2,62 @@ import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { isRenderBindingOwnerKind } from './render-selector.js';
 import { rendererRenderTargetTextureSelectorValidationError } from './render-target-texture.js';
 
+// Direct material uniform types shared by codegen and validation.
+export const MATERIAL_UNIFORM_TYPES = Object.freeze( {
+	'material.color': 'color',
+	'material.emissive': 'color',
+	'material.specular': 'color',
+	'material.specularColor': 'color',
+	'material.sheenColor': 'color',
+	'material.attenuationColor': 'color',
+	'material.scalar': 'f32',
+	'material.opacity': 'f32',
+	'material.alphaTest': 'f32',
+	'material.roughness': 'f32',
+	'material.metalness': 'f32',
+	'material.ior': 'f32',
+	'material.emissiveIntensity': 'f32',
+	'material.aoMapIntensity': 'f32',
+	'material.lightMapIntensity': 'f32',
+	'material.envMapIntensity': 'f32',
+	'material.specularIntensity': 'f32',
+	'material.shininess': 'f32',
+	'material.size': 'f32',
+	'material.rotation': 'f32',
+	'material.clearcoat': 'f32',
+	'material.clearcoatRoughness': 'f32',
+	'material.sheen': 'f32',
+	'material.sheenRoughness': 'f32',
+	'material.transmission': 'f32',
+	'material.thickness': 'f32',
+	'material.attenuationDistance': 'f32',
+	'material.iridescence': 'f32',
+	'material.iridescenceIOR': 'f32',
+	'material.anisotropy': 'f32',
+	'material.anisotropyRotation': 'f32',
+	'material.dispersion': 'f32',
+	'material.reflectivity': 'f32',
+	'material.refractionRatio': 'f32',
+	'material.bumpScale': 'f32',
+	'material.displacementScale': 'f32',
+	'material.displacementBias': 'f32',
+	'material.linewidth': 'f32',
+	'material.scale': 'f32',
+	'material.dashSize': 'f32',
+	'material.gapSize': 'f32',
+	'material.dashOffset': 'f32',
+	'material.normalScale': 'vec2',
+	'material.clearcoatNormalScale': 'vec2',
+} );
+
 const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
 
 export const LIVE_UNIFORM_CALLSITE_IDENTITY_SCHEMA = 'uniform-callsite@1';
 export const LIVE_UNIFORM_NODE_IDENTITY_SYMBOL_KEY = '@tsl-precompile/runtime/live-uniform-node-identity@1';
 export const STORAGE_BUFFER_SNAPSHOT_HASH_SCHEMA = 'storage-buffer-snapshot@1';
+// Build-proven camera/light group identity. A symbol keeps this derived runtime
+// handoff out of captured JSON and artifact content hashes.
+export const GENERATED_SHARED_UNIFORM_GROUP_KEY = Symbol.for( '@tsl-precompile/shared-uniform-group@1' );
 
 /**
  * Canonical durable spelling for texture image sources captured in a browser.
@@ -323,6 +374,24 @@ const exactDescriptors = {
 		required: [],
 		optional: [ 'valueSnapshot' ],
 	} ),
+	'pmrem.maxLod': freezeDescriptor( {
+		kind: 'pmrem.maxLod',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/pmrem-scalar',
+		required: [ 'textureUuid' ],
+		optional: [ 'valueSnapshot' ],
+	} ),
+	'pmrem.size': freezeDescriptor( {
+		kind: 'pmrem.size',
+		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
+		phase: DYNAMIC_BINDING_PHASE.CODEGEN_UPDATE,
+		owner: 'artifact',
+		resolver: 'runtime-writers/pmrem-scalar',
+		required: [ 'textureUuid' ],
+		optional: [ 'valueSnapshot' ],
+	} ),
 	'pmrem.maxMip': freezeDescriptor( {
 		kind: 'pmrem.maxMip',
 		target: DYNAMIC_BINDING_TARGET.UNIFORM_SLOT,
@@ -409,7 +478,7 @@ const exactDescriptors = {
 		owner: 'artifact',
 		resolver: 'hydrator/artifact-texture',
 		required: [],
-		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY', 'imageWidth', 'imageHeight', 'imageDepth', 'renderTargetSelector' ],
+		optional: [ 'textureUuid', 'textureName', 'imageSrc', 'snapshot', 'mapping', 'textureType', 'textureDimension', 'generateMipmaps', 'colorSpace', 'flipY', 'imageWidth', 'imageHeight', 'imageDepth', 'renderTargetSelector', 'isPMREMTexture' ],
 	} ),
 	'depth.texture': freezeDescriptor( {
 		kind: 'depth.texture',
@@ -564,22 +633,29 @@ const PREFIX_DESCRIPTORS = Object.freeze( [
 	} ),
 ] );
 
-export function dynamicBindingDescriptor( kind ) {
+function findDynamicBindingDescriptor( kind ) {
 
 	if ( typeof kind !== 'string' || kind.length === 0 ) return null;
 	if ( Object.prototype.hasOwnProperty.call( DYNAMIC_BINDING_DESCRIPTORS, kind ) ) return DYNAMIC_BINDING_DESCRIPTORS[ kind ];
 	for ( const descriptor of PREFIX_DESCRIPTORS ) {
 
-		if ( kind.startsWith( descriptor.prefix ) ) return freezeDescriptor( { ...descriptor, kind } );
+		if ( kind.startsWith( descriptor.prefix ) ) return descriptor;
 
 	}
 	return null;
 
 }
 
+export function dynamicBindingDescriptor( kind ) {
+
+	const descriptor = findDynamicBindingDescriptor( kind );
+	return descriptor && descriptor.prefix ? freezeDescriptor( { ...descriptor, kind } ) : descriptor;
+
+}
+
 export function isDynamicBindingKind( kind ) {
 
-	return dynamicBindingDescriptor( kind ) !== null;
+	return findDynamicBindingDescriptor( kind ) !== null;
 
 }
 
@@ -751,9 +827,10 @@ export function validateDynamicBindingSource( source ) {
  * Pure function. Idempotent. Does not mutate the artifact.
  *
  * @param {Object} artifact
+ * @param {{ texturesOnly?: boolean }} [options] Skip slot/storage traversal during texture hydration.
  * @returns {Array<Object>}
  */
-export function collectArtifactDynamicBindings( artifact ) {
+export function collectArtifactDynamicBindings( artifact, { texturesOnly = false } = {} ) {
 
 	const out = [];
 	if ( ! artifact || ! Array.isArray( artifact.uniformPlan ) ) return out;
@@ -762,10 +839,10 @@ export function collectArtifactDynamicBindings( artifact ) {
 
 		const groupName = group && group.name || '';
 
-		for ( const slot of group && group.slots || [] ) {
+		for ( const slot of ! texturesOnly && group && group.slots || [] ) {
 
 			const source = slot && slot.source || null;
-			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			const descriptor = source && findDynamicBindingDescriptor( source.kind );
 			if ( ! descriptor ) continue;
 			out.push( {
 				kind: source.kind,
@@ -784,7 +861,7 @@ export function collectArtifactDynamicBindings( artifact ) {
 		for ( const textureEntry of group && group.textures || [] ) {
 
 			const source = textureEntry && textureEntry.source || null;
-			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			const descriptor = source && findDynamicBindingDescriptor( source.kind );
 			if ( ! descriptor ) continue;
 			out.push( {
 				kind: source.kind,
@@ -800,10 +877,10 @@ export function collectArtifactDynamicBindings( artifact ) {
 
 		}
 
-		for ( const storageEntry of group && group.storageBuffers || [] ) {
+		for ( const storageEntry of ! texturesOnly && group && group.storageBuffers || [] ) {
 
 			const source = storageEntry && storageEntry.source || null;
-			const descriptor = source && dynamicBindingDescriptor( source.kind );
+			const descriptor = source && findDynamicBindingDescriptor( source.kind );
 			if ( ! descriptor ) continue;
 			out.push( {
 				kind: source.kind,

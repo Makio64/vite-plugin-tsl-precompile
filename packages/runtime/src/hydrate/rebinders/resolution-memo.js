@@ -1,87 +1,86 @@
 /**
- * Frame-scoped texture-resolution memo.
- *
- * Every render object sharing a material gets its own rebinder entry arrays,
- * so N instances of one material re-run the full `resolveTextureBinding`
- * strategy chain N times per frame with identical inputs. The resolver's
- * inputs are (artifact, groupName, bindingName, material, options.avoidTexture)
- * — no per-object parameter — so within one render pass the result is shared
- * across all of a material's render objects.
- *
- * The wrapped resolver reads `options.frame` (the NodeFrame the rebinder runs
- * under) and reuses the previous result while `frame.renderId`/`frame.frameId`
- * and the `avoidTexture` identity are unchanged. Calls without a stamped frame
- * pass straight through, so hydration-time resolution and environments whose
- * frame objects carry no ids keep today's behavior.
- *
- * First wedge of the P1.9 per-render resolution caching work — see
- * ROADMAP.md.
+ * Share texture resolution across render objects of one material. Entries
+ * expire when the renderer, render/frame ID or avoided texture changes.
+ * Unstamped hydration calls always resolve; null results are cached too.
+ * Material-node discovery is shared across bindings for the same render.
  *
  * @module ResolutionMemo
  */
 
-const NULL_MATERIAL = {};
+const NULL_OWNER = {};
 
 export function createFrameScopedResolutionMemo( resolve ) {
 
-	// artifact → WeakMap( material → {
-	//   bindings: Map( `group::binding` → { stamp, avoidTexture, value } ),
-	//   stamp,
-	//   materialNodeTextureCache,
-	// } )
+	// Keep keys and render stamps separate: lookups allocate no strings and
+	// cannot collide when names or logical frame IDs contain delimiters.
+	// Weak renderer ownership also releases its cache when the renderer goes away.
 	const cache = new WeakMap();
 
-	return function memoizedResolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
+	return function memoizedResolveTextureBinding( artifact, groupName, bindingName, material, options = null, planBinding = null ) {
 
 		const frame = options && options.frame || null;
 		const renderId = frame ? frame.renderId : undefined;
 		const frameId = frame ? frame.frameId : undefined;
 		if ( ! artifact || typeof artifact !== 'object' || ( renderId === undefined && frameId === undefined ) ) {
 
-			return resolve( artifact, groupName, bindingName, material, options );
+			return resolve( artifact, groupName, bindingName, material, options, planBinding );
 
 		}
-
-		const stamp = `${ renderId }:${ frameId }`;
 		const avoidTexture = options && options.avoidTexture || null;
+		const renderer = options && options.renderer || frame.renderer || null;
 
-		let byMaterial = cache.get( artifact );
+		const rendererKey = renderer && typeof renderer === 'object' ? renderer : NULL_OWNER;
+		let byArtifact = cache.get( rendererKey );
+		if ( ! byArtifact ) cache.set( rendererKey, byArtifact = new WeakMap() );
+		let byMaterial = byArtifact.get( artifact );
 		if ( ! byMaterial ) {
 
 			byMaterial = new WeakMap();
-			cache.set( artifact, byMaterial );
+			byArtifact.set( artifact, byMaterial );
 
 		}
 
-		const materialKey = material && typeof material === 'object' ? material : NULL_MATERIAL;
+		const materialKey = material && typeof material === 'object' ? material : NULL_OWNER;
 		let materialState = byMaterial.get( materialKey );
 		if ( ! materialState ) {
 
 			materialState = {
-				bindings: new Map(),
-				stamp: null,
+				groups: new Map(),
+				epoch: 0,
+				frameId, renderId,
 				materialNodeTextureCache: new WeakMap(),
 			};
 			byMaterial.set( materialKey, materialState );
 
 		}
-		if ( materialState.stamp !== stamp ) {
+		if ( materialState.frameId !== frameId || materialState.renderId !== renderId ) {
 
-			materialState.stamp = stamp;
+			materialState.frameId = frameId;
+			materialState.renderId = renderId;
+			materialState.epoch ++;
 			materialState.materialNodeTextureCache = new WeakMap();
 
 		}
 
-		const key = `${ groupName || '' }::${ bindingName || '' }`;
-		const hit = materialState.bindings.get( key );
-		if ( hit && hit.stamp === stamp && hit.avoidTexture === avoidTexture ) return hit.value;
+		const groupKey = groupName || '';
+		let bindings = materialState.groups.get( groupKey );
+		if ( ! bindings ) materialState.groups.set( groupKey, bindings = new Map() );
+		const key = bindingName || '';
+		const epoch = materialState.epoch;
+		const hit = bindings.get( key );
+		if ( hit && hit.epoch === epoch && hit.avoidTexture === avoidTexture && hit.planBinding === planBinding ) return hit.value;
 
 		const scopedOptions = {
 			...( options || {} ),
 			materialNodeTextureCache: materialState.materialNodeTextureCache,
 		};
-		const value = resolve( artifact, groupName, bindingName, material, scopedOptions );
-		materialState.bindings.set( key, { stamp, avoidTexture, value } );
+		const value = resolve( artifact, groupName, bindingName, material, scopedOptions, planBinding );
+		const entry = hit || {};
+		entry.epoch = epoch;
+		entry.avoidTexture = avoidTexture;
+		entry.planBinding = planBinding;
+		entry.value = value;
+		if ( ! hit ) bindings.set( key, entry );
 		return value;
 
 	};

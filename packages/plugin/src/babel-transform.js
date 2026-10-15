@@ -39,6 +39,7 @@ const generate = _generate.default || _generate;
 
 const APPLY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/apply';
 const APPLY_FN_NAME = '__applyPrecompiled';
+const CALLSITE_APPLY_FN_NAME = '__applyPrecompiledCallsite';
 const NODE_DEPENDENCY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/slim-support/node-dependencies';
 const ATTACH_NODE_DEPENDENCY_FN_NAME = 'attachLiveNodeDependency';
 const LIVE_UNIFORM_REGISTRY_IMPORT_SPECIFIER = '@tsl-precompile/runtime/slim-support/live-uniform-registry';
@@ -307,6 +308,7 @@ export function annotateDevMarkerSources( source, {
  *     replace only that marker with its live material expression and report
  *     a warning while continuing to transform captured siblings.
  * @param {string} [opts.applyImportSpecifier='@tsl-precompile/runtime/apply']
+ * @param {boolean} [opts.callsiteApply=false] - Select the narrow slim entry after validating a captured source owner.
  *     Build-mode-owned apply entry. Full builds select `/apply/full` so stock
  *     Three retains the live NodeMaterial; slim builds select replay apply.
  * @returns {{ code: string, map: ?Object, touchedNames: string[], missingArtifacts: Array<{ name: string, message: string }> }}
@@ -318,6 +320,7 @@ export function transformSource( source, opts ) {
 		resolveArtifact,
 		root = process.cwd(),
 		applyImportSpecifier = APPLY_IMPORT_SPECIFIER,
+		callsiteApply = false,
 		shouldFallbackMissingArtifact = null,
 		sourceRevision: providedSourceRevision = null,
 		sourceProvenance = null,
@@ -340,8 +343,10 @@ export function transformSource( source, opts ) {
 	const touchedNames = [];
 	const missingArtifacts = [];
 	const neededImports = new Map(); // raw artifact name → { identifier, specifier }
+	const neededApplyFunctions = new Map();
 	const occupiedIdentifiers = collectBindingNames( ast );
 	const applyFnName = allocateIdentifier( APPLY_FN_NAME, 'runtime-apply', occupiedIdentifiers );
+	const callsiteApplyFnName = callsiteApply ? allocateIdentifier( CALLSITE_APPLY_FN_NAME, 'runtime-callsite-apply', occupiedIdentifiers ) : null;
 	const { moduleIdentity } = canonicalModuleIdentity( filename, root );
 	const sourceRevision = providedSourceRevision || markerSourceRevision( source );
 	const callIndexesByName = new Map();
@@ -445,9 +450,13 @@ export function transformSource( source, opts ) {
 
 			}
 
-			// Replace the CallExpression with __applyPrecompiled(materialExpr, __tsl_art_<name>, '<hash>').
+			// Only the slim module emitter stamps the callsite validation mode.
+			// Mixed modules keep the ordinary entry for artifacts without owners.
+			const useCallsiteApply = callsiteApply && Array.isArray( artifact.sourceOwners ) && artifact.sourceOwners.length > 0;
+			const selectedApplyFnName = useCallsiteApply ? callsiteApplyFnName : applyFnName;
+			neededApplyFunctions.set( useCallsiteApply ? CALLSITE_APPLY_FN_NAME : APPLY_FN_NAME, selectedApplyFnName );
 			const createApplyCall = ( materialValue ) => t.callExpression(
-				t.identifier( applyFnName ),
+				t.identifier( selectedApplyFnName ),
 				[ materialValue, t.identifier( artifactImport.identifier ), t.stringLiteral( artifact.hash ) ],
 			);
 
@@ -486,7 +495,7 @@ export function transformSource( source, opts ) {
 	if ( touchedNames.length > 0 ) {
 
 		importNodes.push( t.importDeclaration(
-			[ t.importSpecifier( t.identifier( applyFnName ), t.identifier( APPLY_FN_NAME ) ) ],
+			[ ...neededApplyFunctions ].map( ( [ imported, local ] ) => t.importSpecifier( t.identifier( local ), t.identifier( imported ) ) ),
 			t.stringLiteral( applyImportSpecifier ),
 		) );
 

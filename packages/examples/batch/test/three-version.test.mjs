@@ -7,10 +7,77 @@ import test from 'node:test';
 
 import {
 	assertOfficialThreeR185Checkout,
+	assertOfficialThreeR185SourceVerification,
+	assertPinnedThreeCheckout,
+	assertPinnedThreeSourceVerification,
 	assertThreeCheckoutMatchesVersion,
+	createPinnedThreeSourceVerifier,
+	officialThreeReleaseForEvidence,
 	THREE_CHECKOUT_VERSION_MISMATCH,
 	THREE_R185_OFFICIAL_COMMIT,
+	resolveE2EThreeRoot,
 } from '../_three-version.mjs';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
+
+test( 'stable evidence release selection preserves the historical identity and rejects development publication', () => {
+
+	assert.equal( officialThreeReleaseForEvidence( '0.185.1' ).gitCommit, THREE_R185_OFFICIAL_COMMIT );
+	assert.equal( officialThreeReleaseForEvidence( THREE_RELEASE_PROFILES.stable.packageVersion ), THREE_RELEASE_PROFILES.stable );
+	assert.throws( () => officialThreeReleaseForEvidence( THREE_RELEASE_PROFILES.development.packageVersion ), /No official stable Three evidence profile matches/ );
+
+} );
+
+test( 'local diagnostics default to installed Three without needing a sibling corpus', () => {
+
+	const root = resolveE2EThreeRoot( {
+		args: [ '--local-examples-root=packages/examples/getting-started' ],
+		env: {},
+		selfDir: '/project/packages/examples/batch',
+		resolveModule( name ) {
+
+			assert.equal( name, 'three' );
+			return '/project/node_modules/three/build/three.cjs';
+
+		},
+	} );
+	assert.equal( root, '/project/node_modules/three' );
+
+} );
+
+test( 'upstream, tier and official evidence retain the sibling checkout default', () => {
+
+	for ( const args of [
+		[],
+		[ '--local-examples-root=/scenes', '--tier=tier1' ],
+		[ '--local-examples-root=/scenes', '--canonical-evidence' ],
+		[ '--local-examples-root=/scenes', '--require-official-three-sources' ],
+	] ) {
+
+		assert.equal( resolveE2EThreeRoot( {
+			args,
+			env: {},
+			selfDir: '/project/packages/examples/batch',
+			resolveModule() { throw new Error( 'corpus runs must not resolve installed Three' ); },
+		} ), '/three.js' );
+
+	}
+
+} );
+
+test( 'explicit Three overrides retain precedence over the installed local default', () => {
+
+	const options = {
+		args: [ '--local-examples-root=/scenes' ],
+		env: { TSLP_THREE_REPO: 'env-three' },
+		selfDir: '/project/packages/examples/batch',
+		cwd: '/work',
+		resolveModule() { throw new Error( 'explicit overrides must not resolve installed Three' ); },
+	};
+	assert.equal( resolveE2EThreeRoot( options ), '/work/env-three' );
+	assert.equal( resolveE2EThreeRoot( { ...options, args: [ ...options.args, '--three-repo=cli-three' ] } ), '/work/cli-three' );
+	assert.equal( resolveE2EThreeRoot( { ...options, env: { TSLP_THREE_SOURCE_ROOT: 'development-source' } } ), '/work/development-source' );
+
+} );
 
 function checkoutFixture( { revision, packageVersion } ) {
 
@@ -28,6 +95,74 @@ function git( root, ...args ) {
 	return execFileSync( 'git', args, { cwd: root, encoding: 'utf8' } ).trim();
 
 }
+
+function pinnedFixture( release ) {
+
+	const root = checkoutFixture( release );
+	git( root, 'init', '-b', 'main' );
+	git( root, 'config', 'user.name', 'Three Pinned Source Test' );
+	git( root, 'config', 'user.email', 'three-pinned-source@example.invalid' );
+	git( root, 'add', '.' );
+	git( root, 'commit', '-m', 'pinned source fixture' );
+	return {
+		root,
+		profile: {
+			...release,
+			gitCommit: git( root, 'rev-parse', 'HEAD' ),
+			gitTree: git( root, 'rev-parse', 'HEAD^{tree}' ),
+			objectFormat: git( root, 'rev-parse', '--show-object-format' ),
+		},
+	};
+
+}
+
+test( 'pinned stable and development checkouts require exact package, revision, commit and tree', () => {
+
+	for ( const release of Object.values( THREE_RELEASE_PROFILES ) ) {
+
+		const { root, profile } = pinnedFixture( release );
+		const checkout = assertPinnedThreeCheckout( root, profile, 'pinned fixture' );
+		assert.equal( checkout.revision, release.revision );
+		assert.equal( checkout.packageVersion, release.packageVersion );
+		assert.equal( checkout.gitCommit, profile.gitCommit );
+		assert.equal( checkout.gitTree, profile.gitTree );
+		assert.equal( checkout.clean, true );
+		assert.throws( () => assertPinnedThreeCheckout( root, { ...profile, gitCommit: '0'.repeat( 40 ) } ), /expected official/ );
+		assert.throws( () => assertPinnedThreeCheckout( root, { ...profile, gitTree: '0'.repeat( 40 ) } ), /expected official/ );
+		assert.throws( () => assertPinnedThreeCheckout( root, { ...profile, revision: '188dev' } ), /expected pinned/ );
+		assert.throws( () => assertPinnedThreeCheckout( root, { ...profile, packageVersion: '0.188.0' } ), /expected pinned/ );
+		if ( release.channel === 'development' ) {
+
+			assert.throws( () => assertThreeCheckoutMatchesVersion( root, release.packageVersion ), /Development REVISION suffixes are intentionally rejected/ );
+
+		}
+		writeFileSync( join( root, 'untracked.js' ), 'export const injected = true;\n' );
+		assert.throws( () => assertPinnedThreeCheckout( root, profile ), /local or untracked changes/ );
+
+	}
+
+} );
+
+test( 'pinned source proofs bind every served blob while legacy r185 identity remains separate', () => {
+
+	for ( const release of Object.values( THREE_RELEASE_PROFILES ) ) {
+
+		const { root, profile } = pinnedFixture( release );
+		const verifier = createPinnedThreeSourceVerifier( root, profile, 'pinned proof fixture' );
+		const constants = join( root, 'src/constants.js' );
+		verifier.verify( constants, readFileSync( constants ) );
+		const proof = verifier.snapshot();
+		assert.equal( assertPinnedThreeSourceVerification( proof, { profile } ), proof );
+		assert.throws( () => assertPinnedThreeSourceVerification( proof, { profile: { ...profile, gitTree: '0'.repeat( 40 ) } } ), /aggregate verification record is invalid/ );
+		assert.throws( () => assertOfficialThreeR185SourceVerification( proof ), /official Three r185 Git tree/ );
+		assert.throws( () => createPinnedThreeSourceVerifier( root, { ...profile, gitTree: '0'.repeat( 40 ) } ), /unexpected tree/ );
+		const altered = structuredClone( proof );
+		altered.files[ 0 ].gitCommit = '0'.repeat( 40 );
+		assert.throws( () => assertPinnedThreeSourceVerification( altered, { profile } ), /source record.*invalid/ );
+
+	}
+
+} );
 
 function withProcessEnvironment( overrides, fn ) {
 

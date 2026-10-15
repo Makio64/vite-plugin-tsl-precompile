@@ -21,11 +21,48 @@ await precompile.captureAux( { postProcessing } );
 
 Call `captureAux()` only after the scene, background/environment, pass graph, and post-processing objects are fully assembled. The call is a production no-op and may remain in application code.
 
+Inspect the returned results and fail the capture when any entry has `ok: false`.
+Global material settlement alone does not prove every auxiliary pass succeeded.
+If probe or transient captures temporarily own the renderer during startup,
+await them, then render the completed post graph again before auxiliary capture.
+Private effects such as SSR allocate mip chains during that real warm-up; calling
+`compileAsync()` alone does not necessarily initialize those resources.
+
+Render the first real scene frame before capturing backgrounds; reflectors and
+offscreen passes can use different attachments from the visible frame. For a
+temporary equirectangular source converted with
+`CubeRenderTarget.fromEquirectangularTexture()`, capture that source before
+disposing it. Keep a development-only reference until the completed scene is
+ready for auxiliary capture; calling scene-wide capture during an empty startup
+stage can miss the later shadow casters:
+
+```js
+cubeTarget.fromEquirectangularTexture( renderer, sourceTexture );
+const results = await precompile.captureAux( {
+	cubeRenderTargetTextures: [ sourceTexture ],
+} );
+if ( results.some( result => ! result.ok ) ) throw new Error( JSON.stringify( results ) );
+sourceTexture.dispose();
+```
+
+Capturing the final cube environment later cannot recover the temporary source's
+sampling topology. Renderer output capture also distinguishes sampled component
+types, such as unsigned-byte and half-float attachments.
+
 For MRT or `RenderPipeline`, pass the live pass and pipeline after calling `setMRT(...)`:
 
 ```js
 await precompile.captureAux( { passNode: scenePass, renderPipeline } );
 ```
+
+When the app switches between post graphs, give each finite graph a semantic
+name. Capture with `renderPipelineName: name`, and in slim replay call
+`bindAuxByName(renderPipeline.outputNode, 'post-process', name)` immediately
+after rebuilding the graph. Import `bindAuxByName` from `@tsl-precompile/runtime`.
+Build the name from the effective pass set and shader-affecting settings, not
+from captured hashes or live uniform values. Internal effect passes inherit
+that named pipeline's ownership, so GTAO/SSR inputs from different MRT layouts
+cannot be confused. Capture and test every reachable name before shipping.
 
 Exercise every materially different topology in development. Tone mapping, output color space, sampled texture dimension, multiview, camera type, lights/shadows, clipping, geometry attributes, and MRT attachments can select distinct artifacts.
 
@@ -61,9 +98,53 @@ that reveals it and await `waitForCaptureSettled({ since: snapshot })`. After
 capture, require a non-blank changing canvas and zero page, console, request,
 capture, or GPU validation errors. Artifact count alone is not visual proof.
 
+For long asynchronous startup, drive capture with an application readiness
+signal as well as capture settlement. The route CLI's idle interval can occur
+between startup phases, before the final `captureAux()` call. A browser driver
+should wait for the application's rendered-ready state, then wait for capture
+settlement and check its results before closing the page. Confirm the expected
+auxiliary families exist; a successful early idle interval does not prove that
+PMREM or post-processing capture has run.
+
+Also wait for background jobs that replace render resources after the first
+paint. For example, native texture compression can replace an ordinary image
+texture with a compressed texture after the page reports ready. Render and
+capture the replacement state as well as the startup state, then require the
+job's own completion report to have zero failures. The same rule applies to
+streamed textures, atlas rebakes, and asynchronous model replacement.
+
+Production readiness is only the start of the visual check. Compare the same
+camera position, animation time, viewport, and settings against the original
+application. Check the opening, middle, and final camera positions separately:
+an SSR pass with a frozen camera uniform can look correct at startup and drift
+as the camera moves. Exercise the application's live controls after startup,
+including resize, effect toggles, and material changes.
+
+For shadows, verify that the light owns a populated shadow map and that a moving
+caster changes the receiver's shadow. A compiled shadow-depth artifact alone
+does not prove that production schedules the depth pass. For custom effects,
+keep each live uniform reachable through a stable property on its material;
+uniforms hidden only inside a TSL `Fn` closure cannot be rebound by property
+path. This is especially important for camera matrices that initially have
+identical values but diverge during interaction.
+
 ## Compute
 
 Do not treat standalone compute nodes as material markers. Inspect the installed runtime declarations for `@tsl-precompile/runtime/compute-capture`, especially `precompileCompute` and `precompileComputes`, and use the project's real compute resources and dispatch lifecycle. Keep compatibility mode until both capture and replay have been verified. Storage-texture or unsupported compute proofs may require an explicit hybrid/full-renderer support path instead of pure slim.
+
+Dispatch the real kernel before capturing it, supply named resource ownership,
+and await capture before releasing its buffers or textures. Standalone capture
+reads the cached compute state without traversing or rendering the scene.
+For runtime-sized storage arrays, use Three's `bufferCount = 0` declaration and
+verify replay with more than one allocation size. Production must dispatch the
+captured kernel through the compute runner; retaining an ordinary TSL dispatch
+does not prove compiler-free compute.
+
+Preserve Three's dispatch units: `runner.dispatch(number)` takes the total
+invocation count, while `runner.dispatch([x, y, z])` takes workgroup counts.
+Dividing a numeric invocation count by the workgroup width twice can leave most
+of a storage texture black without a GPU validation error. Read back or inspect
+the complete output, including its final rows, during production verification.
 
 ## Framework files
 

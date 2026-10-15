@@ -21,13 +21,13 @@
     "src"
   ],
   "scripts": {
-    "test": "node --test --test-concurrency=2 --test-reporter=dot test/*.test.js",
-    "test:quick": "node --test --test-concurrency=2 --test-reporter=dot test/*.test.js",
-    "test:full": "node --test --test-concurrency=2 test/*.test.js"
+    "test": "node ../../scripts/test.mjs quick --scope=inspector",
+    "test:quick": "node ../../scripts/test.mjs quick --scope=inspector",
+    "test:full": "node ../../scripts/test.mjs full --scope=inspector"
   },
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "three": "0.185.1"
+    "three": "0.186.1"
   },
   "keywords": [
     "three.js",

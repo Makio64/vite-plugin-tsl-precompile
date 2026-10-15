@@ -137,6 +137,7 @@ test( 'deploy workflow keeps the production-build browser proof and its artifact
 	const packageJson = JSON.parse( packageText );
 	assert.equal( packageJson.scripts[ 'test:static' ], 'node scripts/test-static-site.mjs' );
 	assert.match( runner, /installBrowserFailureCollector/ );
+	assert.match( runner, /await collector\.settle\(\);\s*const browserFailures = collector\.failures\(\);/ );
 	assert.match( runner, /createProductionBrowserLaunchPlan/ );
 	assert.match( runner, /landing-featured\.png/ );
 	assert.match( runner, /examples-gallery\.png/ );

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
 	registerAuxArtifact,
 	registerAuxArtifacts,
+	__registerAuxArtifactsOnly,
 	loadAux,
 	hasAux,
 	listAux,
@@ -15,6 +16,7 @@ import {
 	bindAuxByName,
 	resolveAuxArtifactForInput,
 	cloneAuxArtifactForReplay,
+	setupViewportTextureClasses,
 	__resetAuxRegistryForTests,
 } from '../../../runtime/src/aux-loader.js';
 
@@ -211,6 +213,44 @@ test( 'aux-loader: resolver reports binding and unique-fallback provenance', () 
 
 } );
 
+test( 'aux-loader: bound lookups ignore unrelated metadata and observe registry replacement and reset', () => {
+
+	__resetAuxRegistryForTests();
+	const selected = {};
+	const unrelated = {};
+	registerAuxArtifact( 'post-process', 'selected', selected );
+	registerAuxArtifact( 'post-process', 'unrelated', unrelated );
+	const input = {};
+	bindAuxByName( input, 'post-process', 'selected' );
+	assert.throws( () => resolveAuxArtifactForInput( 'post-process', {
+		__tslpAuxShape: 'post-process', __tslpAuxConfigHash: 'missing',
+	} ), error => {
+
+		assert.equal( error.code, 'AUX_ARTIFACT_NOT_FOUND' );
+		assert.deepEqual( error.knownCaptures.map( entry => entry.configHash ), [ 'selected', 'unrelated' ] );
+		return true;
+
+	} );
+	Object.defineProperty( unrelated, 'name', { get() { assert.fail( 'exact lookup must not inspect another capture' ); } } );
+	assert.equal( resolveAuxArtifactForInput( 'post-process', input ).artifact, selected );
+	const replacement = {};
+	registerAuxArtifact( 'post-process', 'selected', replacement );
+	assert.equal( resolveAuxArtifactForInput( 'post-process', input ).artifact, replacement );
+	assert.throws( () => resolveAuxArtifactForInput( 'background', input ), {
+		name: 'AuxArtifactSelectionError', code: 'AUX_ARTIFACT_SHAPE_MISMATCH',
+	} );
+	__resetAuxRegistryForTests();
+	assert.throws( () => resolveAuxArtifactForInput( 'post-process', input ), error => {
+
+		assert.equal( error.code, 'AUX_ARTIFACT_NOT_FOUND' );
+		assert.equal( error.configHash, 'selected' );
+		assert.deepEqual( error.knownCaptures, [] );
+		return true;
+
+	} );
+
+} );
+
 test( 'aux-loader: exact adapters can reject a mismatched single capture', () => {
 
 	__resetAuxRegistryForTests();
@@ -247,5 +287,145 @@ test( 'aux-loader: empty/invalid inputs reject', () => {
 	__resetAuxRegistryForTests();
 	assert.throws( () => registerAuxArtifact( '', 'abc', {} ), /shape/ );
 	assert.throws( () => registerAuxArtifact( 'background', '', {} ), /configHash/ );
+
+} );
+
+
+test( 'generated aux-only registration shares lookup, metadata and validation with manual registration', () => {
+
+	for ( const register of [ registerAuxArtifacts, __registerAuxArtifactsOnly ] ) {
+
+		__resetAuxRegistryForTests();
+		const artifact = { materialShape: 'post-process', uniformPlan: [] };
+		register( [ { shape: 'post-process', configHash: 'exact', artifact, name: 'pass', threeVersion: '0.185.1', pluginVersion: '0.1.0' } ] );
+		assert.equal( loadAux( 'post-process', 'exact' ), artifact );
+		assert.equal( findAux( 'post-process', 'pass' ).artifact, artifact );
+		assert.equal( artifact.__tslpAuxThreeVersion, '0.185.1' );
+		assert.equal( artifact.__tslpAuxPluginVersion, '0.1.0' );
+		assert.throws( () => register( [ { shape: '', configHash: 'x', artifact } ] ), /shape must be a non-empty string/ );
+		assert.throws( () => register( [ { shape: 'post-process', configHash: '', artifact } ] ), /configHash must be a non-empty string/ );
+
+	}
+	for ( const shape of [ 'shadow-depth', 'render-pipeline', 'output-transform' ] ) {
+
+		__resetAuxRegistryForTests();
+		const artifact = {};
+		assert.throws( () => __registerAuxArtifactsOnly( [ { shape, configHash: 'x', artifact } ] ), /renderer-owned shapes require registerAuxArtifacts/ );
+		assert.equal( hasAux( shape, 'x' ), false );
+		assert.deepEqual( Reflect.ownKeys( artifact ), [], 'rejected registration must not stamp or wire the artifact' );
+
+	}
+
+} );
+
+function viewportFixture( uuid, depth = false ) {
+
+	return {
+		uniformPlan: [ { name: 'object', textures: [ { name: 'input', source: { kind: 'artifact.texture', mapping: 300, textureUuid: uuid } } ] } ],
+		fragmentShader: `var input: ${ depth ? 'texture_depth_2d' : 'texture_2d<f32>' };`,
+	};
+
+}
+
+function countViewportTextures() {
+
+	const counts = { color: 0, depth: 0 };
+	setupViewportTextureClasses( {
+		FramebufferTexture: class { constructor() { counts.color ++; this.isFramebufferTexture = true; } },
+		DepthTexture: class { constructor() { counts.depth ++; this.isDepthTexture = true; } },
+	} );
+	return counts;
+
+}
+
+test( 'deferred preparation retries after late texture setup or a failed constructor', async () => {
+
+	const runtime = await import( '../../../runtime/src/aux-loader.js?deferred-bootstrap-test' );
+	const artifact = viewportFixture( 'late' );
+	runtime.__registerAuxArtifactsOnly( [ { shape: 'background', configHash: 'a', artifact } ], null, true );
+	assert.equal( runtime.loadAux( 'background', 'a' ), artifact );
+	assert.equal( artifact._textureRefs, undefined );
+	let fail = true;
+	runtime.setupViewportTextureClasses( {
+		FramebufferTexture: class { constructor() { if ( fail ) throw new Error( 'texture setup failed' ); } },
+		DepthTexture: class {},
+	} );
+	assert.throws( () => runtime.loadAux( 'background', 'a' ), /texture setup failed/ );
+	fail = false;
+	assert.equal( runtime.loadAux( 'background', 'a' ), artifact );
+	assert.equal( artifact._textureRefs.has( 'late' ), true );
+
+} );
+
+test( 'generated deferred tables prepare only requested shapes and preserve table access', () => {
+
+	__resetAuxRegistryForTests();
+	const counts = countViewportTextures();
+	const color = viewportFixture( 'color' ), depth = viewportFixture( 'depth', true );
+	const entries = [
+		{ shape: 'post-process', configHash: 'a', name: 'color-pass', artifact: color },
+		{ shape: 'background', configHash: 'b', name: 'depth-pass', artifact: depth },
+	];
+	__registerAuxArtifactsOnly( entries, null, true );
+	assert.deepEqual( counts, { color: 0, depth: 0 } );
+	assert.equal( hasAux( 'post-process', 'a' ), true );
+	assert.equal( listAux()[ 0 ].name, 'color-pass' );
+	assert.deepEqual( counts, { color: 0, depth: 0 }, 'metadata inspection does not construct textures' );
+	assert.equal( loadAux( 'background', 'b' ), depth );
+	assert.equal( depth._textureRefs.get( 'depth' ).isDepthTexture, true );
+	assert.equal( depth._textureRefs.get( 'depth' ).isFramebufferTexture, undefined );
+	assert.equal( color._textureRefs, undefined );
+	assert.equal( loadAux( 'background', 'b' ), depth );
+	assert.deepEqual( counts, { color: 0, depth: 1 }, 'repeat lookup does not prepare again' );
+	Object.freeze( entries[ 0 ] );
+	assert.equal( entries[ 0 ].artifact, color );
+	assert.deepEqual( counts, { color: 1, depth: 1 } );
+	assert.throws( () => { entries[ 0 ].artifact = {}; }, TypeError );
+
+} );
+
+test( 'deferred preparation preserves registered identity, cloning and eager manual registration', () => {
+
+	__resetAuxRegistryForTests();
+	const counts = countViewportTextures();
+	const artifact = viewportFixture( 'original' );
+	const entry = { shape: 'background', configHash: 'a', artifact };
+	__registerAuxArtifactsOnly( [ entry ], null, true );
+	const replacement = {};
+	entry.artifact = replacement;
+	assert.equal( entry.artifact, replacement );
+	assert.equal( counts.color, 0 );
+	const clone = cloneAuxArtifactForReplay( artifact );
+	assert.equal( counts.color, 1 );
+	assert.notEqual( clone._textureRefs, artifact._textureRefs );
+	assert.equal( clone._textureRefs.get( 'original' ), artifact._textureRefs.get( 'original' ) );
+	assert.equal( findAux( 'background', 'a' ).artifact, artifact );
+	assert.equal( counts.color, 1 );
+	registerAuxArtifact( 'background', 'manual', viewportFixture( 'manual' ) );
+	assert.equal( counts.color, 2, 'public registration remains eager' );
+	__registerAuxArtifactsOnly( [ { shape: 'background', configHash: 'legacy', artifact: viewportFixture( 'legacy' ) } ] );
+	assert.equal( counts.color, 3, 'existing private callers retain eager behavior without the flag' );
+
+} );
+
+test( 'deferred entries preserve replacement order, named ambiguity and registry reset', () => {
+
+	__resetAuxRegistryForTests();
+	const counts = countViewportTextures();
+	const old = viewportFixture( 'old' ), latest = viewportFixture( 'latest' );
+	__registerAuxArtifactsOnly( [
+		{ shape: 'background', configHash: 'a', name: 'same', artifact: old },
+		{ shape: 'background', configHash: 'a', name: 'same', artifact: latest },
+		{ shape: 'background', configHash: 'b', name: 'same', artifact: viewportFixture( 'b' ) },
+	], null, true );
+	assert.equal( loadAux( 'background', 'a' ), latest );
+	assert.equal( old._textureRefs, undefined );
+	assert.equal( counts.color, 1 );
+	assert.throws( () => findAux( 'background', 'same' ), error => error.code === 'AUX_ARTIFACT_AMBIGUOUS' );
+	assert.equal( counts.color, 2 );
+	__resetAuxRegistryForTests();
+	assert.equal( hasAux( 'background', 'a' ), false );
+	assert.deepEqual( listAux(), [] );
+	assert.throws( () => loadAux( 'background', 'a' ), /no artifact/ );
 
 } );

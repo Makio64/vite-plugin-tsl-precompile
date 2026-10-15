@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 
 import {
 	hardSceneHarnessArgv,
@@ -25,11 +26,11 @@ function run( ...args ) {
 
 }
 
-test( 'hard-scene manifest is checked against the exact r185 catalogue', () => {
+test( 'hard-scene manifest is checked against the exact r186 catalogue', () => {
 
 	const manifest = loadHardSceneManifest();
 	assert.equal( manifest.schemaVersion, 1 );
-	assert.equal( manifest.threeVersion, '0.185.1' );
+	assert.equal( manifest.threeVersion, SLIM_THREE_PACKAGE_VERSION );
 	assert.equal( manifest.psnrThresholdDb, 30 );
 	assert.equal( manifest.cases.length, 27 );
 	assert.equal( new Set( manifest.cases.map( ( entry ) => entry.filename ) ).size, manifest.cases.length );

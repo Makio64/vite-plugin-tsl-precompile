@@ -26,7 +26,11 @@
 import { MARKER_METHOD_NAME } from './_constants.js';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashMaterialSync } from './graph-hash.js';
+import { createRuntimeThreeEmitterHashFields } from './three-emitter-identity.js';
+import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
+import { acceptedCaptureResponse } from './dev-material-capture-response.js';
 import { __upsertArtifactForDev } from './artifact-loader.js';
+import { MATERIAL_SHADER_FAMILY, createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import {
 	cloneRenderTargetForCapture,
 	getMRTCaptureRenderTarget,
@@ -40,6 +44,14 @@ import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION, stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
+import { beginMaterialCapture, finishMaterialCapture, resetMaterialCaptureSettlement } from './dev-material-capture-settlement.js';
+import { materialCaptureWaitsForObserver, prepareRenderObjectHarvester } from './dev-material-capture-observer.js';
+import {
+	cloneLightsInto,
+	createCaptureObject,
+	findParentScene,
+	mountClippingGroupsInto,
+} from './dev-material-capture-scene.js';
 import {
 	__resetRenderObjectHarvestHandoffForTests,
 	publishRenderObjectHarvest,
@@ -48,13 +60,19 @@ import { notifyDevRendererObservers } from './dev-render-observers.js';
 import { recordDevCaptureOutcome } from './dev-capture-outcome.js';
 import { awaitRendererCompileQuiescence } from './auxiliary/cube-render-target-capture.js';
 import { installR185PMREMNodeGuard } from './r185-pmrem-node-guard.js';
+import {
+	formatCaptureBlockedKindWarning,
+	reportCaptureBlockedKindWarning,
+} from './capture-diagnostics.js';
+
+export { formatCaptureBlockedKindWarning };
 
 const MARKER_STATE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/precompile-marker-state' );
 const EXPLICIT_MARKER_NAMES_SYMBOL = Symbol.for( '@tsl-precompile/runtime/explicit-precompile-marker@1' );
+const CAPTURE_SOURCE_SYMBOL = Symbol.for( '@tsl-precompile/runtime/material-capture-source@1' );
 const DEFAULT_OBSERVE_TIMEOUT_MS = 30_000;
 const DEFAULT_AUTO_FALLBACK_DELAY_MS = 250;
 const MAX_OBSERVED_COMPUTE_NODES = 256;
-const TROUBLESHOOTING_URL = 'https://github.com/Makio64/vite-plugin-tsl-precompile#troubleshooting';
 
 let installations = new WeakMap();
 let installationSet = new Set();
@@ -65,6 +83,7 @@ let lastRenderContextByRenderer = new WeakMap();
 let renderCaptureEpochByRenderer = new WeakMap();
 let renderCaptureEpochs = new Set();
 let observedComputeNodesByRenderer = new WeakMap();
+let observedMaterialTopologies = new WeakMap();
 
 // `.precompile()` is author syntax, but a correct shader variant depends on
 // the real RenderObject + Scene + Camera. Calls without an explicit context
@@ -83,32 +102,6 @@ function importOptionalModule( specifier ) {
 
 }
 
-function prepareRenderObjectHarvester( installation ) {
-
-	if ( ! installation ) return Promise.resolve( null );
-	if ( typeof installation.beginRenderObjectHarvest === 'function' ) {
-
-		return Promise.resolve( installation.beginRenderObjectHarvest );
-
-	}
-	if ( installation.renderObjectHarvesterPromise ) return installation.renderObjectHarvesterPromise;
-
-	// Keep the only private Three seam in the plugin's vendored adapter. The
-	// runtime owns the public renderer.render() epoch, but it must not grow a
-	// second NodeManager/RenderObjects wrapper that can drift from compileTSL.
-	installation.renderObjectHarvesterPromise = import( /* @vite-ignore */ 'vite-plugin-tsl-precompile/src/vendor/compileTSL.js' ).then(
-		( module ) => {
-
-			const begin = module && module.beginRenderObjectHarvest;
-			if ( typeof begin === 'function' ) installation.beginRenderObjectHarvest = begin;
-			return typeof begin === 'function' ? begin : null;
-
-		},
-		() => null,
-	);
-	return installation.renderObjectHarvesterPromise;
-
-}
 
 function exactThreePackageVersion( revision ) {
 
@@ -126,6 +119,7 @@ function snapshotMaterialSourceGraphHash( material, name, installation ) {
 		return hashMaterialSync( material, {
 			name,
 			threeVersion: exactThreePackageVersion( installation && installation.three && installation.three.REVISION ),
+			...createRuntimeThreeEmitterHashFields( { threeVersion: exactThreePackageVersion( installation && installation.three && installation.three.REVISION ), three: installation && installation.three } ),
 			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
 		} );
 
@@ -266,9 +260,11 @@ function findMaterialOwner( scene, material ) {
 
 }
 
-function queueMaterialCapture( material, name, installation, context, sourceIdentity = null, sourceRevision = null ) {
+function queueMaterialCapture( material, name, installation, context, sourceIdentity = null, sourceRevision = null, originalSourceGraphHash = null ) {
 
-	const sourceGraphHash = snapshotMaterialSourceGraphHash( material, name, installation );
+	const sourceGraphHash = originalSourceGraphHash || snapshotMaterialSourceGraphHash( material, name, installation );
+	const owner = material[ CAPTURE_SOURCE_SYMBOL ];
+	if ( owner && owner.name === name && ! owner.sourceGraphHash ) owner.sourceGraphHash = sourceGraphHash;
 	const queuedNames = captureNamesFor( pendingCaptures, material, true );
 	const alreadyQueued = queuedNames.get( name );
 	if ( alreadyQueued ) {
@@ -332,6 +328,7 @@ function queueMaterialCapture( material, name, installation, context, sourceIden
 		sourceMaterialNodeProps: materialNodeProps( material ),
 	};
 	retainExplicitObservationRenderer( entry );
+	entry.settlement = beginMaterialCapture( entry );
 	// Auto-mark instrumentation may carry the target observed during an earlier
 	// render, while ordinary markers can be invoked inside the active pass.
 	// Preserve either source before PassNode restores the canvas; otherwise the
@@ -408,7 +405,8 @@ function armCaptureObservationTimeout( entry ) {
 		adjustPendingCaptureCount( - 1 );
 		releaseExplicitObservationRenderer( entry );
 		recordDevCaptureOutcome( false );
-		console.error( `[tsl-precompile] .precompile(${ JSON.stringify( entry.name ) }) was not observed in a real renderer.render(scene, camera) call within ${ timeoutMs }ms. Mount the material before rendering, or pass { scene, camera, object } as the second argument.` );
+		finishMaterialCapture( entry.settlement, false );
+		console.error( `[tsl-precompile] .precompile(${ JSON.stringify( entry.name ) }) was not observed in a real renderer.render(scene, camera) call within ${ timeoutMs }ms. Await setup.ready or setDevRenderer(renderer) before a one-shot render; mount the material, or pass { scene, camera, object } as the second argument.` );
 
 	}, timeoutMs );
 	if ( entry.observeTimer && typeof entry.observeTimer.unref === 'function' ) entry.observeTimer.unref();
@@ -504,9 +502,55 @@ function captureObjectScore( object ) {
 
 }
 
+// A marker remains associated with its material after the first capture. Later
+// application renders can introduce a different target, MRT, geometry or material
+// state, including a PMREM bake after an awaited opening-view compile. Requeue
+// each new topology before that real draw so the normal harvester owns its exact
+// program; never manufacture a selector from this observation key.
+function observeMarkedMaterialTopology( renderer, scene, camera, object, material, renderTopology ) {
+
+	const owner = material[ CAPTURE_SOURCE_SYMBOL ];
+	const installation = material[ MARKER_STATE_SYMBOL ]?.installation;
+	if ( ! owner || ! installation || installation.devEndpointDead ) return;
+	if ( installation.renderer !== renderer ) return;
+	let byRenderer = observedMaterialTopologies.get( material );
+	if ( ! byRenderer ) observedMaterialTopologies.set( material, byRenderer = new WeakMap() );
+	let seen = byRenderer.get( renderer );
+	const firstObservation = ! seen;
+	if ( ! seen ) byRenderer.set( renderer, seen = new Set() );
+	const selector = createRenderObjectContextSelector( {
+		scene, camera, object, material,
+		context: { renderTarget: renderTopology?.renderTarget || null, mrt: renderTopology?.mrtNode || null },
+	}, renderer );
+	if ( seen.has( selector ) ) return;
+	seen.add( selector );
+	if ( captureNamesFor( pendingCaptures, material )?.has( owner.name ) || firstObservation ) return;
+	queueMaterialCapture( material, owner.name, installation, {
+		renderer, scene, camera, object,
+		__tslpObserveNextRender: true,
+	}, owner.sourceIdentity, owner.sourceRevision, owner.sourceGraphHash );
+
+}
+
+// Hidden lazy helpers have not contributed a real topology yet. Keep explicit
+// pending captures eligible for synthetic extraction, but do not record those
+// hidden owners as already observed when a shared material renders elsewhere.
+function isVisibleRenderOwner( object, scene, material ) {
+
+	if ( material.visible === false ) return false;
+	for ( let ancestor = object; ancestor; ancestor = ancestor.parent ) {
+
+		if ( ancestor.visible === false ) return false;
+		if ( ancestor === scene ) break;
+
+	}
+	return true;
+
+}
+
 function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology = null ) {
 
-	if ( pendingCaptures.size === 0 || ! scene ) return [];
+	if ( ! scene ) return [];
 	const ready = new Set();
 	const visit = ( object ) => {
 
@@ -529,6 +573,7 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 		for ( const material of materials ) {
 
 			if ( ! material ) continue;
+			if ( isVisibleRenderOwner( object, scene, material ) ) observeMarkedMaterialTopology( renderer, scene, camera, object, material, renderTopology );
 			const entries = captureNamesFor( pendingCaptures, material );
 			if ( ! entries ) continue;
 			for ( const entry of entries.values() ) {
@@ -557,7 +602,14 @@ function bindPendingCapturesFromRender( renderer, scene, camera, renderTopology 
 				// NodeMaterial.setup(), which can populate internal *Node properties.
 				// Those builder-owned nodes describe the captured shader, but they are
 				// not present yet when compiler-free replay selects an artifact.
-				entry.sourceMaterialNodeProps = materialNodeProps( material );
+				if ( ! entry.awaitingReadyObserver ) entry.sourceMaterialNodeProps = materialNodeProps( material );
+				if ( materialCaptureWaitsForObserver( entry ) ) {
+
+					entry.awaitingReadyObserver = true;
+					continue;
+
+				}
+				entry.awaitingReadyObserver = false;
 				ready.add( entry );
 
 			}
@@ -587,7 +639,7 @@ function scheduleAutoFallbackCaptures( renderer, scene, camera ) {
 
 		for ( const entry of entries.values() ) {
 
-			if ( ! entry.allowAutoFallback || entry.started || entry.autoFallbackTimer ) continue;
+			if ( ! entry.allowAutoFallback || entry.started || entry.autoFallbackTimer || entry.awaitingReadyObserver ) continue;
 			if ( entry.explicitRenderer && entry.explicitRenderer !== renderer ) continue;
 			if ( ! entry.explicitRenderer && entry.installation.renderer && entry.installation.renderer !== renderer ) continue;
 			entry.renderer = entry.explicitRenderer || renderer;
@@ -607,7 +659,7 @@ function scheduleAutoFallbackEntry( entry, scene, camera ) {
 	entry.autoFallbackTimer = setTimeout( () => {
 
 		const queued = captureNamesFor( pendingCaptures, entry.material );
-		if ( entry.started || ! queued || queued.get( entry.name ) !== entry ) return;
+		if ( entry.started || entry.awaitingReadyObserver || ! queued || queued.get( entry.name ) !== entry ) return;
 		entry.context.scene = entry.context.scene || scene;
 		entry.context.camera = entry.context.camera || camera;
 		// A late auto-mark fallback has missed the RenderObject observer, but the
@@ -715,10 +767,6 @@ function associateRenderer( installation, renderer ) {
 	return prepareRenderObjectHarvester( installation ).then( () => undefined );
 
 }
-
-const LIGHT_NODE_GRAPH_PROPS = [
-	'colorNode',
-];
 
 function artifactLooksMRT( artifact ) {
 
@@ -1014,11 +1062,58 @@ export function installPrecompileMarker( three, opts = {} ) {
 		// queueing a second name then can create an orphan observation timeout.
 		if ( autoMarked && hasExplicitMarkerName( this ) ) return this;
 		if ( ! autoMarked ) rememberExplicitMarkerName( this, name );
+		Object.defineProperty( this, MATERIAL_SHADER_FAMILY, { value: name, configurable: true } );
+		Object.defineProperty( this, CAPTURE_SOURCE_SYMBOL, {
+			value: { name, sourceIdentity, sourceRevision }, configurable: true,
+		} );
 		queueMaterialCapture( this, name, installation, context, sourceIdentity, sourceRevision );
 
 		return this;
 
 	};
+
+	// Material.clone() and NodeMaterial.copy() retain the authored graph. Its
+	// copied instances still need observation under their own draw context
+	// (wireframe, geometry and shadow flags can all differ from the source).
+	for ( const copyPrototype of new Set( [ prototype, three.NodeMaterial?.prototype ] ) ) {
+
+		if ( ! copyPrototype || ! Object.hasOwn( copyPrototype, 'copy' ) ) continue;
+		const originalCopy = copyPrototype.copy;
+		if ( typeof originalCopy !== 'function' ) continue;
+		copyPrototype.copy = function copy( source ) {
+
+			const result = originalCopy.call( this, source );
+			const owner = source && source[ CAPTURE_SOURCE_SYMBOL ];
+			if ( owner && this !== source ) {
+
+				// NodeMaterial.copy in r185 does not call Material.copy and only
+				// visits properties already present on the destination. Retain own
+				// user aliases needed to address the copied graph's live uniforms.
+				// Rebuilt subclass graphs keep aliases they constructed themselves.
+				for ( const [ key, descriptor ] of Object.entries( Object.getOwnPropertyDescriptors( source ) ) ) {
+
+					if ( key.endsWith( 'Node' ) && descriptor.value?.isNode === true && ! Object.hasOwn( this, key ) ) {
+
+						Object.defineProperty( this, key, descriptor );
+
+					}
+
+				}
+				this[ MARKER_METHOD_NAME ]( owner.name, null, owner.sourceIdentity, owner.sourceRevision );
+				if ( owner.sourceGraphHash ) {
+
+					this[ CAPTURE_SOURCE_SYMBOL ].sourceGraphHash = owner.sourceGraphHash;
+					const queued = captureNamesFor( pendingCaptures, this )?.get( owner.name );
+					if ( queued ) queued.sourceGraphHash = owner.sourceGraphHash;
+
+				}
+
+			}
+			return result;
+
+		};
+
+	}
 
 	Object.defineProperty( prototype, MARKER_STATE_SYMBOL, {
 		value: {
@@ -1205,11 +1300,13 @@ function wrapDevRenderer( renderer ) {
 	// We only wrap once per renderer instance (guard via __tslpRenderWrapped).
 	wrapDevRendererComputeMethod( renderer, 'compute' );
 	wrapDevRendererComputeMethod( renderer, 'computeAsync' );
-	if ( typeof renderer.render === 'function' && ! renderer.__tslpRenderWrapped ) {
+	for ( const methodName of [ 'render', 'compileAsync' ] ) {
 
-		renderer.__tslpRenderWrapped = true;
-		const _originalRender = renderer.render.bind( renderer );
-		renderer.render = function ( scene, camera, ...rest ) {
+		const wrappedKey = methodName === 'render' ? '__tslpRenderWrapped' : '__tslpCompileAsyncWrapped';
+		if ( typeof renderer[ methodName ] !== 'function' || renderer[ wrappedKey ] ) continue;
+		renderer[ wrappedKey ] = true;
+		const _originalRender = renderer[ methodName ].bind( renderer );
+		renderer[ methodName ] = function ( scene, camera, ...rest ) {
 
 			if ( ! registeredRenderers.has( renderer ) ) return _originalRender( scene, camera, ...rest );
 			let activeMRT = null;
@@ -1274,7 +1371,7 @@ function wrapDevRenderer( renderer ) {
 			const startReady = () => {
 
 				if ( captureEpoch ) completeRenderCaptureCall( captureEpoch, ready, scene );
-				if ( ! synthetic ) {
+				if ( ! synthetic && methodName === 'render' ) {
 
 					scheduleAutoFallbackCaptures( renderer, scene, camera );
 					notifyDevRendererObservers( renderer, scene, camera );
@@ -1460,6 +1557,7 @@ async function captureMaterialInDev( entry ) {
 	let extractor = installation.extractor;
 	let codegen = installation.codegen;
 	let renderObjectHarvest = null;
+	const ownedCaptureGeometries = [];
 
 	try {
 
@@ -1639,6 +1737,7 @@ async function captureMaterialInDev( entry ) {
 
 		}
 		const sourceThreeVersion = exactThreePackageVersion( REVISION );
+		const emitterFields = createRuntimeThreeEmitterHashFields( { threeVersion: sourceThreeVersion, three: { REVISION } } );
 		const renderContextSignature = createRenderContextSignature( {
 			renderer: captureRenderer,
 			scene: sourceScene,
@@ -1677,7 +1776,7 @@ async function captureMaterialInDev( entry ) {
 
 		}
 
-		const mesh = createCaptureObject( Mesh, BoxGeometry, sourceObject, material );
+		const mesh = createCaptureObject( Mesh, BoxGeometry, sourceObject, material, ownedCaptureGeometries );
 		// Synthetic extraction must compile marked materials even when their live
 		// object is currently dormant. Object3D.clone() preserves `visible`, which
 		// otherwise makes helpers that become visible later impossible to replay.
@@ -1796,6 +1895,7 @@ async function captureMaterialInDev( entry ) {
 		let extractorOpts = renderObjectHarvest ? { renderObjectHarvest } : undefined;
 		const observedComputeNodes = observedComputeNodesForCapture( captureRenderer );
 		extractorOpts ||= {};
+		extractorOpts.materials = [ material ];
 		extractorOpts.observedComputeNodes = observedComputeNodes;
 		if ( mrtNode ) {
 
@@ -1838,12 +1938,18 @@ async function captureMaterialInDev( entry ) {
 			// "Cannot read properties of undefined (reading 'type')"
 			// (webgpu_postprocessing_bloom_selective). A material-level mrtNode
 			// is inherently MRT-bound; it has no meaningful color-target variant.
-			if ( mrtNode && mrtNode !== materialMRTNode && ! materialMRTNode ) {
+			const observedFamily = renderObjectHarvest?.familiesByMaterial?.get( material );
+			const hasCompleteObservedFamily = observedFamily?.complete === true && observedFamily.variants?.length > 0;
+			// A complete real-render family is authoritative. Adding a guessed
+			// color sibling from cloned lights can reorder bindings for the same
+			// selector. Actual later color/MRT draws enqueue their own capture.
+			if ( mrtNode && mrtNode !== materialMRTNode && ! materialMRTNode && ! hasCompleteObservedFamily ) {
 
 				try {
 
 						const colorArtifacts = await extractor( captureRenderer, scene, camera, {
 							noGlobalMRT: true,
+							materials: [ material ],
 							observedComputeNodes,
 						} );
 					artifactSets.push( colorArtifacts );
@@ -1904,6 +2010,7 @@ async function captureMaterialInDev( entry ) {
 		const sourceGraphHash = entry.sourceGraphHash || hashMaterialSync( material, {
 			name,
 			threeVersion: sourceThreeVersion,
+			...emitterFields,
 			toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
 			renderContextSignature,
 		} );
@@ -1922,17 +2029,18 @@ async function captureMaterialInDev( entry ) {
 
 		}
 		const blocked = unsupportedKinds.filter( ( u ) => u.severity === 'blocked' );
-		if ( blocked.length > 0 ) {
-
-			logOnce( 'blocked:' + name, () => console.warn( formatCaptureBlockedKindWarning( name, blocked ) ) );
-
-		}
+		reportCaptureBlockedKindWarning(
+			name,
+			blocked,
+			( warning ) => logOnce( 'blocked:' + name, () => console.warn( warning ) ),
+		);
 
 		// Strip non-serialisable side-cars before POST; dev capture only needs
 		// the JSON-safe portion of the artifact.
 		artifact.sourceGraphHash = sourceGraphHash;
 		artifact.sourceHashVersion = ARTIFACT_TOOLCHAIN_VERSION;
 		artifact.sourceThreeVersion = sourceThreeVersion;
+		Object.assign( artifact, createThreeEmitterSourceFields( { threeVersion: sourceThreeVersion, ...emitterFields } ) );
 		artifact.renderContextSignature = renderContextSignature;
 		artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
 		// autoMark runs at the constructor expression, before user code assigns
@@ -1946,6 +2054,7 @@ async function captureMaterialInDev( entry ) {
 		const hash = hashArtifactContentSync( sanitized, {
 			shape: `material:${ name }`,
 			threeVersion: sourceThreeVersion,
+			...emitterFields,
 			pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 		} );
 
@@ -1956,6 +2065,7 @@ async function captureMaterialInDev( entry ) {
 				name,
 				hash,
 				artifact: sanitized,
+				...emitterFields,
 				...( entry.sourceIdentity ? { sourceIdentity: entry.sourceIdentity } : {} ),
 				...( entry.sourceRevision ? { sourceRevision: entry.sourceRevision } : {} ),
 			} ),
@@ -1973,6 +2083,7 @@ async function captureMaterialInDev( entry ) {
 			hash,
 			artifact: sanitized,
 			threeVersion: sourceThreeVersion,
+			...emitterFields,
 		} );
 		captureAccepted = true;
 		const acceptedUnsupportedKinds = accepted.artifact === sanitized
@@ -2027,55 +2138,18 @@ async function captureMaterialInDev( entry ) {
 			} );
 
 		}
+		for ( const geometry of ownedCaptureGeometries ) {
+
+			try { geometry.dispose(); } catch ( _ ) { /* preserve capture settlement */ }
+
+		}
 		recordDevCaptureOutcome( captureAccepted );
+		finishMaterialCapture( entry.settlement, captureAccepted );
 
 	}
 
 }
 
-async function acceptedCaptureResponse( response, fallback ) {
-
-	let body = null;
-	if ( response && typeof response.json === 'function' ) {
-
-		try { body = await response.json(); } catch ( _ ) { /* custom endpoints may return an empty success body */ }
-
-	}
-	if ( ! body || typeof body !== 'object' || ( body.artifact === undefined && body.hash === undefined ) ) return fallback;
-	if ( body.name !== undefined && body.name !== fallback.name ) {
-
-		throw new Error( `[tsl-precompile] dev capture accepted the wrong artifact name ${ JSON.stringify( body.name ) } for ${ JSON.stringify( fallback.name ) }.` );
-
-	}
-	const artifact = body.artifact;
-	const hash = typeof body.hash === 'string' ? body.hash.replace( /^sha256:/i, '' ).toLowerCase() : '';
-	if ( ! artifact || typeof artifact !== 'object' || ! /^[a-f0-9]{64}$/.test( hash ) ) {
-
-		throw new Error( `[tsl-precompile] dev capture returned an incomplete accepted artifact for ${ JSON.stringify( fallback.name ) }.` );
-
-	}
-	if ( artifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ||
-		artifact.sourceThreeVersion !== fallback.threeVersion ||
-		artifact.sourceHashVersion !== ARTIFACT_TOOLCHAIN_VERSION ||
-		artifact.sourceGraphHash !== fallback.artifact.sourceGraphHash ||
-		artifact.sourceValidationMode !== fallback.artifact.sourceValidationMode ) {
-
-		throw new Error( `[tsl-precompile] dev capture returned an incompatible accepted artifact for ${ JSON.stringify( fallback.name ) }.` );
-
-	}
-	const computed = hashArtifactContentSync( artifact, {
-		shape: `material:${ fallback.name }`,
-		threeVersion: fallback.threeVersion,
-		pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
-	} );
-	if ( computed !== hash ) {
-
-		throw new Error( `[tsl-precompile] dev capture returned an accepted artifact whose content does not match hash ${ hash }.` );
-
-	}
-	return { name: fallback.name, hash, artifact };
-
-}
 
 /**
  * Strip non-enumerable / non-JSON-serialisable side-cars from an artifact.
@@ -2093,269 +2167,6 @@ function jsonSafeArtifact( artifact ) {
 
 }
 
-/**
- * Clone every light from the source scene into the destination throwaway
- * scene. We must clone — never reparent — because `Object3D.add()` removes
- * the light from its existing parent and breaks the user's real render pass.
- *
- * three.js's `Light.clone()` (inherited via `Object3D.clone()`) covers every
- * built-in light class: AmbientLight, DirectionalLight, HemisphereLight,
- * PointLight, RectAreaLight, SpotLight, plus the IES/probe variants. It
- * preserves `color`, `intensity`, `position`, `distance`, `decay`, `angle`,
- * `penumbra`, `castShadow`, etc. via the standard `copy()` chain.
- *
- * Targets (DirectionalLight.target, SpotLight.target) are themselves Object3Ds
- * that live in the user's scene graph; `light.clone()` deep-clones the target
- * by default, so the cloned target carries the original target's transform
- * but is unparented. We add it to the throwaway scene alongside the light so
- * `updateMatrixWorld()` finds it during extraction.
- *
- * Lights nested inside transformed parents (e.g. a `PointLight` child of a
- * moving `particleLight` mesh) need their world transform baked in — the
- * throwaway scene won't replicate the parent chain. We compute the source
- * light's world matrix and decompose it onto the clone's local transform.
- *
- * @param {Object} sourceScene - The user's real scene (any Object3D with .traverse).
- * @param {Object} destScene - The throwaway scene to populate.
- */
-function cloneLightsInto( sourceScene, destScene ) {
-
-	if ( ! sourceScene || typeof sourceScene.traverse !== 'function' ) return;
-	const lights = [];
-	sourceScene.traverse( ( o ) => {
-
-		if ( o && o.isLight === true ) lights.push( o );
-
-	} );
-	if ( lights.length === 0 ) return;
-
-	// Make sure world matrices are current; users typically call
-	// `scene.updateMatrixWorld()` once per frame before render, but the
-	// extraction marker can fire from a microtask outside the render loop.
-	if ( typeof sourceScene.updateMatrixWorld === 'function' ) sourceScene.updateMatrixWorld( true );
-
-	for ( const light of lights ) {
-
-		let cloned;
-		try {
-
-			cloned = typeof light.clone === 'function' ? light.clone() : null;
-
-		} catch ( _ ) {
-
-			cloned = null;
-
-		}
-		if ( ! cloned ) continue;
-		stripClonedLightChildren( cloned );
-		copyLightNodeGraphProps( light, cloned );
-
-		// Bake world transform into the clone so a light parented under a
-		// moving rig still illuminates from the right place during capture.
-		// We only bother when the source has a non-identity world matrix
-		// different from its local matrix (i.e. a non-Scene parent).
-		if ( light.matrixWorld && light.parent && light.parent.isScene !== true ) {
-
-			cloned.matrix.copy( light.matrixWorld );
-			cloned.matrix.decompose( cloned.position, cloned.quaternion, cloned.scale );
-			cloned.matrixWorldNeedsUpdate = true;
-
-		}
-
-		destScene.add( cloned );
-
-		// SpotLight / DirectionalLight carry a separate `target` Object3D.
-		// `Light.clone()` already deep-clones it, but the cloned target
-		// stays unparented, so its world matrix never updates. Mirror the
-		// source target's world transform onto the clone's target and add
-		// it to the destination scene.
-		if ( cloned.target && cloned.target.isObject3D && cloned.target !== cloned ) {
-
-			const srcTarget = light.target;
-			if ( srcTarget && srcTarget.matrixWorld ) {
-
-				cloned.target.matrix.copy( srcTarget.matrixWorld );
-				cloned.target.matrix.decompose( cloned.target.position, cloned.target.quaternion, cloned.target.scale );
-				cloned.target.matrixWorldNeedsUpdate = true;
-
-			}
-			// Only attach if the target isn't already a descendant of the
-			// cloned light (some custom Light subclasses parent target to
-			// themselves).
-			if ( ! cloned.target.parent ) destScene.add( cloned.target );
-
-		}
-
-	}
-
-}
-
-function copyLightNodeGraphProps( source, target ) {
-
-	if ( ! source || ! target ) return;
-	for ( const key of LIGHT_NODE_GRAPH_PROPS ) {
-
-		if ( source[ key ] !== undefined ) target[ key ] = source[ key ];
-
-	}
-
-}
-
-function stripClonedLightChildren( light ) {
-
-	if ( ! light || ! Array.isArray( light.children ) ) return;
-	const keep = light.target && light.target.isObject3D ? light.target : null;
-	for ( const child of [ ...light.children ] ) {
-
-		if ( child === keep ) continue;
-		try { light.remove( child ); } catch ( _ ) {}
-
-	}
-
-}
-
-/**
- * Mirror the source object's ClippingGroup ancestry into the throwaway
- * extraction scene. Returns the Object3D the throwaway mesh should be
- * attached to — either the innermost cloned ClippingGroup, or the destScene
- * itself when the source has no ClippingGroup ancestors.
- *
- * Clones, never reparents — the live groups remain in the user's scene.
- * Order is outermost → innermost so the cloned chain matches the user's,
- * which matters because `ClippingContext.getGroupContext()` composes nested
- * contexts by walking parent → child and merging plane sets.
- *
- * @param {Function|undefined} ClippingGroup - The three.js ClippingGroup constructor.
- * @param {Object|null} sourceObject - The user's source mesh, may be null.
- * @param {Object} destScene - The throwaway scene root.
- * @return {Object} The Object3D the throwaway mesh should be added to.
- */
-function mountClippingGroupsInto( ClippingGroup, sourceObject, destScene ) {
-
-	if ( ! ClippingGroup || ! sourceObject ) return destScene;
-
-	const chain = [];
-	let cursor = sourceObject.parent || null;
-	while ( cursor ) {
-
-		if ( cursor.isClippingGroup === true ) chain.unshift( cursor );
-		cursor = cursor.parent || null;
-
-	}
-	if ( chain.length === 0 ) return destScene;
-
-	let parent = destScene;
-	for ( const group of chain ) {
-
-		const cloned = new ClippingGroup();
-		// `clippingPlanes` is an array of `Plane` instances. Share the same
-		// references so the cloned group reflects live plane mutations during
-		// extraction (the user might tweak plane.constant in a GUI between
-		// scene mount and our extractor run; the captured shader is invariant
-		// to the values, only the count/scope matters for shader shape).
-		cloned.clippingPlanes = group.clippingPlanes;
-		cloned.enabled = group.enabled;
-		cloned.clipIntersection = group.clipIntersection;
-		cloned.clipShadows = group.clipShadows;
-		parent.add( cloned );
-		parent = cloned;
-
-	}
-	return parent;
-
-}
-
-/**
- * Walk up an Object3D's parent chain to find the Scene it lives in. Returns
- * the Scene instance (anything with `.isScene === true`) or null. Used by
- * the precompile marker so the throwaway extraction scene can inherit the
- * real scene's environment / lights / fog — without that, PBR materials
- * extract without IBL bindings even when scene.environment is set.
- *
- * @param {Object3D|null} obj
- * @return {Object|null}
- */
-function findParentScene( obj ) {
-
-	let cursor = obj;
-	while ( cursor ) {
-
-		if ( cursor.isScene === true ) return cursor;
-		cursor = cursor.parent || null;
-
-	}
-	return null;
-
-}
-
-function createCaptureObject( Mesh, BoxGeometry, sourceObject, material ) {
-
-	if ( sourceObject && typeof sourceObject.clone === 'function' ) {
-
-		try {
-
-			const cloned = sourceObject.clone( false );
-			if ( cloned && cloned !== sourceObject ) {
-
-				cloned.parent = null;
-				if ( Array.isArray( cloned.children ) && cloned.children.length > 0 ) cloned.children.length = 0;
-				cloned.material = Array.isArray( sourceObject.material ) ? sourceObject.material : material;
-				mirrorCaptureObjectRuntimeProperties( cloned, sourceObject );
-				normalizeDetachedVisualHelper( cloned, sourceObject, Mesh );
-				return cloned;
-
-			}
-
-		} catch ( _ ) {
-
-			// Custom Object3D subclasses sometimes require constructor arguments
-			// and do not implement clone(). Fall through to a conservative Mesh
-			// surrogate while mirroring renderer-dispatch flags below.
-
-		}
-
-	}
-
-	const fallback = new Mesh( sourceObject && sourceObject.geometry || new BoxGeometry( 1, 1, 1 ), material );
-	if ( sourceObject ) {
-
-		for ( const key of [
-			'isSkinnedMesh', 'isInstancedMesh', 'isBatchedMesh', 'isSprite',
-			'isLine', 'isLineSegments', 'isPoints', 'isQuadMesh',
-		] ) {
-
-			if ( sourceObject[ key ] === true ) fallback[ key ] = true;
-
-		}
-		mirrorCaptureObjectRuntimeProperties( fallback, sourceObject );
-
-	}
-	return fallback;
-
-}
-
-function normalizeDetachedVisualHelper( target, sourceObject, Mesh ) {
-
-	const helperType = sourceObject && ( sourceObject.type || sourceObject.constructor && sourceObject.constructor.name ) || '';
-	if ( sourceObject && sourceObject.isHelper !== true && ! /Helper$/.test( helperType ) ) return;
-	const baseUpdateMatrixWorld = Mesh && Mesh.prototype && Mesh.prototype.updateMatrixWorld;
-	if ( typeof baseUpdateMatrixWorld === 'function' ) target.updateMatrixWorld = baseUpdateMatrixWorld;
-
-}
-
-function mirrorCaptureObjectRuntimeProperties( target, sourceObject ) {
-
-	for ( const key of [
-		'skeleton', 'bindMatrix', 'bindMatrixInverse', 'instanceMatrix',
-		'instanceColor', 'morphTargetInfluences', 'morphTargetDictionary',
-		'_matricesTexture', '_colorsTexture', 'count',
-	] ) {
-
-		if ( sourceObject[ key ] !== undefined ) target[ key ] = sourceObject[ key ];
-
-	}
-
-}
 
 const logged = new Set();
 function logOnce( key, fn ) {
@@ -2363,21 +2174,6 @@ function logOnce( key, fn ) {
 	if ( logged.has( key ) ) return;
 	logged.add( key );
 	fn();
-
-}
-
-/**
- * Dev capture always runs against full Three.js, even when the eventual
- * production build opts into slim replay. Keep this warning explicit about
- * which mode is affected so compatibility-mode adopters do not mistake a
- * future slim limitation for a problem in their current render.
- */
-export function formatCaptureBlockedKindWarning( name, blocked = [] ) {
-
-	const kinds = [ ...new Set( blocked.map( ( entry ) => entry && entry.kind ).filter( Boolean ) ) ];
-	return `[tsl-precompile] .precompile(${ JSON.stringify( name ) }): capture recorded ${ blocked.length } kind(s) that slim replay cannot update yet. ` +
-		`Full-Three development and compatibility builds remain live and are unaffected. If you later enable slim replay, these values use frozen snapshots and may not animate. ` +
-		`Kinds: ${ kinds.join( ', ' ) || '<unknown>' }. Details: ${ TROUBLESHOOTING_URL }`;
 
 }
 
@@ -2408,9 +2204,11 @@ export function __resetForTests() {
 	renderCaptureEpochByRenderer = new WeakMap();
 	renderCaptureEpochs = new Set();
 	observedComputeNodesByRenderer = new WeakMap();
+	observedMaterialTopologies = new WeakMap();
 	__resetRenderObjectHarvestHandoffForTests();
 	logged.clear();
 	pendingCaptures = new Map();
+	resetMaterialCaptureSettlement();
 	inflightCaptures = new Map();
 	captureQueue = [];
 	captureQueueRunning = false;

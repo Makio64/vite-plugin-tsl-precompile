@@ -278,6 +278,7 @@ test( 'internal-pass contract publishes PMREM and VSM shapes and validates seman
 		'pmrem-equirect',
 		'pmrem-blur',
 		'pmrem-ggx',
+		'pmrem-integration',
 		'shadow-vsm-vertical',
 		'shadow-vsm-horizontal',
 	] );
@@ -456,6 +457,13 @@ test( 'bindInternalPassArtifact isolates durable data and rebinds uniform and te
 	const generatedBuffer = generatedState.bindings[ 0 ].bindings.find( ( binding ) => binding.name === 'render' );
 	assert.deepEqual( Array.from( generatedBuffer.buffer.slice( 0, 4 ) ), [ 12, 3, 128, 64 ],
 		'internal-pass sidecars override the generated updater for semantic light.* slots' );
+	const sameFrame = { frameId: 1, renderId: 1, material: null };
+	generatedState.updateNodes.at( -1 ).update( sameFrame );
+	generatedController.setUniform( 'radius', 9 );
+	generatedController.setUniform( 'map-size', { x: 16, y: 32 } );
+	generatedState.updateNodes.at( -1 ).update( sameFrame );
+	assert.deepEqual( Array.from( generatedBuffer.buffer.slice( 0, 4 ) ), [ 12, 9, 16, 32 ],
+		'the preselected overlay slots read current values even within one frame and render' );
 
 	assert.throws(
 		() => controller.setUniform( 'unknown-role', 1 ),

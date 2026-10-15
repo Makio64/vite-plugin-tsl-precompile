@@ -11,6 +11,8 @@ import './slim-bootstrap.js';
 
 export const __TSLP_SLIM__ = true;
 
+export { default as WebGPUBackend } from 'three/src/renderers/webgpu/WebGPUBackend.js';
+
 // Constants.
 export {
 	ACESFilmicToneMapping,
@@ -62,6 +64,9 @@ export {
 	ReinhardToneMapping,
 	RepeatWrapping,
 	RGBAFormat,
+	RGBFormat,
+	RGBA_ASTC_4x4_Format,
+	RGBA_BPTC_Format,
 	RGFormat,
 	SRGBColorSpace,
 	TimestampQuery,
@@ -71,6 +76,7 @@ export {
 	TrianglesDrawMode,
 	UnsignedByteType,
 	UnsignedIntType,
+	UnsignedInt101111Type,
 	UVMapping,
 	VSMShadowMap,
 	WebGLCoordinateSystem,
@@ -120,7 +126,7 @@ export { VideoFrameTexture } from 'three/src/textures/VideoFrameTexture.js';
 export { VideoTexture } from 'three/src/textures/VideoTexture.js';
 
 // Geometry, attributes, and render targets.
-export { BufferAttribute, Float32BufferAttribute } from 'three/src/core/BufferAttribute.js';
+export { BufferAttribute, Float32BufferAttribute, Uint16BufferAttribute } from 'three/src/core/BufferAttribute.js';
 export { BufferGeometry } from 'three/src/core/BufferGeometry.js';
 export { InstancedBufferAttribute } from 'three/src/core/InstancedBufferAttribute.js';
 export { InstancedBufferGeometry } from 'three/src/core/InstancedBufferGeometry.js';
@@ -136,6 +142,7 @@ export { CircleGeometry } from 'three/src/geometries/CircleGeometry.js';
 export { ConeGeometry } from 'three/src/geometries/ConeGeometry.js';
 export { CylinderGeometry } from 'three/src/geometries/CylinderGeometry.js';
 export { DodecahedronGeometry } from 'three/src/geometries/DodecahedronGeometry.js';
+export { ExtrudeGeometry } from 'three/src/geometries/ExtrudeGeometry.js';
 export { IcosahedronGeometry } from 'three/src/geometries/IcosahedronGeometry.js';
 export { OctahedronGeometry } from 'three/src/geometries/OctahedronGeometry.js';
 export { PlaneGeometry } from 'three/src/geometries/PlaneGeometry.js';
@@ -189,6 +196,8 @@ export { Timer } from 'three/src/core/Timer.js';
 export { Controls } from 'three/src/extras/Controls.js';
 export { DataUtils } from 'three/src/extras/DataUtils.js';
 export { Path } from 'three/src/extras/core/Path.js';
+export { Shape } from 'three/src/extras/core/Shape.js';
+export { Source, TextureSource } from 'three/src/textures/TextureSource.js';
 export { CatmullRomCurve3 } from 'three/src/extras/curves/CatmullRomCurve3.js';
 export { BoxHelper } from 'three/src/helpers/BoxHelper.js';
 export { CameraHelper } from 'three/src/helpers/CameraHelper.js';
@@ -240,7 +249,7 @@ export { ClippingGroup } from 'three/src/objects/ClippingGroup.js';
 // Inert compatibility surface for TSL/Node APIs removed from production.
 export {
 	TSL, PassNode, NodeMaterial,
-	Node, NodeUpdateType, TempNode, CubeMapNode, RendererUtils,
+	Node, NodeUpdateType, TempNode, CubeMapNode, PMREMNode, RendererUtils,
 	builtinAOContext, builtinShadowContext,
 	MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial,
 	MeshLambertNodeMaterial, MeshPhongNodeMaterial, MeshToonNodeMaterial,
@@ -264,13 +273,14 @@ export {
 	getOutputArtifact,
 	dumpPrecompiledRegistry,
 } from './_vendor-PrecompiledArtifactRegistry.js';
-export { __applyPrecompiled } from './apply-precompiled.js';
+export { __applyPrecompiled, __applyPrecompiledCallsite } from './apply-precompiled.js';
 export { registerArtifact, getArtifact } from './artifact-loader.js';
 export { hydrateNodeBuilderState, registerLiveTexture, clearLiveTextureIndex, installTextureLoaderTracking } from './hydrator.js';
 export { getTextureResolutionDebugHook, setTextureResolutionDebugHook } from './hydrate/artifact-texture-resolver.js';
-export { registerAuxArtifact, registerAuxArtifacts, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
+export { registerAuxArtifact, registerAuxArtifacts, __registerAuxArtifactsOnly, loadAux, hasAux, listAux, findAux, bindAuxConfig, bindAuxByName, attachArtifactTextureRefs, attachPostprocessTextureRefs, attachPostprocessUpdateBeforeNodes, attachPostprocessObject3DTargets, wireViewportTextureRefs, setupViewportTextureClasses } from './aux-loader.js';
 export { hashNodeGraphSync } from './graph-hash.js';
 export { setSlimRenderFallback } from './slim-support/render-fallback-registry.js';
+export { createPrecompiledShadowSupport } from './slim-support/precompiled-shadows.js';
 export { linkGeneratedLightIdentitySource, writeGeneratedLightValue } from './generated/light-writer.js';
 export { attachLiveNodeDependency, getLiveNodeDependencies } from './slim-support/node-dependencies.js';
 export { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';

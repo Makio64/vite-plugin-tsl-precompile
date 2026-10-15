@@ -7,10 +7,17 @@
  * replaced by replay adapters, or rejected as runtime compiler residue.
  */
 
-export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@12';
+export const SLIM_THREE_POLICY_VERSION = 'slim-three-policy@13';
 
 /** Exact Three package patch used to build the published prebuilt slim file. */
-export const SLIM_THREE_PACKAGE_VERSION = '0.185.1';
+export const SLIM_THREE_PACKAGE_VERSION = '0.186.1';
+/** Published declarations use the release's minor version, independently of package patches. */
+export const SLIM_THREE_TYPES_PACKAGE_VERSION = '0.186.0';
+
+// Three's development branch still carries the preceding package version.
+// Its revision and exact Git identity must accompany that nominal version.
+export const SLIM_THREE_PEER_RANGE = '0.186.0 || 0.186.1';
+export { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from './slim-three-releases.js';
 
 /** Public runtime entries selected by the Vite plugin's slim modes. */
 export const SLIM_THREE_RUNTIME_ENTRIES = Object.freeze( {
@@ -40,8 +47,10 @@ export const SLIM_THREE_REWRITE_TARGETS = freezeRules( [
 	{ id: 'node-core-constants', sourcePath: 'nodes/core/constants.js', rewriteFamily: 'node-core-constants', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'loader-tracking', sourcePath: 'loaders/Loader.js', rewriteFamily: 'loader-tracking', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'cube-render-target', sourcePath: 'renderers/common/CubeRenderTarget.js', rewriteFamily: 'cube-render-target', role: SLIM_THREE_MODULE_ROLES.REWRITE },
+	{ id: 'quad-mesh', sourcePath: 'renderers/common/QuadMesh.js', rewriteFamily: 'quad-mesh', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'renderer', sourcePath: 'renderers/common/Renderer.js', rewriteFamily: 'renderer', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'render-object', sourcePath: 'renderers/common/RenderObject.js', rewriteFamily: 'render-object', role: SLIM_THREE_MODULE_ROLES.REWRITE },
+	{ id: 'bindings', sourcePath: 'renderers/common/Bindings.js', rewriteFamily: 'bindings', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'post-processing', sourcePath: 'renderers/common/PostProcessing.js', rewriteFamily: 'post-processing', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'render-pipeline', sourcePath: 'renderers/common/RenderPipeline.js', rewriteFamily: 'post-processing', role: SLIM_THREE_MODULE_ROLES.REWRITE },
 	{ id: 'background', sourcePath: 'renderers/common/Background.js', rewriteFamily: 'background', role: SLIM_THREE_MODULE_ROLES.REWRITE },

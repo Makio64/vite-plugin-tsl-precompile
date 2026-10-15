@@ -10,6 +10,7 @@ import { gzipSync } from 'node:zlib';
 import { build as viteBuild } from 'vite';
 
 import tslPrecompile from '../src/index.js';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import {
 	SLIM_BUNDLE_ANALYSIS_REPORT_SCHEMA,
 	SLIM_BUNDLE_ANALYSIS_SCHEMA,
@@ -175,7 +176,7 @@ async function buildConsumerProfile( name, gzipLevel, { slim = 'source', runtime
 			name: `tslp-slim-budget-${ name }`,
 			private: true,
 			type: 'module',
-			dependencies: { '@tsl-precompile/contract': '0.1.0', '@tsl-precompile/runtime': '0.1.0', three: '0.185.1' },
+			dependencies: { '@tsl-precompile/contract': '0.1.0', '@tsl-precompile/runtime': '0.1.0', three: SLIM_THREE_PACKAGE_VERSION },
 		} ) );
 		const entry = join( root, 'src/main.js' );
 		await writeFile( entry, await readFile( join( FIXTURE_ROOT, `${ name }.js` ) ) );

@@ -12,6 +12,9 @@ export interface ComputeCaptureEntry {
 export interface ComputeCapture {
 	name: string;
 	hash: string;
+	/** Present together when captured with the verified development emitter. */
+	threeRevision?: string;
+	threeCommit?: string;
 	artifact: PrecompiledComputeArtifact;
 }
 
@@ -19,6 +22,9 @@ export interface PrecompileComputesOptions {
 	scene: object;
 	camera: object;
 	threeVersion?: string;
+	/** Exact verified development emitter axes; stable captures omit these. */
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion?: string;
 	three?: { REVISION?: string | number };
 	devEndpoint?: string;

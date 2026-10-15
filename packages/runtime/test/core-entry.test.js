@@ -193,6 +193,7 @@ test( 'core micro-bundle excludes dev, hydration, auxiliary, and Node/TSL closur
 			'apply-precompiled-full.js',
 			'artifact-loader.js',
 			'graph-hash.js',
+			'three-emitter-identity.js',
 			'writers.js',
 		] );
 		assert.ok( Buffer.byteLength( chunk.code ) <= 100_000, 'core raw micro-bundle exceeded 100 KB' );

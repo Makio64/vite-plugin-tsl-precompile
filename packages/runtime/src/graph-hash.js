@@ -23,6 +23,8 @@
 
 import {
 	createMaterialSourceHashPayload,
+	createNodeGraphHashPayload,
+	createPlainConfigHashPayload,
 	normalizeMaterialGraph,
 	normalizeNode,
 } from '@tsl-precompile/contract/graph-normalize';
@@ -123,7 +125,9 @@ export function isStubLikeNode( node ) {
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
  * @return {Promise<string>} hex-encoded sha256, 64 chars
  */
-export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion } ) {
+export async function hashNodeGraph( node, opts ) {
+
+	const { shape, threeVersion, pluginVersion } = opts;
 
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
@@ -135,8 +139,7 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
 
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
-	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
+	const payload = createNodeGraphHashPayload( node, opts );
 	return sha256Hex( payload );
 
 }
@@ -159,15 +162,16 @@ export async function hashNodeGraph( node, { shape, threeVersion, pluginVersion 
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
  * @return {string} hex-encoded sha256 (real input) or `tslp-stub:<shape>:fallback` sentinel (stub input)
  */
-export function hashNodeGraphSync( node, { shape, threeVersion, pluginVersion } ) {
+export function hashNodeGraphSync( node, opts ) {
+
+	const { shape, threeVersion, pluginVersion } = opts;
 
 	assertVersion( 'hashNodeGraphSync', threeVersion, pluginVersion );
 	if ( node && typeof node.__tslpAuxConfigHash === 'string' && node.__tslpAuxConfigHash.length > 0 ) return node.__tslpAuxConfigHash;
 
 	if ( isStubLikeNode( node ) ) return stubSentinelHash( shape );
 
-	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
+	const payload = createNodeGraphHashPayload( node, opts );
 	return sha256HexSync( payload );
 
 }
@@ -181,7 +185,9 @@ export function hashNodeGraphSync( node, { shape, threeVersion, pluginVersion } 
  * @param {{ shape, threeVersion, pluginVersion }} opts
  * @return {string}
  */
-export function hashPlainConfigSync( config, { shape, threeVersion, pluginVersion } ) {
+export function hashPlainConfigSync( config, opts ) {
+
+	const { shape, threeVersion, pluginVersion } = opts;
 
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
@@ -189,23 +195,8 @@ export function hashPlainConfigSync( config, { shape, threeVersion, pluginVersio
 
 	}
 	assertVersion( 'hashPlainConfigSync', threeVersion, pluginVersion );
-	const payload = [
-		'plain-v1',
-		shape,
-		threeVersion,
-		pluginVersion,
-		stableStringify( config ),
-	].join( '\n' );
+	const payload = createPlainConfigHashPayload( config, opts );
 	return sha256HexSync( payload );
-
-}
-
-function stableStringify( v ) {
-
-	if ( v === null || typeof v !== 'object' ) return JSON.stringify( v );
-	if ( Array.isArray( v ) ) return '[' + v.map( stableStringify ).join( ',' ) + ']';
-	const keys = Object.keys( v ).sort();
-	return '{' + keys.map( ( k ) => JSON.stringify( k ) + ':' + stableStringify( v[ k ] ) ).join( ',' ) + '}';
 
 }
 
@@ -238,7 +229,9 @@ export const hashMaterialSourceSync = hashMaterialSync;
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function hashArtifactContentSync( artifact, { shape, threeVersion, pluginVersion } ) {
+export function hashArtifactContentSync( artifact, opts ) {
+
+	const { shape, threeVersion, pluginVersion } = opts;
 
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
@@ -248,8 +241,7 @@ export function hashArtifactContentSync( artifact, { shape, threeVersion, plugin
 	assertVersion( 'hashArtifactContentSync', threeVersion, pluginVersion );
 
 	const payload = createArtifactContentHashPayload( artifact, {
-		shape,
-		threeVersion,
+		...opts,
 		toolchainVersion: pluginVersion,
 	} );
 

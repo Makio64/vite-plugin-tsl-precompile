@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import tslPrecompile from '../../src/index.js';
 import { computeArtifactContentHash } from '../../src/hash.js';
 
@@ -14,19 +15,23 @@ test( 'plugin build rejects auxiliary payload tampering even when manifest and e
 	try {
 
 		const threeRoot = join( root, 'node_modules/three' );
+		const release = THREE_RELEASE_PROFILES.stable;
 		await mkdir( join( threeRoot, 'build' ), { recursive: true } );
+		await mkdir( join( threeRoot, 'src' ), { recursive: true } );
 		await writeFile( join( root, 'package.json' ), JSON.stringify( {
 			name: 'fixture',
 			private: true,
-			dependencies: { three: '0.185.1' },
+			dependencies: { three: release.packageVersion },
 		} ) );
 		await writeFile( join( threeRoot, 'package.json' ), JSON.stringify( {
 			name: 'three',
-			version: '0.185.1',
+			version: release.packageVersion,
 			type: 'module',
 			exports: { './webgpu': './build/three.webgpu.js' },
 		} ) );
-		await writeFile( join( threeRoot, 'build/three.webgpu.js' ), 'export const REVISION = "185";\n' );
+		const constants = `export const REVISION = ${ JSON.stringify( release.revision ) };\n`;
+		await writeFile( join( threeRoot, 'build/three.webgpu.js' ), constants );
+		await writeFile( join( threeRoot, 'src/constants.js' ), constants );
 
 		const artifactsDir = join( root, 'artifacts' );
 		await mkdir( artifactsDir );
@@ -35,7 +40,7 @@ test( 'plugin build rejects auxiliary payload tampering even when manifest and e
 			vertexShader: 'vertex',
 			fragmentShader: 'original',
 			uniformPlan: [],
-			sourceThreeVersion: '0.185.1',
+			sourceThreeVersion: release.packageVersion,
 			sourceHashVersion: '0.1.0',
 			artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 		};
@@ -51,7 +56,7 @@ test( 'plugin build rejects auxiliary payload tampering even when manifest and e
 			__materialShape: 'background',
 			__configHash: configHash,
 			__hash: storedHash,
-			threeVersion: '0.185.1',
+			threeVersion: release.packageVersion,
 			pluginVersion: '0.1.0',
 			artifact,
 		} ) );
@@ -62,7 +67,7 @@ test( 'plugin build rejects auxiliary payload tampering even when manifest and e
 					shape: 'background',
 					configHash,
 					hash: storedHash,
-					threeVersion: '0.185.1',
+					threeVersion: release.packageVersion,
 					pluginVersion: '0.1.0',
 				},
 			},

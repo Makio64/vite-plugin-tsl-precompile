@@ -22,6 +22,25 @@ test( 'node graph walker visits shared DAG descendants only once', () => {
 
 } );
 
+test( 'node graph walker ignores empty and scalar values while retaining callable nodes and plain wrappers', () => {
+
+	const values = [ undefined, null, false, true, 0, 1, NaN, '', 'text', 1n, Symbol( 'scalar' ) ];
+	for ( const value of values ) {
+
+		const seen = new Set();
+		assert.equal( walkNodeGraphUnique( value, () => assert.fail( 'scalar visited as a node' ), { seen } ), seen );
+		assert.equal( seen.size, 0 );
+
+	}
+	const callable = Object.assign( () => {}, { isNode: true, getChildren: () => [] } );
+	const wrapper = { nested: callable };
+	const root = { isNode: true, getChildren: () => [ ...values, wrapper, callable ] };
+	const visited = [];
+	walkNodeGraphUnique( root, node => visited.push( node ) );
+	assert.deepEqual( visited, [ root, wrapper, callable ] );
+
+} );
+
 test( 'node graph walker retains uniform and attribute traverse compatibility', () => {
 
 	const liveUniform = { isUniformNode: true, value: 0.5 };

@@ -9,9 +9,9 @@ import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
 
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
-import { THREE_SRC } from '../_three-src.js';
+import { THREE_SRC, THREE_R185_SRC } from '../_three-src.js';
 
-const NODE_UTILS_PATH = resolve( THREE_SRC, 'nodes/core/NodeUtils.js' );
+const NODE_UTILS_PATH = resolve( THREE_R185_SRC, 'nodes/core/NodeUtils.js' );
 const NODE_CONSTANTS_PATH = resolve( THREE_SRC, 'nodes/core/constants.js' );
 const RUNTIME_ID = 'virtual:tsl-precompile/__slim-rewrite-runtime/node-core-primitives';
 
@@ -50,14 +50,20 @@ test( 'rewrite/NodeUtils: replaces the exact stock module with three pure named 
 
 } );
 
-test( 'rewrite/nodes/core/constants: replaces the exact stock module with graph-free access/update constants', () => {
+test( 'rewrite/nodes/core/constants: preserves the complete native graph-free constant export surface', () => {
 
 	const result = rewrite( NODE_CONSTANTS_PATH );
 	assert.deepEqual( directReExport( result ), [
 		{ local: 'NodeAccess', exported: 'NodeAccess' },
 		{ local: 'NodeUpdateType', exported: 'NodeUpdateType' },
+		{ local: 'NodeShaderStage', exported: 'NodeShaderStage' },
+		{ local: 'NodeType', exported: 'NodeType' },
+		{ local: 'defaultShaderStages', exported: 'defaultShaderStages' },
+		{ local: 'defaultBuildStages', exported: 'defaultBuildStages' },
+		{ local: 'shaderStages', exported: 'shaderStages' },
+		{ local: 'vectorComponents', exported: 'vectorComponents' },
 	] );
-	assert.doesNotMatch( result.code, /(?:NodeShaderStage|NodeType|defaultShaderStages|vectorComponents)/ );
+	assert.doesNotMatch( result.code, /(?:from ['"]three|nodes\/tsl|Node\.js)/ );
 
 } );
 

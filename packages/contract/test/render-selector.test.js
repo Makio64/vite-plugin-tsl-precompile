@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { stableJsonStringify } from '../src/stable-json.js';
 
 import {
 	RENDER_BINDING_OWNER_KINDS,
+	MATERIAL_SHADER_FAMILY,
+	createShadowCasterTopologySelector,
 	createBackgroundCaptureTargetTopologyKey,
 	createRenderObjectContextSelector,
+	createProjectedRenderObjectContextSelector,
 	createSceneRenderTopologySelector,
 	describeBackgroundCaptureTargetTopology,
 	describeRenderObjectContext,
@@ -25,6 +29,21 @@ import {
 // The projection profiles exist to remove axes that provably cannot change a
 // given auxiliary pass's WGSL. Each profile test below pins both what it drops
 // and what it must keep.
+
+test( 'authored material families distinguish custom shadow graphs after compiler removal', () => {
+
+	const caster = family => ( {
+		colorNode: { isNode: true }, castShadowNode: { isNode: true },
+		[ MATERIAL_SHADER_FAMILY ]: family,
+	} );
+	assert.notEqual( createShadowCasterTopologySelector( caster( 'text' ) ), createShadowCasterTopologySelector( caster( 'projector' ) ) );
+	const live = caster( 'text' );
+	live.colorNode.children = [ { value: 0.7 } ];
+	assert.equal( createShadowCasterTopologySelector( live ), createShadowCasterTopologySelector( caster( 'text' ) ),
+		'live graph internals and inert replay roots share the authored family identity' );
+	assert.equal( JSON.parse( createShadowCasterTopologySelector( {} ) ).shaderFamily, undefined );
+
+} );
 
 function selectorOf( descriptor ) {
 
@@ -88,6 +107,80 @@ test( 'a missing render object yields an empty selector rather than a fabricated
 
 } );
 
+test( 'direct live projection matches the serialized path across profiles and scalar boundaries', () => {
+
+	const profiles = [ null, undefined, '', 'mesh-basic', 'background', 'shadow-depth', 'post-process', 'render-output', 'cube-render-target', 'future-profile' ];
+	for ( const value of [ undefined, null, false, true, 0, - 0, 1, 4, NaN, Infinity, '"\\\nΩ', {}, Symbol(), 1n ] ) {
+
+		const texture = Object.freeze( { isTexture: true, format: value, type: 1016, colorSpace: 'srgb-linear' } );
+		const target = Object.freeze( { texture, textures: [ texture ], isCubeRenderTarget: true, samples: 4 } );
+		const renderer = Object.freeze( {
+			backend: { isWebGPUBackend: true }, shadowMap: { enabled: true, type: value }, reversedDepthBuffer: true,
+			getRenderTarget: () => target, getOutputRenderTarget: () => null,
+			getActiveCubeFace: () => 2, getActiveMipmapLevel: () => 1,
+		} );
+		const renderObject = Object.freeze( {
+			renderer, material: Object.freeze( { side: value, fog: true } ), camera: { isPerspectiveCamera: true },
+			scene: Object.freeze( { environment: texture, environmentNode: { isNode: true }, fog: { isFog: true } } ),
+			context: { textures: [ texture ], sampleCount: 4, depth: true, stencil: true },
+			object: { geometry: { attributes: {
+				position: { itemSize: value, normalized: false, offset: 1, data: { stride: 8 } },
+				__range0: { itemSize: 4, normalized: false },
+			} } },
+		} );
+		const raw = createRenderObjectContextSelector( renderObject );
+		assert.equal( raw, stableJsonStringify( describeRenderObjectContext( renderObject ) ), 'live construction preserves canonical bytes' );
+		for ( const profile of profiles ) {
+
+			assert.equal( createProjectedRenderObjectContextSelector( renderObject, renderer, profile ), projectRenderObjectContextSelector( raw, profile ) );
+			assert.equal( createProjectedRenderObjectContextSelector( null, renderer, profile ), '' );
+
+		}
+
+	}
+
+} );
+
+test( 'live canonical selectors preserve MRT ordering, rich topology and getter observations', () => {
+
+	for ( const backendKind of [ 'isWebGPUBackend', 'isWebGLBackend' ] ) for ( const ids of [ true, false ] ) {
+
+		const reads = [];
+		const texture = { isTexture: true, isRenderTargetTexture: true, type: 1016, format: 1023, colorSpace: 'srgb-linear', name: 'z', channel: 1, mapping: 300 };
+		const source = { alphaMap: texture, map: texture, side: 2, alphaTest: 0.1, colorNode: { isNode: true }, positionNode: { isNode: true } };
+		const renderObject = {
+			renderer: { backend: { [ backendKind ]: true, compatibilityMode: true }, shadowMap: { enabled: true, type: 2 }, logarithmicDepthBuffer: true },
+			context: { textures: [ texture ], depthTexture: { isDepthTexture: true }, mrt: {
+				outputNodes: Object.fromEntries( [ 'z', 'a', '10', '2', '__proto__', 'toJSON', 'Ω' ].map( name => [ name, {} ] ) ),
+				getBlendMode( name ) { reads.push( name ); return name === 'a' ? { blending: 2 } : 1; },
+			} },
+			material: { isShadowPassMaterial: true, fog: false, ...source },
+			sourceMaterial: source,
+			scene: { environment: texture, fog: { isFogExp2: true }, overrideMaterial: { isShadowPassMaterial: true } },
+			lightsNode: { lights: [
+				{ ...( ids ? { id: 3 } : {} ), type: 'SpotLight', castShadow: true, map: texture, shadow: { camera: { isPerspectiveCamera: true } } },
+				{ ...( ids ? { id: 1 } : {} ), type: 'AmbientLight', userData: { tslPrecompileId: 'stable' } },
+			] },
+			camera: { isPerspectiveCamera: true, isArrayCamera: true, cameras: [ {}, {} ] },
+			object: { isSkinnedMesh: true, skeleton: { bones: [ {}, {} ] }, instanceMatrix: { count: 7 }, geometry: {
+				index: {}, attributes: { z: { itemSize: 2, normalized: true }, a: { itemSize: 3, normalized: false, offset: 1, data: { stride: 8 } } },
+				morphAttributes: { position: [ { itemSize: 3 } ] }, morphTargetsRelative: true,
+			} },
+		};
+		const expected = stableJsonStringify( describeRenderObjectContext( renderObject ) );
+		const expectedReads = reads.splice( 0 );
+		assert.equal( createRenderObjectContextSelector( renderObject ), expected );
+		assert.deepEqual( reads.splice( 0 ), expectedReads, 'canonicalization does not reorder renderer callbacks' );
+		for ( const profile of [ null, 'background', 'shadow-depth', 'post-process', 'render-output', 'cube-render-target', 'mesh-basic', 'future' ] ) {
+
+			assert.equal( createProjectedRenderObjectContextSelector( renderObject, renderObject.renderer, profile ), projectRenderObjectContextSelector( expected, profile ) );
+
+		}
+
+	}
+
+} );
+
 test( 'an unknown projection profile is returned unchanged so adapters opt in one at a time', () => {
 
 	const selector = selectorOf( baseDescriptor() );
@@ -146,6 +239,20 @@ test( 'the mesh-basic profile drops only the two environment axes it cannot cons
 	assert.equal( projected.scene.environmentNode, undefined );
 	assert.equal( projected.scene.fog, 'linear', 'MeshBasic still respects fog' );
 	assert.deepEqual( projected.lights, [ 'dir', 'point' ], 'the mesh-basic profile is not scene independent' );
+
+} );
+
+test( 'unlit mesh-basic selectors ignore scene lights while lit custom graphs remain strict', () => {
+
+	const first = baseDescriptor();
+	first.material.lights = false;
+	const second = structuredClone( first );
+	second.lights.reverse();
+	const project = descriptor => projectRenderObjectContextSelector( selectorOf( descriptor ), 'mesh-basic' );
+	assert.equal( project( first ), project( second ) );
+	assert.deepEqual( JSON.parse( project( first ) ).lights, [] );
+	first.material.lights = second.material.lights = true;
+	assert.notEqual( project( first ), project( second ) );
 
 } );
 
@@ -249,6 +356,30 @@ test( 'scene topology records branch-forming shape, not live values', () => {
 
 } );
 
+test( 'an explicit environment node outranks the raw scene texture in live and saved selectors', () => {
+
+	const cube = { isTexture: true, isCubeTexture: true, type: 1009, mapping: 301 };
+	const cubeUV = { isTexture: true, isRenderTargetTexture: true, type: 1016, mapping: 306 };
+	const environmentNode = { isNode: true };
+	assert.deepEqual(
+		describeSceneRenderTopology( { environment: cube, environmentNode } ),
+		describeSceneRenderTopology( { environment: cubeUV, environmentNode } ),
+	);
+	assert.notDeepEqual(
+		describeSceneRenderTopology( { environment: cube } ),
+		describeSceneRenderTopology( { environment: cubeUV } ),
+		'without an explicit node, raw environment shape still selects the shader',
+	);
+	const saved = texture => selectorOf( baseDescriptor( { scene: {
+		environment: describeSceneRenderTopology( { environment: texture } ).environment,
+		environmentNode: true,
+	} } ) );
+	assert.equal( projectRenderObjectContextSelector( saved( cube ) ), projectRenderObjectContextSelector( saved( cubeUV ) ) );
+	assert.equal( describeSceneRenderTopology( { environment: cube, environmentNode: {} } ).environmentNode, false,
+		'non-node values do not override NodeManager environment selection' );
+
+} );
+
 test( 'the background capture target key is deterministic and topology-only', () => {
 
 	const target = { texture: { format: 'rgba8unorm' }, depthTexture: null };
@@ -256,6 +387,38 @@ test( 'the background capture target key is deterministic and topology-only', ()
 	const second = createBackgroundCaptureTargetTopologyKey( null, { ...target, uuid: 'session-1' } );
 	assert.equal( first, second, 'a capture-session uuid is not target topology' );
 	assert.match( first, /background-capture-target@1/ );
+
+} );
+
+test( 'scene selector fast encoding preserves canonical bytes for every scalar and texture kind', () => {
+
+	const scene = { fog: { isFog: true }, fogNode: null, environmentNode: {}, overrideMaterial: { isShadowPassMaterial: true } };
+	const check = () => assert.equal( createSceneRenderTopologySelector( scene ), stableJsonStringify( describeSceneRenderTopology( scene ) ) );
+	const properties = [ 'format', 'internalFormat', 'type', 'colorSpace', 'compareFunction', 'mapping', 'channel', 'magFilter', 'minFilter', 'wrapS', 'wrapT', 'wrapR' ];
+	for ( const property of properties ) for ( const value of [ undefined, null, false, true, 0, - 0, 1.5, '', '"\\\n☃', NaN, Infinity, {}, () => {}, Symbol( 'unsupported' ), 1n ] ) {
+
+		scene.environment = { isTexture: true, [ property ]: value };
+		check();
+
+	}
+	for ( const kind of [ 'isTexture', 'isCubeTexture', 'isDataArrayTexture', 'isData3DTexture', 'isDepthTexture', 'isVideoTexture', 'isCompressedArrayTexture', 'isCompressedCubeTexture', 'isCompressedTexture', 'isStorageTexture', 'isRenderTargetTexture' ] ) {
+
+		const texture = { [ kind ]: true, ...Object.fromEntries( properties.map( ( name, index ) => [ name, index ] ) ) };
+		for ( const environment of [ texture, { texture: { ...texture, isTexture: true } } ] ) {
+
+			scene.environment = environment;
+			check();
+
+		}
+
+	}
+	for ( const fog of [ null, {}, { isFog: true }, { isFogExp2: true } ] ) for ( const fogNode of [ null, {} ] ) for ( const overrideMaterial of [ null, {}, { isShadowPassMaterial: true } ] ) {
+
+		Object.assign( scene, { fog, fogNode, overrideMaterial, environment: null, environmentNode: null } );
+		check();
+
+	}
+	assert.equal( createSceneRenderTopologySelector( null ), 'null' );
 
 } );
 

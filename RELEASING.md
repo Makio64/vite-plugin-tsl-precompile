@@ -50,7 +50,7 @@ caret range. You do not need to commit a different dependency specifier.
 3. Bump all three publishable `package.json` files to the same target SemVer.
    For the first npm alpha, use `0.1.0-alpha.0` in every package.
    Keep the plugin/runtime `three` peer pinned to the exact revision that passed
-   the strict rewrite and visual gates (`0.185.1` for this alpha). Do not widen
+   the strict rewrite and visual gates (`0.186.1` for this alpha). Do not widen
    it while the nightly `three@latest` compatibility probe is red.
 4. Finalize `CHANGELOG.md`, then generate the two tracked publication inputs:
    ```sh
@@ -114,7 +114,7 @@ caret range. You do not need to commit a different dependency specifier.
    - `@tsl-precompile/runtime` — `src/` + `types/` +
      `build/three.webgpu.slim.js` + its `.meta.json` provenance. Confirm the
      checked bundle is the committed one and gzip stays within the documented
-     268,000-byte cap in `packages/runtime/build-tools/slim-budget.json`.
+     281,669-byte cap in `packages/runtime/build-tools/slim-budget.json`.
    - `@tsl-precompile/contract` — package metadata + `README.md` + `LICENSE` +
      `src/`.
    - Inspect each packed `package.json`: all three versions match; rewritten
@@ -188,8 +188,8 @@ After publish:
    cd /tmp/tslp-smoke
    npm init -y
    npm install --save-dev vite@6.4.3 typescript@5.9.3 \
-     @types/three@0.185.1 vite-plugin-tsl-precompile@alpha
-   npm install three@0.185.1 @tsl-precompile/runtime@alpha
+     @types/three@0.186.0 vite-plugin-tsl-precompile@alpha
+   npm install three@0.186.1 @tsl-precompile/runtime@alpha
    ```
    Then paste the README quickstart, run `npx vite` once, commit the artifact,
    and run `npx vite build`. Both should succeed.

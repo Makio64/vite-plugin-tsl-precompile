@@ -6,13 +6,15 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
+import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { computeArtifactContentHash } from '../../src/hash.js';
 import { autoMarkSource, injectMarkerBootstrapSource } from '../../src/auto-mark.js';
 import {
 	instrumentLiveContextDependencies,
 	instrumentLiveUniformIdentities,
 } from '../../src/babel-transform.js';
-import { canonicalModuleIdentity, markerSourceRevision } from '../../src/_shared/module-identity.js';
+import { canonicalModuleIdentity, isProjectRootModule, markerSourceRevision } from '../../src/_shared/module-identity.js';
 import {
 	MARKER_SOURCE_PROVENANCE_SCHEMA,
 	dependencyContentRevision,
@@ -29,6 +31,36 @@ function runVerify( cwd, ...args ) {
 
 }
 
+test( 'verify accepts exact dev signatures and rejects old nominal-version signatures', () => {
+
+	const cwd = mkdtempSync( join( tmpdir(), 'tslp-verify-dev-identity-' ) );
+	try {
+
+		const dir = join( cwd, 'artifacts' );
+		mkdirSync( dir );
+		const release = THREE_RELEASE_PROFILES.development;
+		for ( const current of [ false, true ] ) {
+
+			const emitter = current ? { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit } : { threeVersion: release.packageVersion };
+			const artifact = { vertexShader: '', fragmentShader: '', uniformPlan: [], sourceGraphHash: 'a'.repeat( 64 ), sourceHashVersion: '0.1.0', sourceThreeVersion: release.packageVersion,
+				artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION, ...createThreeEmitterSourceFields( emitter ) };
+			const hash = computeArtifactContentHash( artifact, { ...emitter, shape: 'material:same', pluginVersion: '0.1.0' } );
+			writeFileSync( join( dir, 'same.json' ), JSON.stringify( { __name: 'same', __hash: hash, artifact } ) );
+			writeFileSync( join( dir, 'manifest.json' ), JSON.stringify( { same: { file: 'same.json', hash } } ) );
+			const result = runVerify( cwd, 'artifacts' );
+			assert.equal( result.status, current ? 0 : 1, result.stderr );
+			if ( ! current ) assert.match( result.stderr, /Nominal 0.186.0 lacks the pinned r187dev revision\/commit/ );
+
+		}
+
+	} finally {
+
+		rmSync( cwd, { recursive: true, force: true } );
+
+	}
+
+} );
+
 function writeSignedMaterial( artifactsDir, name, sourceOwners = [] ) {
 
 	const artifact = {
@@ -36,7 +68,7 @@ function writeSignedMaterial( artifactsDir, name, sourceOwners = [] ) {
 		vertexShader: '',
 		fragmentShader: '',
 		sourceGraphHash: 'a'.repeat( 64 ),
-		sourceThreeVersion: '0.185.1',
+		sourceThreeVersion: SLIM_THREE_PACKAGE_VERSION,
 		sourceHashVersion: '0.1.0',
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 	};
@@ -59,13 +91,15 @@ function writeSignedMaterial( artifactsDir, name, sourceOwners = [] ) {
 function transformedMarkerSource( sourceFile, source, root, { autoMark = true } = {} ) {
 
 	let code = source;
-	if ( autoMark ) {
+	if ( autoMark && isProjectRootModule( sourceFile, root ) ) {
 
 		const marked = autoMarkSource( code, { filename: sourceFile, root } );
 		if ( marked.injectedNames.length > 0 ) code = marked.code;
 
 	}
-	const markerBootstrap = injectMarkerBootstrapSource( code, { filename: sourceFile } );
+	const markerBootstrap = isProjectRootModule( sourceFile, root )
+		? injectMarkerBootstrapSource( code, { filename: sourceFile } )
+		: { touched: false };
 	if ( markerBootstrap.touched ) code = markerBootstrap.code;
 	const liveUniforms = instrumentLiveUniformIdentities( code, { filename: sourceFile, root } );
 	if ( liveUniforms.touched ) code = liveUniforms.code;
@@ -178,15 +212,16 @@ test( 'verify requires exact current provenance on auxiliary envelopes and manif
 
 		const stale = runVerify( cwd );
 		assert.equal( stale.status, 1 );
-		assert.match( stale.stderr, /threeVersion must be exact current baseline 0\.185\.1/ );
+		assert.match( stale.stderr, /threeVersion must be exact current baseline/ );
+		assert.ok( stale.stderr.includes( SLIM_THREE_PACKAGE_VERSION ) );
 
-		writeSignedAux( '0.185.1' );
+		writeSignedAux( SLIM_THREE_PACKAGE_VERSION );
 		const current = runVerify( cwd );
 		assert.equal( current.status, 0, current.stderr );
 		assert.match( current.stdout, /verify ok \(1 artifact file checked/ );
 		assert.match( current.stdout, /Marker coverage was not checked/ );
 
-		writeSignedAux( '0.185.1', 'b'.repeat( 64 ) );
+		writeSignedAux( SLIM_THREE_PACKAGE_VERSION, 'b'.repeat( 64 ) );
 		const tampered = runVerify( cwd );
 		assert.equal( tampered.status, 1 );
 		assert.match( tampered.stderr, /stored __hash does not match artifact runtime content/ );
@@ -348,7 +383,7 @@ test( 'verify recomputes signed auxiliary content with the auxiliary shape', () 
 		uniformPlan: [],
 		vertexShader: 'vertex',
 		fragmentShader: 'original',
-		sourceThreeVersion: '0.185.1',
+		sourceThreeVersion: SLIM_THREE_PACKAGE_VERSION,
 		sourceHashVersion: '0.1.0',
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 	};
@@ -363,7 +398,7 @@ test( 'verify recomputes signed auxiliary content with the auxiliary shape', () 
 		__materialShape: 'background',
 		__configHash: configHash,
 		__hash: storedHash,
-		threeVersion: '0.185.1',
+		threeVersion: SLIM_THREE_PACKAGE_VERSION,
 		pluginVersion: '0.1.0',
 		artifact,
 	} ) );
@@ -374,7 +409,7 @@ test( 'verify recomputes signed auxiliary content with the auxiliary shape', () 
 				shape: 'background',
 				configHash,
 				hash: storedHash,
-				threeVersion: '0.185.1',
+				threeVersion: SLIM_THREE_PACKAGE_VERSION,
 				pluginVersion: '0.1.0',
 			},
 		},
@@ -595,6 +630,36 @@ test( 'verify JSON help remains one machine-readable result', () => {
 	assert.equal( report.command, 'tsl-precompile-verify' );
 	assert.deepEqual( report.nextActions, [] );
 	assert.match( report.help, /--source/ );
+
+} );
+
+test( 'verify matches explicit markers outside the Vite root without inventing auto markers or a bootstrap', () => {
+
+	const cwd = mkdtempSync( join( tmpdir(), 'tslp-verify-shared-source-' ) );
+	try {
+
+		const root = join( cwd, 'demo' );
+		const sourceDir = join( cwd, 'src' );
+		const artifactsDir = join( cwd, 'artifacts' );
+		for ( const dir of [ root, sourceDir, artifactsDir ] ) mkdirSync( dir );
+		const sourceFile = join( sourceDir, 'material.js' );
+		const source = 'const material = new MeshBasicNodeMaterial(); material.precompile("shared");';
+		writeFileSync( sourceFile, source );
+		const owner = markerOwner( sourceFile, source, root );
+		const entry = writeSignedMaterial( artifactsDir, 'shared', [ owner ] );
+		writeFileSync( join( artifactsDir, 'manifest.json' ), JSON.stringify( { shared: entry } ) );
+		const result = runVerify( cwd, '--json', '--source', 'src', '--source-root', 'demo', 'artifacts' );
+		const report = JSON.parse( result.stdout );
+		assert.equal( result.status, 0, result.stdout + result.stderr );
+		assert.equal( report.markerCoverage.total, 1 );
+		assert.equal( report.markerCoverage.covered, 1 );
+		assert.equal( report.markerCoverage.markers[ 0 ].sourceIdentity, '../src/material.js:precompile:0' );
+
+	} finally {
+
+		rmSync( cwd, { recursive: true, force: true } );
+
+	}
 
 } );
 

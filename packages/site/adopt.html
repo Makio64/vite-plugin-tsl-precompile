@@ -45,7 +45,7 @@
 			</div>
 			<p class="hero-pills" aria-label="Requirements">
 				<span class="pill">Vite ≥6.4.3 &lt;9</span>
-				<span class="pill">three@0.185.1</span>
+				<span class="pill">three@0.186.1</span>
 				<span class="pill">WebGPURenderer</span>
 				<span class="pill">TSL materials</span>
 			</p>
@@ -168,12 +168,12 @@
 
 Before installing or editing, inspect the package manager, Vite config, renderer,
 TSL materials, routes, and current three/@types versions. If the app is not a fit
-or exact three@0.185.1 requires an unapproved migration, stop without mutating.
+or exact three@0.186.1 requires an unapproved migration, stop without mutating.
 
 After the fit check passes, use the detected package manager (pnpm shown):
   pnpm add -D vite-plugin-tsl-precompile@alpha
-  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
-  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+  pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
+  pnpm add -D @types/three@0.186.0 --save-exact  # TypeScript only
   pnpm exec tsl-precompile-install-skill --json
   pnpm exec tsl-precompile-doctor --json --source src
 
@@ -307,7 +307,7 @@ or enable slim in this change.</code></pre>
 				<details>
 					<summary>Prefer doing it manually?</summary>
 					<div class="faq-body">
-						<p>Install <code>pnpm add -D vite-plugin-tsl-precompile@alpha</code> and <code>pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact</code>, add <code>tslPrecompile()</code> to your Vite plugins, and call <code>setupPrecompile({ renderer })</code> once. Direct NodeMaterial constructors are detected automatically; explicit <code>material.precompile('hero-body')</code> calls are optional stable-name overrides. Follow the no-AI <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BYO.md" rel="noopener">BYO guide</a>, or use the <a href="agent/integrate-tsl-precompile/SKILL.md">agent skill</a>.</p>
+						<p>Install <code>pnpm add -D vite-plugin-tsl-precompile@alpha</code> and <code>pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact</code>, add <code>tslPrecompile()</code> to your Vite plugins, and call <code>setupPrecompile({ renderer })</code> once. Direct NodeMaterial constructors are detected automatically; explicit <code>material.precompile('hero-body')</code> calls are optional stable-name overrides. Follow the no-AI <a href="https://github.com/Makio64/vite-plugin-tsl-precompile/blob/main/BYO.md" rel="noopener">BYO guide</a>, or use the <a href="agent/integrate-tsl-precompile/SKILL.md">agent skill</a>.</p>
 					</div>
 				</details>
 				<details>

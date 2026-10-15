@@ -9,9 +9,10 @@
 
 import { stringifyArtifactJson, ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { normalizeRevision } from './_normalize-revision.js';
 import { hashArtifactContentSync, hashNodeGraphSync } from './graph-hash.js';
+import { createRuntimeCaptureHashOptions } from './three-emitter-identity.js';
+import { createThreeEmitterHashFields, createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { recordDevCaptureOutcome } from './dev-capture-outcome.js';
 
 const DEFAULT_CAPTURE_ENDPOINT = '/__tsl-precompile/capture';
@@ -97,11 +98,11 @@ function signArtifact( extracted, entry, versions ) {
 	artifact.name = entry.name;
 	artifact.sourceGraphHash = hashNodeGraphSync( entry.node, {
 		shape: `compute:${ entry.name }`,
-		threeVersion: versions.threeVersion,
-		pluginVersion: versions.pluginVersion,
+		...versions,
 	} );
 	artifact.sourceHashVersion = versions.pluginVersion;
 	artifact.sourceThreeVersion = versions.threeVersion;
+	Object.assign( artifact, createThreeEmitterSourceFields( versions ) );
 	artifact.sourceValidationMode = 'runtime-graph';
 	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
 
@@ -118,10 +119,9 @@ function signArtifact( extracted, entry, versions ) {
 	}
 	const hash = hashArtifactContentSync( artifact, {
 		shape: `material:${ entry.name }`,
-		threeVersion: versions.threeVersion,
-		pluginVersion: versions.pluginVersion,
+		...versions,
 	} );
-	return { name: entry.name, hash, artifact };
+	return { name: entry.name, hash, ...createThreeEmitterHashFields( versions ), artifact };
 
 }
 
@@ -168,10 +168,7 @@ export async function precompileComputes( renderer, entries, opts = {} ) {
 	const endpoint = opts.devEndpoint || DEFAULT_CAPTURE_ENDPOINT;
 	const fetchImpl = opts.fetch || globalThis.fetch;
 	if ( typeof fetchImpl !== 'function' ) throw new Error( '[tsl-precompile/compute] fetch is unavailable.' );
-	const versions = {
-		threeVersion: exactThreeVersion( opts ),
-		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-	};
+	const versions = createRuntimeCaptureHashOptions( { ...opts, threeVersion: exactThreeVersion( opts ) } );
 
 	adjustPendingCaptureCount( 1 );
 	let postingStarted = false;
@@ -180,6 +177,7 @@ export async function precompileComputes( renderer, entries, opts = {} ) {
 		const compileTSL = await loadCompileTSL( opts );
 		const computeBindingResources = new Map( normalized.map( entry => [ entry.node, entry.resources ] ) );
 		const extracted = await compileTSL( renderer, opts.scene, opts.camera, {
+			computeOnly: true,
 			computeNodes: normalized.map( entry => entry.node ),
 			computeBindingResources,
 			skipWarmupRender: true,

@@ -11,13 +11,14 @@ import { gunzipSync } from 'node:zlib';
 import ts from 'typescript';
 
 import { parseReleaseSemver } from '../../../../scripts/release-semver.mjs';
+import { SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_PEER_RANGE } from '@tsl-precompile/contract/slim-three-policy';
 
 const REPO_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '../../../..' );
 const ROOT_LICENSE = readFileSync( resolve( REPO_ROOT, 'LICENSE' ), 'utf8' );
 const requireFromTest = createRequire( import.meta.url );
 const THREE_PACKAGE_ROOT = dirname( dirname( requireFromTest.resolve( 'three/src/constants.js' ) ) );
 const THREE_PACKAGE_MANIFEST = JSON.parse( readFileSync( resolve( THREE_PACKAGE_ROOT, 'package.json' ), 'utf8' ) );
-const THREE_R185_LICENSE = readFileSync( resolve( THREE_PACKAGE_ROOT, 'LICENSE' ), 'utf8' ).trimEnd();
+const THREE_LICENSE = readFileSync( resolve( THREE_PACKAGE_ROOT, 'LICENSE' ), 'utf8' ).trimEnd();
 const CONTRACT_ROOT = resolve( REPO_ROOT, 'packages/contract' );
 const PUBLIC_PACKAGES = [
 	{ name: '@tsl-precompile/contract', root: CONTRACT_ROOT },
@@ -29,7 +30,7 @@ const PUBLIC_PACKAGES = [
 			'build/three.webgpu.slim.js',
 			'build/three.webgpu.slim.meta.json',
 		],
-		threeNotice: /prebuilt `@tsl-precompile\/runtime\/slim` bundle contains transformed and\s+bundled portions of three\.js release r185/,
+		threeNotice: new RegExp( `prebuilt \`@tsl-precompile/runtime/slim\` bundle contains transformed and\\s+bundled portions of three\\.js release r${ SLIM_THREE_PACKAGE_VERSION.split( '.' )[ 1 ] }` ),
 	},
 	{
 		name: 'vite-plugin-tsl-precompile',
@@ -311,14 +312,14 @@ test( 'install docs follow the package version channel and the packaged skill is
 			path: 'README.md',
 			commands: [
 				`pnpm add -D ${ pluginSpecifier }`,
-				`pnpm add ${ runtimeSpecifier } three@0.185.1 --save-exact`,
+				`pnpm add ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION } --save-exact`,
 			],
 		},
 		{
 			path: 'packages/plugin/README.md',
 			commands: [
 				`pnpm add -D ${ pluginSpecifier }`,
-				`pnpm add ${ runtimeSpecifier } three@0.185.1 --save-exact`,
+				`pnpm add ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION } --save-exact`,
 			],
 		},
 		{
@@ -329,13 +330,13 @@ test( 'install docs follow the package version channel and the packaged skill is
 			path: '.agents/skills/integrate-tsl-precompile/SKILL.md',
 			commands: [
 				`pnpm add -D ${ pluginSpecifier }`,
-				`pnpm add ${ runtimeSpecifier } three@0.185.1 --save-exact`,
+				`pnpm add ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION } --save-exact`,
 				`npm install --save-dev ${ pluginSpecifier }`,
-				`npm install --save-exact ${ runtimeSpecifier } three@0.185.1`,
+				`npm install --save-exact ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION }`,
 				`yarn add --dev ${ pluginSpecifier }`,
-				`yarn add --exact ${ runtimeSpecifier } three@0.185.1`,
+				`yarn add --exact ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION }`,
 				`bun add --dev ${ pluginSpecifier }`,
-				`bun add --exact ${ runtimeSpecifier } three@0.185.1`,
+				`bun add --exact ${ runtimeSpecifier } three@${ SLIM_THREE_PACKAGE_VERSION }`,
 			],
 		},
 		{ path: 'BYO.md', commands: [] },
@@ -423,7 +424,7 @@ test( 'public package tarballs are licensed, typed, self-consistent, and product
 	const packRoot = mkdtempSync( join( tmpdir(), 'tslp-pack-' ) );
 	try {
 
-		assert.equal( THREE_PACKAGE_MANIFEST.version, '0.185.1', 'license fixture must be the pinned Three release' );
+		assert.equal( THREE_PACKAGE_MANIFEST.version, SLIM_THREE_PACKAGE_VERSION, 'license fixture must be the pinned Three release' );
 		const packed = new Map();
 		for ( const entry of PUBLIC_PACKAGES ) {
 
@@ -443,9 +444,9 @@ test( 'public package tarballs are licensed, typed, self-consistent, and product
 				const sourceNotice = readFileSync( resolve( entry.root, 'THIRD_PARTY_NOTICES.md' ), 'utf8' );
 				assert.match( sourceNotice, entry.threeNotice, `${ entry.name } Three provenance is incomplete` );
 				assert.equal(
-					sourceNotice.includes( THREE_R185_LICENSE ),
+					sourceNotice.includes( THREE_LICENSE ),
 					true,
-					`${ entry.name } notice must reproduce the complete official three@0.185.1 license`,
+					`${ entry.name } notice must reproduce the complete official three@${ SLIM_THREE_PACKAGE_VERSION } license`,
 				);
 				assert.equal(
 					files.get( 'THIRD_PARTY_NOTICES.md' )?.toString( 'utf8' ),
@@ -500,10 +501,15 @@ test( 'public package tarballs are licensed, typed, self-consistent, and product
 
 		assert.deepEqual( Object.keys( plugin.manifest.exports ).sort(), [
 			'.',
+			'./build/capture-request',
 			'./build/slim-rewrite',
 			'./src/emit-updater.js',
 			'./src/vendor/compileTSL.js',
 		] );
+		assert.deepEqual( plugin.manifest.exports[ './build/capture-request' ], {
+			types: './types/build/capture-request.d.ts',
+			default: './build-tools/capture-request.js',
+		} );
 		assert.deepEqual( plugin.manifest.exports[ './src/emit-updater.js' ], {
 			types: './types/emit-updater.d.ts',
 			default: './src/emit-updater.js',
@@ -543,13 +549,13 @@ test( 'public package tarballs are licensed, typed, self-consistent, and product
 		);
 
 		assert.deepEqual( runtime.manifest.peerDependencies, {
-			'@types/three': '0.185.1',
-			three: '0.185.1',
+			'@types/three': '0.186.0',
+			three: SLIM_THREE_PEER_RANGE,
 		} );
 		assert.deepEqual( plugin.manifest.peerDependencies, {
 			'@tsl-precompile/runtime': publicVersion,
-			'@types/three': '0.185.1',
-			three: '0.185.1',
+			'@types/three': '0.186.0',
+			three: SLIM_THREE_PEER_RANGE,
 			vite: '>=6.4.3 <9',
 		} );
 		for ( const [ manifest, peers ] of [

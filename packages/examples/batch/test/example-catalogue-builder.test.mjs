@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 import { buildCatalogue, validateCatalogueSnapshot } from '../scripts/build-example-catalogue.mjs';
 
@@ -19,8 +20,8 @@ function fixture() {
 	mkdirSync( localRoot, { recursive: true } );
 	mkdirSync( threeExamples, { recursive: true } );
 	mkdirSync( join( threeRepoPath, 'src' ), { recursive: true } );
-	writeFileSync( join( threeRepoPath, 'package.json' ), JSON.stringify( { version: '0.185.1' } ) );
-	writeFileSync( join( threeRepoPath, 'src/constants.js' ), "export const REVISION = '185';\n" );
+	writeFileSync( join( threeRepoPath, 'package.json' ), JSON.stringify( { version: THREE_RELEASE_PROFILES.stable.packageVersion } ) );
+	writeFileSync( join( threeRepoPath, 'src/constants.js' ), `export const REVISION = '${ THREE_RELEASE_PROFILES.stable.revision }';\n` );
 	writeFileSync( join( threeExamples, 'webgpu_alpha.html' ), '' );
 	writeFileSync( join( threeExamples, 'webgpu_compile_async.html' ), '' );
 	writeFileSync( join( threeExamples, 'webgpu_tsl_transpiler.html' ), '' );
@@ -35,13 +36,13 @@ function fixture() {
 
 }
 
-test( 'explicit r185 checkout drives upstream discovery and includes every local case', ( t ) => {
+test( 'explicit stable checkout drives upstream discovery and includes every local case', ( t ) => {
 
 	const paths = fixture();
 	t.after( () => rmSync( paths.root, { recursive: true, force: true } ) );
 
 	const catalogue = buildCatalogue( { ...paths, verifyCheckout() {} } );
-	assert.equal( catalogue.threeVersion, '0.185.1' );
+	assert.equal( catalogue.threeVersion, THREE_RELEASE_PROFILES.stable.packageVersion );
 	assert.deepEqual( catalogue.cases.map( ( entry ) => entry.id ), [
 		'case',
 		'local-variant',

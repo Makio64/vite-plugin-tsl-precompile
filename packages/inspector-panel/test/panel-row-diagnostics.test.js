@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import './browser-storage-fixture.js';
 import { PrecompilePanel } from '../src/panel.js';
 
 function renderRows( captures ) {

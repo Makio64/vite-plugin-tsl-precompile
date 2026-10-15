@@ -21,11 +21,12 @@
     "run:e2e:tier3": "node run-e2e-with-coverage.mjs --tier=tier3 --report=tier3-report.json",
     "run:e2e:raw": "node run-e2e.mjs",
     "run:coverage-summary": "node run-coverage-summary.mjs",
-    "test:diagnostics": "node --test 'test/**/*.test.mjs'"
+    "test:diagnostics": "node ../../../scripts/test.mjs full --scope=batch"
   },
   "devDependencies": {
     "@tsl-precompile/contract": "workspace:*",
     "playwright": "^1.59.1",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "vite-plugin-tsl-precompile": "workspace:*"
   }
 }

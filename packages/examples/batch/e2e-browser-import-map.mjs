@@ -19,6 +19,7 @@ export function createTslpBrowserImportMap( mode, {
 		'@tsl-precompile/runtime/setup': setupTarget,
 		'@tsl-precompile/runtime/apply': '/__tslp_runtime/apply-precompiled.js',
 		'@tsl-precompile/runtime/compute': '/__tslp_runtime/precompiled-compute-runner.js',
+		'@tsl-precompile/runtime/compute-capture': '/__tslp_runtime/compute-capture.js',
 		'@tsl-precompile/runtime/material-variants': '/__tslp_runtime/material-variants.js',
 		'@tsl-precompile/runtime/writers': '/__tslp_runtime/writers.js',
 		'@tsl-precompile/runtime/slim-support/live-scene-index': '/__tslp_runtime/slim-support/live-scene-index.js',

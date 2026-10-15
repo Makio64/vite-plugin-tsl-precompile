@@ -1,45 +1,45 @@
 {
   "__aux": {
-    "background:0cb5a5612a0e3b72efcd73629d852d7d0dce43a364ba1be490726221a523169e": {
-      "file": "aux-background-0cb5a5612a0e.json",
+    "background:9870ed5c40a62775cf96b6e2d1f928db997e7da58723992ff8fd46210c589f4e": {
+      "file": "aux-background-9870ed5c40a6.json",
       "shape": "background",
-      "configHash": "0cb5a5612a0e3b72efcd73629d852d7d0dce43a364ba1be490726221a523169e",
-      "hash": "ea479eb41da1a353871a85c55a19c57fd04e30829153c070a54f6b144e91d608",
-      "threeVersion": "0.185.1",
+      "configHash": "9870ed5c40a62775cf96b6e2d1f928db997e7da58723992ff8fd46210c589f4e",
+      "hash": "223803be4e7c44cc04860b42bd66acc4c256f8ebab213d1e235fb79bff649cf5",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:10:50.450Z"
+      "capturedAt": "2026-10-13T09:47:19.267Z"
     },
-    "lights:c06b382a158f365cdf6714b6fd11ffe77129e1e3d40a73501333b0213e194da6": {
-      "file": "aux-lights-c06b382a158f.json",
+    "lights:82e2164813a9504e65f75df4c4776d359e7daa92b4960f8a8cf37a91dca7e296": {
+      "file": "aux-lights-82e2164813a9.json",
       "shape": "lights",
-      "configHash": "c06b382a158f365cdf6714b6fd11ffe77129e1e3d40a73501333b0213e194da6",
-      "hash": "1575e6f7901853a79bf4f698079eabb6e06a9dada56fc8d554552119e3a17393",
-      "threeVersion": "0.185.1",
+      "configHash": "82e2164813a9504e65f75df4c4776d359e7daa92b4960f8a8cf37a91dca7e296",
+      "hash": "aaa47184f2192a3481268b8d6931d764bfa789c0ca9605fd1fb70d4a1be70cde",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:10:50.353Z"
+      "capturedAt": "2026-10-13T09:47:19.270Z"
     },
-    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
-      "file": "aux-cube-render-target-f8bd804355c3.json",
+    "cube-render-target:1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28": {
+      "file": "aux-cube-render-target-1a6446e96454.json",
       "shape": "cube-render-target",
-      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
-      "hash": "46f17a545aaa1d298061264f8ecf59a26b720d5b9a11d612355a41ecef8cdd62",
-      "threeVersion": "0.185.1",
+      "configHash": "1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28",
+      "hash": "8cbd4fc0b8ac7e6782118592a24be8298a0306baf9a43a83e7453d00c95e3495",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:10:50.465Z"
+      "capturedAt": "2026-10-13T09:47:19.285Z"
     },
-    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
-      "file": "aux-render-output-3f1fa57642fc.json",
+    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
+      "file": "aux-render-output-f9eeeab16476.json",
       "shape": "render-output",
-      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-      "hash": "fbf62cafa11eb05af50b39147230903e70cc61c098904c8b802aef1743a4856b",
-      "threeVersion": "0.185.1",
+      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
+      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:10:50.521Z"
+      "capturedAt": "2026-10-13T09:47:19.354Z"
     }
   },
   "bg-test-sphere": {
-    "file": "bg-test-sphere.71de6f9cf14f.json",
-    "hash": "71de6f9cf14fe63484c163918885224ded86dac58a8d5e7e918ff145b6abdd39",
+    "file": "bg-test-sphere.0d9257552632.json",
+    "hash": "0d92575526329d55340e2dd6ba6f9e0399d43b60578ae80f8773c274f90e9a1d",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -52,6 +52,6 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:50.434Z"
+    "capturedAt": "2026-10-13T09:47:20.166Z"
   }
 }

@@ -6,6 +6,7 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 
 - Start with `ARCHITECTURE.md` for the pipeline model.
 - Use `ROADMAP.md` for structural work and sequencing.
+- Read only the relevant section of `evolution-archive.md` when historical detail is needed.
 - Check `git status --short` before editing. The tree is often dirty with generated screenshots and reports; do not revert unrelated changes.
 
 ## Package Map
@@ -37,6 +38,14 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 
 ## Test Tiers
 
+- During iteration, select whole files: `pnpm test -- --scope=runtime --match=hydrate-storage-buffer`.
+  Scopes: `contract`, `plugin`, `runtime`, `inspector`, `site`, `tooling`, `batch`.
+  Use `test:full` with a scope/match to select heavy plugin fixtures. `--list` prints
+  the exact plan; `--verbose` streams full output. Empty selections fail.
+- Default output includes failures, counts, slow files, and a temporary directory
+  containing complete logs. Read that log instead of rerunning a failed suite just
+  to recover diagnostics. `TSLP_TEST_CONCURRENCY` sets ordinary file workers; heavy
+  compiler/rewrite/pack fixtures remain serial.
 - Small code changes: `pnpm test`.
 - Extractor/artifact-generation changes: `pnpm test:generation` while iterating.
 - Release or broad cross-package changes: `pnpm test:full` once before handoff; do not run it after every edit.
@@ -44,6 +53,10 @@ This repository is designed for small, verifiable AI-assisted changes. Read this
 - Artifact/manifest changes: `pnpm verify`.
 - Slim-bundle or three.js rewrite changes: `pnpm --filter @tsl-precompile/runtime build:slim`.
 - Visual-runtime changes: use `pnpm test:e2e:tier1` for the configured PR-sized visual gate.
+- Harness/evidence logic: `pnpm test:batch:unit -- --match=<file>` and the affected site
+  contracts (`pnpm test:full -- --scope=site` includes the full-campaign fixture).
+  Browser capture is needed when rendering behavior changes, not for every
+  reporting edit. Do not rerun overlapping tiers after `test:full` already covered them.
 
 ## Generated Outputs
 

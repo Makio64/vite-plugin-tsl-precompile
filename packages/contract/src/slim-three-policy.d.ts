@@ -6,8 +6,30 @@ export interface SlimThreeModuleRule {
 	readonly rewriteFamily?: string;
 }
 
-export const SLIM_THREE_POLICY_VERSION: 'slim-three-policy@12';
-export const SLIM_THREE_PACKAGE_VERSION: '0.185.1';
+export interface ThreeReleaseProfile {
+	readonly id: string;
+	readonly channel: 'stable' | 'development';
+	readonly packageVersion: string;
+	readonly revision: string;
+	readonly gitCommit: string;
+	readonly gitTree: string;
+	readonly objectFormat: 'sha1';
+	readonly ref: string;
+	readonly sourceFingerprint: string;
+}
+export const SLIM_THREE_POLICY_VERSION: 'slim-three-policy@13';
+export const SLIM_THREE_PACKAGE_VERSION: '0.186.1';
+export const SLIM_THREE_TYPES_PACKAGE_VERSION: '0.186.0';
+export const SLIM_THREE_PEER_RANGE: '0.186.0 || 0.186.1';
+export const THREE_RELEASE_PROFILES: Readonly<{
+	stable: Readonly<ThreeReleaseProfile>;
+	development: Readonly<ThreeReleaseProfile>;
+}>;
+export function resolveSlimThreeRelease( identity?: {
+	packageVersion?: string;
+	revision?: string;
+	sourceCommit?: string;
+} ): Readonly<ThreeReleaseProfile> | null;
 export const SLIM_THREE_RUNTIME_ENTRIES: Readonly<{
 	PREBUILT: '@tsl-precompile/runtime/slim';
 	SOURCE: '@tsl-precompile/runtime/slim/source';

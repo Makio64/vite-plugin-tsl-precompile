@@ -5,7 +5,6 @@ import {
 	invalidateOnTextureResourceChange,
 	invalidateTextureBindingTarget,
 	rebindTextureBindingTargets,
-	textureBindingResourceSignature,
 	textureBindingTargets,
 } from '../src/hydrate/rebinders/texture-binding-targets.js';
 
@@ -88,10 +87,9 @@ test( 'texture binding resource signatures track texture, gpu texture, and versi
 		},
 	};
 
-	assert.deepEqual(
-		textureBindingResourceSignature( target, renderer ),
-		{ texture, gpuTexture, version: 4 }
-	);
+	const lastSeen = new WeakMap();
+	invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	assert.deepEqual( lastSeen.get( target ), { texture, gpuTexture, version: 4 } );
 
 } );
 
@@ -122,5 +120,97 @@ test( 'texture binding resource tracking invalidates after the first observed ch
 	gpuTexture = { label: 'gpu-b' };
 	invalidateOnTextureResourceChange( target, renderer, lastSeen );
 	assert.equal( target.groupNode.version, 2 );
+
+} );
+
+test( 'stable texture resources retain their snapshot without rewriting tracking state', () => {
+
+	const texture = { version: 1 };
+	const target = createBinding( texture );
+	const resource = { texture: {} };
+	let reads = 0;
+	let writes = 0;
+	const renderer = { backend: { get() { reads ++; return resource; } } };
+	const lastSeen = new class extends WeakMap {
+
+		set( key, value ) { writes ++; return super.set( key, value ); }
+
+	}();
+	invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	const initial = Object.freeze( lastSeen.get( target ) );
+	for ( let i = 0; i < 10; i ++ ) invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	assert.equal( lastSeen.get( target ), initial );
+	assert.equal( writes, 1 );
+	assert.equal( reads, 11, 'the live resource is checked on every call' );
+	assert.equal( target.groupNode.version, 0 );
+
+	texture.version ++;
+	invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	assert.notEqual( lastSeen.get( target ), initial );
+	assert.equal( initial.version, 1, 'earlier snapshots are not mutated' );
+	assert.equal( writes, 2 );
+	assert.equal( target.groupNode.version, 1 );
+
+} );
+
+test( 'texture tracking detects replacement, missing resources and backend transitions', () => {
+
+	const target = createBinding( { version: 1 } );
+	const resource = { texture: {} };
+	const renderer = { backend: { get: () => resource } };
+	const lastSeen = new WeakMap();
+	invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	let changes = 0;
+	const check = ( activeRenderer = renderer ) => {
+
+		invalidateOnTextureResourceChange( target, activeRenderer, lastSeen );
+		assert.equal( target.groupNode.version, ++ changes );
+		invalidateOnTextureResourceChange( target, activeRenderer, lastSeen );
+		assert.equal( target.groupNode.version, changes, 'stable state must not invalidate twice' );
+
+	};
+
+	target.texture = { version: 1 };
+	check();
+	resource.texture = null;
+	check();
+	resource.texture = {};
+	check();
+	check( null );
+	check();
+	const otherResource = { texture: {} };
+	check( { backend: { get: () => otherResource } } );
+	check();
+	target.texture.version = NaN;
+	check();
+	target.texture.version = Infinity;
+	invalidateOnTextureResourceChange( target, renderer, lastSeen );
+	assert.equal( target.groupNode.version, changes, 'non-finite versions share the missing-version state' );
+	target.texture = null;
+	check();
+	target.texture = { version: 0 };
+	check();
+
+} );
+
+test( 'source and cloned texture bindings retain independent resource histories', () => {
+
+	const texture = { version: 0 };
+	const source = createBinding( texture );
+	const clone = createBinding( texture );
+	const resource = { texture: {} };
+	const renderer = { backend: { get: () => resource } };
+	const lastSeen = new WeakMap();
+	invalidateOnTextureResourceChange( source, renderer, lastSeen );
+	invalidateOnTextureResourceChange( clone, renderer, lastSeen );
+	assert.notEqual( lastSeen.get( source ), lastSeen.get( clone ) );
+	resource.texture = {};
+	invalidateOnTextureResourceChange( source, renderer, lastSeen );
+	assert.equal( source.groupNode.version, 1 );
+	assert.equal( clone.groupNode.version, 0 );
+	invalidateOnTextureResourceChange( clone, renderer, lastSeen );
+	assert.equal( clone.groupNode.version, 1 );
+	assert.deepEqual( lastSeen.get( source ), lastSeen.get( clone ) );
+	assert.notEqual( lastSeen.get( source ), lastSeen.get( clone ) );
 
 } );

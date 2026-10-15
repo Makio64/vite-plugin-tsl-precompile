@@ -46,8 +46,8 @@ import {
 	computeE2EArtifactMetrics,
 } from './e2e-artifact-metrics.mjs';
 import {
-	assertOfficialThreeR185SourceVerification,
-	THREE_R185_OFFICIAL_COMMIT,
+	assertPinnedThreeSourceVerification,
+	officialThreeReleaseForEvidence,
 } from './_three-version.mjs';
 import {
 	prepareOutputRoot,
@@ -139,9 +139,10 @@ function assertCurrentCanonicalRunPolicy( bundle ) {
 		throw new Error( 'Canonical upstream evidence does not satisfy the current canonical run policy.' );
 
 	}
-	assertOfficialThreeR185SourceVerification(
+	assertPinnedThreeSourceVerification(
 		bundle.manifest.threeCheckout?.sourceVerification,
 		{
+			profile: officialThreeReleaseForEvidence( catalogue.threeVersion ),
 			sourceSnapshot: bundle.manifest.sources?.three,
 			sourceFingerprint: bundle.manifest.threeCheckout?.sourceFingerprint,
 			label: 'Canonical upstream evidence',
@@ -524,11 +525,11 @@ if ( manifest.canonical ) {
 		manifest.corpus?.kind !== 'three' ||
 		manifest.corpus?.exact !== true ||
 		manifest.threeCheckout?.packageVersion !== catalogue.threeVersion ||
-		manifest.threeCheckout?.git?.head !== THREE_R185_OFFICIAL_COMMIT ||
+		manifest.threeCheckout?.git?.head !== officialThreeReleaseForEvidence( catalogue.threeVersion ).gitCommit ||
 		manifest.threeCheckout?.git?.clean !== true
 	) {
 
-		throw new Error( 'Canonical upstream evidence is not the exact clean official Three r185 corpus.' );
+		throw new Error( `Canonical upstream evidence is not the exact clean official Three ${ officialThreeReleaseForEvidence( catalogue.threeVersion ).ref } corpus.` );
 
 	}
 	assertUniqueExactNames( manifest.corpus.caseNames || [], catalogue.upstreamCaseNames, 'canonical upstream evidence corpus' );
@@ -569,8 +570,8 @@ for ( const cohort of cohorts ) {
 		cohort.manifest.catalogue.sha256 !== manifest.catalogue.sha256 ||
 		cohort.manifest.slimBundle?.sha256 !== manifest.slimBundle?.sha256 ||
 		cohort.manifest.threeCheckout?.packageVersion !== manifest.threeCheckout?.packageVersion ||
-		cohort.manifest.threeCheckout?.revision !== '185' ||
-		cohort.manifest.threeCheckout?.git?.head !== THREE_R185_OFFICIAL_COMMIT ||
+		cohort.manifest.threeCheckout?.revision !== officialThreeReleaseForEvidence( catalogue.threeVersion ).revision ||
+		cohort.manifest.threeCheckout?.git?.head !== officialThreeReleaseForEvidence( catalogue.threeVersion ).gitCommit ||
 		cohort.manifest.threeCheckout?.git?.clean !== true ||
 		fingerprintJson( campaignConfiguration( cohort.report.configuration ) ) !==
 			fingerprintJson( campaignConfiguration( report.configuration ) )
@@ -579,9 +580,10 @@ for ( const cohort of cohorts ) {
 		throw new Error( `Local cohort ${ project } does not belong to campaign ${ manifest.campaignId } or its runtime provenance.` );
 
 	}
-	assertOfficialThreeR185SourceVerification(
+	assertPinnedThreeSourceVerification(
 		cohort.manifest.threeCheckout?.sourceVerification,
 		{
+			profile: officialThreeReleaseForEvidence( catalogue.threeVersion ),
 			sourceSnapshot: cohort.manifest.sources?.three,
 			sourceFingerprint: cohort.manifest.threeCheckout?.sourceFingerprint,
 			label: `Local cohort ${ project }`,
@@ -617,7 +619,7 @@ if ( manifest.canonical && ! aggregateCanonical ) {
 	const missingProjects = [ ...localNamesByProject.keys() ].filter( ( project ) => ! cohortsByProject.has( project ) );
 	const missingNames = allCatalogueNames.filter( ( name ) => ! detailsByName.has( name ) );
 	throw new Error(
-		`Canonical coverage requires the exact 254-case campaign. Missing cohorts: ${ missingProjects.join( ', ' ) || 'none' }; ` +
+		`Canonical coverage requires the exact ${ catalogue.caseCount }-case campaign. Missing cohorts: ${ missingProjects.join( ', ' ) || 'none' }; ` +
 		`missing cases: ${ missingNames.join( ', ' ) || 'none' }.`,
 	);
 

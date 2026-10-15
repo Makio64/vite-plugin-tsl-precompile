@@ -44,7 +44,7 @@ test( 'evidence campaign requires an explicit exact Three checkout', () => {
 		env: { ...process.env, TSLP_THREE_REPO: '' },
 	} );
 	assert.equal( result.status, 2 );
-	assert.match( result.stderr, /--three-repo=<clean-official-r185-checkout> is required/ );
+	assert.match( result.stderr, /--three-repo=<clean-official-three-checkout> is required/ );
 
 } );
 
@@ -74,14 +74,14 @@ test( 'evidence campaign runs every cohort and the aggregate after stage failure
 	const logs = [];
 	const errors = [];
 	const failedLabels = new Map( [
-		[ 'running exact 209-case upstream cohort', 7 ],
+		[ 'running exact 224-case upstream cohort', 7 ],
 		[ 'running exact local cohort pmrem-debug', 9 ],
-		[ 'validating the exact 254-case aggregate', 11 ],
+		[ 'validating the exact 272-case aggregate', 11 ],
 	] );
 	const status = await runEvidenceCampaign( {
 		threeRepo: '/fixture/three',
 		outputRoot: '/fixture/evidence',
-		campaignId: 'campaign-test-254',
+		campaignId: 'campaign-test-272',
 		runStage: async ( label, script, args ) => {
 
 			calls.push( { label, script, args } );
@@ -98,17 +98,17 @@ test( 'evidence campaign runs every cohort and the aggregate after stage failure
 	assert.deepEqual(
 		calls.map( ( call ) => call.label ),
 		[
-			'running exact 209-case upstream cohort',
+			'running exact 224-case upstream cohort',
 			...evidenceCohorts.map( ( project ) => `running exact local cohort ${ project }` ),
-			'validating the exact 254-case aggregate',
+			'validating the exact 272-case aggregate',
 		],
 	);
-	assert.equal( calls.length, 8, 'one upstream, six local, and one aggregate stage run' );
+	assert.equal( calls.length, evidenceCohorts.length + 2, 'all checked local projects, one upstream, and one aggregate stage run' );
 	assert.match( logs.at( - 1 ), /finished with 3 failed stage\(s\)/ );
 	assert.deepEqual( errors, [
-		'[evidence-campaign] failed: running exact 209-case upstream cohort (exit 7)',
+		'[evidence-campaign] failed: running exact 224-case upstream cohort (exit 7)',
 		'[evidence-campaign] failed: running exact local cohort pmrem-debug (exit 9)',
-		'[evidence-campaign] failed: validating the exact 254-case aggregate (exit 11)',
+		'[evidence-campaign] failed: validating the exact 272-case aggregate (exit 11)',
 	] );
 
 	const successfulLocal = calls.find(

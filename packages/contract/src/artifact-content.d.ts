@@ -6,6 +6,8 @@ export function stripPrivateArtifactFieldsInPlace<T>( value: T ): T;
 export interface ArtifactContentHashOptionsBase {
 	shape: string;
 	threeVersion: string;
+	threeRevision?: string;
+	threeCommit?: string;
 }
 
 export type ArtifactContentHashOptions = ArtifactContentHashOptionsBase & (

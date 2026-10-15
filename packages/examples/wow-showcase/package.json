@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "three": "0.185.1"
+    "three": "0.186.1"
   },
   "devDependencies": {
     "playwright": "^1.59.1",

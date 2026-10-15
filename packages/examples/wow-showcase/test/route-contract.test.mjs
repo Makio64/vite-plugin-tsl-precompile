@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +64,19 @@ test( 'showcase route equality rejects empty, missing, additional, and malformed
 			() => assertExactShowcaseRouteIds( ids, 'Tampered route set' ),
 			/non-empty|exactly match|non-canonical/,
 		);
+
+	}
+
+} );
+
+test( 'showcase browser scripts use the shared platform-specific evidence policy', () => {
+
+	for ( const script of [ 'capture.mjs', 'test-preview.mjs' ] ) {
+
+		const source = readFileSync( resolve( ROOT, `scripts/${ script }` ), 'utf8' );
+		assert.match( source, /import \{ launchEvidenceBrowser \} from '\.\.\/\.\.\/batch\/e2e-environment\.mjs';/ );
+		assert.match( source, /await launchEvidenceBrowser\( chromium, \{/ );
+		assert.doesNotMatch( source, /--use-vulkan|--use-angle|--enable-features/ );
 
 	}
 

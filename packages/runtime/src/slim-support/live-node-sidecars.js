@@ -9,6 +9,7 @@
  */
 
 import { getLiveUniformNodeIdentity, listLiveUniformNodes } from './live-uniform-registry.js';
+import { resolveLiveNodePath } from './live-uniform-path.js';
 import { walkMaterialNodeGraphUnique } from './node-graph-walker.js';
 
 /**
@@ -376,23 +377,7 @@ function uniformIdentitySignature( slot ) {
 
 }
 
-const UNSAFE_NODE_PATH_SEGMENTS = new Set( [ '__proto__', 'prototype', 'constructor' ] );
 
-function resolveLiveNodePath( sourceMaterial, nodePath ) {
-
-	if ( ! sourceMaterial || ! Array.isArray( nodePath ) || nodePath.length === 0 ) return null;
-	let current = sourceMaterial;
-	for ( const segment of nodePath ) {
-
-		if ( typeof segment !== 'string' || segment.length === 0 || UNSAFE_NODE_PATH_SEGMENTS.has( segment ) ) return null;
-		if ( ! current || ( typeof current !== 'object' && typeof current !== 'function' ) ) return null;
-		if ( ! Object.prototype.hasOwnProperty.call( current, segment ) ) return null;
-		try { current = current[ segment ]; } catch ( _ ) { return null; }
-
-	}
-	return current && current.isUniformNode === true ? current : null;
-
-}
 
 function wireVolumeMaterialStepsSlot( artifact, sourceMaterial, options = {} ) {
 

@@ -17,8 +17,8 @@
     },
     "prebuilt": {
       "measurement": "checked-bundle",
-      "rawBytes": 956266,
-      "gzipBytes": 261940,
+      "rawBytes": 963167,
+      "gzipBytes": 264026,
       "maxRawBytes": 970000,
       "maxGzipBytes": 268000,
       "withinBudget": true
@@ -31,10 +31,10 @@
     },
     "prebuilt": {
       "path": "packages/runtime/build/three.webgpu.slim.js",
-      "sha256": "5efa7c575a5d6faa660c8e3013c67c7e7e154e5af5b66ace9596316b1ec65a29",
+      "sha256": "6f851551d3185c84c028a34f2b275dc54479493e33309cd8df09a49b41fb409c",
       "metaPath": "packages/runtime/build/three.webgpu.slim.meta.json",
-      "metaSha256": "2c219d0269a2c500390d6569c380ffdba0551bfcfb9d91b33c12a2a05d935538",
-      "sourceFingerprint": "6fa4669a1b234f1cc1868456ef82fdda156b94f1980e750c08a7d409f3b1c2e2"
+      "metaSha256": "4b132d62a30098c06d72e200f8bb6cd80a3f2ebb5e632bc29304918d07fef4e5",
+      "sourceFingerprint": "fcb615542e3613c60e630864af5e041a23e4ce6a6825524ab927153235eb0107"
     }
   }
 }

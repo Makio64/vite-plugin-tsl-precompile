@@ -8,12 +8,15 @@
  */
 
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
-import { hashMaterialSync } from './graph-hash.js';
+import { MATERIAL_SHADER_FAMILY } from '@tsl-precompile/contract/render-selector';
+import { validateRuntimeArtifactThreeEmitterIdentity } from './three-emitter-identity.js';
 
 const SOURCE_HASH_FIELDS = Object.freeze( [
 	'sourceGraphHash',
 	'sourceHashVersion',
 	'sourceThreeVersion',
+	'sourceThreeRevision',
+	'sourceThreeCommit',
 	'renderContextSignature',
 ] );
 
@@ -22,14 +25,16 @@ const SOURCE_HASH_FIELDS = Object.freeze( [
  * source material. Full mode runs the same gate even though it keeps the live
  * graph, so stale artifacts fail identically in both production modes.
  */
-function assertCapturedSourceIsFresh( material, artifactModule, artifact, name ) {
+function assertCapturedSourceIsFresh( material, artifactModule, artifact, name, hashMaterialSync ) {
 
 	const metadataSource = SOURCE_HASH_FIELDS.some( ( key ) => artifact && artifact[ key ] !== undefined )
 		? artifact
 		: SOURCE_HASH_FIELDS.some( ( key ) => artifactModule && artifactModule[ key ] !== undefined )
 			? artifactModule
 			: null;
-	if ( metadataSource === null ) return; // Explicit legacy policy.
+	const detectedThreeVersion = typeof globalThis.__TSLP_THREE_PACKAGE_VERSION__ === 'string' ? globalThis.__TSLP_THREE_PACKAGE_VERSION__ : '';
+	const emitterFields = validateRuntimeArtifactThreeEmitterIdentity( metadataSource, `[tsl-precompile] artifact ${ JSON.stringify( name ) }` );
+	if ( metadataSource === null ) return; // Explicit legacy policy outside verified development contexts.
 
 	const sourceGraphHash = metadataSource.sourceGraphHash;
 	const sourceHashVersion = metadataSource.sourceHashVersion;
@@ -58,9 +63,6 @@ function assertCapturedSourceIsFresh( material, artifactModule, artifact, name )
 
 	}
 
-	const detectedThreeVersion = typeof globalThis !== 'undefined' && typeof globalThis.__TSLP_THREE_PACKAGE_VERSION__ === 'string'
-		? globalThis.__TSLP_THREE_PACKAGE_VERSION__
-		: '';
 	if ( detectedThreeVersion && detectedThreeVersion !== sourceThreeVersion ) {
 
 		throw new Error( `[tsl-precompile] artifact "${ name }" was captured with three ${ sourceThreeVersion }, but this bundle uses three ${ detectedThreeVersion }. Recapture it with the installed three version.` );
@@ -79,6 +81,7 @@ function assertCapturedSourceIsFresh( material, artifactModule, artifact, name )
 	const currentSourceGraphHash = hashMaterialSync( material, {
 		name,
 		threeVersion: detectedThreeVersion || sourceThreeVersion,
+		...emitterFields,
 		toolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
 		renderContextSignature,
 	} );
@@ -98,7 +101,7 @@ function assertCapturedSourceIsFresh( material, artifactModule, artifact, name )
  *
  * @returns {Object}
  */
-export function preparePrecompiledArtifact( material, artifactModule, expectedHash ) {
+export function preparePrecompiledArtifact( material, artifactModule, expectedHash, hashMaterialSync ) {
 
 	if ( ! artifactModule || typeof artifactModule !== 'object' ) {
 
@@ -115,7 +118,17 @@ export function preparePrecompiledArtifact( material, artifactModule, expectedHa
 
 	const artifact = artifactModule.artifact || artifactModule;
 	const name = artifactModule.name || artifact.__name;
-	assertCapturedSourceIsFresh( material, artifactModule, artifact, name );
+	if ( ! hashMaterialSync && artifactModule.__sourceValidationMode !== 'callsite' ) {
+
+		throw new Error( `[tsl-precompile] artifact "${ name || '<unnamed>' }" requires runtime source-graph validation. Use the ordinary apply entry or rebuild with captured call-site provenance.` );
+
+	}
+	assertCapturedSourceIsFresh( material, artifactModule, artifact, name, hashMaterialSync );
+	if ( material && typeof name === 'string' && name.length > 0 ) {
+
+		Object.defineProperty( material, MATERIAL_SHADER_FAMILY, { value: name, configurable: true } );
+
+	}
 	return artifact;
 
 }

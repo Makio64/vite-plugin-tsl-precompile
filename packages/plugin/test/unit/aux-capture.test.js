@@ -24,7 +24,8 @@ import { installMockWebGPU, createMockGPUCanvasContext } from '../../src/mock-we
 import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
 import { hashNodeGraphSync, hashPlainConfigSync } from '../../../runtime/src/graph-hash.js';
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
-import { assertInternalPassArtifact } from '@tsl-precompile/contract/internal-pass';
+import { assertInternalPassArtifact, validateInternalPassDescriptor } from '@tsl-precompile/contract/internal-pass';
+import { PMREM_SPHERICAL_GAUSSIAN_BLUR } from '@tsl-precompile/contract/pmrem-config';
 
 // -------- Background --------
 
@@ -306,7 +307,9 @@ async function captureDirectPMREMShaders( kind, textureOptions = {} ) {
 		antialias: false,
 	} );
 	await renderer.init();
-	const sourceTexture = makePMREMSourceTexture( core, kind, 32, textureOptions );
+	const sourceTexture = kind === 'scene' ? null : makePMREMSourceTexture( core, kind, 32, textureOptions );
+	const scene = kind === 'scene' ? new core.Scene() : null;
+	if ( scene ) scene.background = new core.Color( 0.5, 0.2, 0.8 );
 	const pmrem = new webgpu.PMREMGenerator( renderer );
 	let target = null;
 	let harvestSession = null;
@@ -314,7 +317,9 @@ async function captureDirectPMREMShaders( kind, textureOptions = {} ) {
 	try {
 
 		harvestSession = beginRenderObjectHarvest( renderer );
-		target = kind === 'cube'
+		target = kind === 'scene'
+			? pmrem.fromScene( scene, 0.2, 0.1, 100, { size: 32 } )
+			: kind === 'cube'
 			? pmrem.fromCubemap( sourceTexture )
 			: pmrem.fromEquirectangular( sourceTexture );
 		const harvest = await harvestSession.finish();
@@ -340,12 +345,77 @@ async function captureDirectPMREMShaders( kind, textureOptions = {} ) {
 		renderer.setRenderTarget( null );
 		if ( target ) target.dispose();
 		pmrem.dispose();
-		sourceTexture.dispose();
+		sourceTexture?.dispose();
 		renderer.dispose();
 
 	}
 
 }
+
+test( 'aux/pmrem: native fromScene spherical Gaussian shaders and semantic bindings survive extraction', async () => {
+
+	const direct = await captureDirectPMREMShaders( 'scene' );
+	const captured = await extractPMREMArtifact( ( { core } ) => {
+
+		const scene = new core.Scene();
+		scene.background = new core.Color( 0.5, 0.2, 0.8 );
+		return { scene, kind: 'scene', sigma: 0.2, size: 32, name: 'native-scene' };
+
+	} );
+	assert.deepEqual( Object.keys( captured.artifacts ).sort(), [ 'blur', 'ggx' ] );
+	assert.equal( captured.artifact, captured.artifacts.blur );
+	assert.equal( captured.supportConfig.profile, 'scene' );
+	assert.deepEqual( captured.supportConfig.blur, PMREM_SPHERICAL_GAUSSIAN_BLUR );
+	assert.equal( Object.hasOwn( captured.supportConfig, 'source' ), false );
+	assert.equal( captured.artifact.replayConfig.cubeSize, 32 );
+	for ( const stage of [ 'blur', 'ggx' ] ) {
+
+		const artifact = captured.artifacts[ stage ];
+		assert.deepEqual( shaderHashPairsFromArtifact( artifact ), shaderHashPairsFromStates( direct[ stage ].states ), `${ stage }: extracted shader bytes must match native fromScene draws` );
+		assert.equal( assertInternalPassArtifact( artifact ), artifact.internalPass );
+		for ( const selector of parsedArtifactSelectors( artifact ) ) {
+
+			assert.equal( selector.target.surface, 'offscreen-2d' );
+			assert.equal( selector.target.colors[ 0 ].dataType, 1016 );
+			assert.deepEqual( selector.object.geometry.attributes.map( entry => entry[ 0 ] ), [ 'outputDirection', 'position' ] );
+
+		}
+
+	}
+	const blur = captured.artifacts.blur;
+	assert.deepEqual( blur.internalPass.uniforms.map( entry => [ entry.role, entry.binding, entry.valueType ] ), [
+		[ 'mip-int', 'nodeUniform1', 'float' ], [ 'sigma', 'nodeUniform0', 'float' ],
+	] );
+	assert.deepEqual( blur.internalPass.inputs.map( entry => [ entry.role, entry.kind, entry.binding ] ), [ [ 'env-map', 'texture', 'nodeUniform2' ] ] );
+	for ( const candidate of artifactCandidates( blur ) ) {
+
+		const group = candidate.uniformPlan.find( entry => entry.name === 'object' );
+		assert.equal( group.orderedBindings.some( entry => entry.type === 'buffer-uniform' ), false );
+		for ( const [ binding, parameter ] of [ [ 'nodeUniform0', 'sigma' ], [ 'nodeUniform1', 'mipInt' ] ] ) {
+
+			const slot = group.slots.find( entry => entry.name === binding );
+			assert.equal( slot.source.kind, 'uniform.live' );
+			assert.equal( slot.source.nodePath.at( -1 ), parameter );
+
+		}
+		assert.equal( group.slots.find( entry => entry.name === 'nodeUniform0' ).source.valueSnapshot.data, 0.2 / Math.SQRT2 );
+
+	}
+	const missingSigma = { ...blur.internalPass, uniforms: blur.internalPass.uniforms.filter( entry => entry.role !== 'sigma' ) };
+	assert.ok( validateInternalPassDescriptor( missingSigma ).some( entry => entry.code === 'internal-pass.uniform.required' ) );
+	const legacyConfig = { ...blur.internalPass.config };
+	delete legacyConfig.blur;
+	assert.ok( validateInternalPassDescriptor( { ...blur.internalPass, config: legacyConfig } ).some( entry => entry.code === 'internal-pass.input.required' ) );
+
+} );
+
+test( 'aux/pmrem: scene extraction requires a real scene and an exercised blur operation', async () => {
+
+	await assert.rejects( extractPMREMArtifact( () => ( { kind: 'scene', scene: {} } ) ), /Three Scene/ );
+	for ( const sigma of [ 0, - 1, NaN, Infinity ] ) await assert.rejects( extractPMREMArtifact( ( { core } ) => ( { kind: 'scene', scene: new core.Scene(), sigma } ) ), /sigma > 0/ );
+	await assert.rejects( extractPMREMArtifact( ( { core } ) => ( { kind: 'scene', scene: new core.Scene(), size: 33 } ) ), /power-of-two integer/ );
+
+} );
 
 test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {
 
@@ -363,7 +433,7 @@ test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {
 
 } );
 
-test( 'aux/pmrem: captures the exercised stages with real faceIndex and target topology', async () => {
+test( 'aux/pmrem: captures the exercised stages with native face directions and target topology', async () => {
 
 	let sourceTexture;
 	let halfFloatType;
@@ -413,11 +483,11 @@ test( 'aux/pmrem: captures the exercised stages with real faceIndex and target t
 			colorSpace: 'srgb-linear',
 		} );
 		assert.equal( JSON.stringify( a.internalPass ).includes( sourceTexture.uuid ), false, `${ subKind }: durable pass descriptor must omit UUIDs` );
-		assert.match( a.vertexShader, /faceIndex/, `${ subKind }: vertex shader must consume PMREM's faceIndex attribute` );
+		assert.match( a.vertexShader, /outputDirection\s*:\s*vec3<f32>/, `${ subKind }: vertex shader must consume PMREM's native face-direction attribute` );
 		assert.match(
 			a.fragmentShader,
-			/getDirection\(\s*nodeVarying\d+,\s*nodeVarying\d+\s*\)/,
-			`${ subKind }: fragment shader must use the varying face index`,
+			/normalize\(\s*nodeVarying\d+\s*\)/,
+			`${ subKind }: fragment shader must normalize the interpolated face direction`,
 		);
 		assert.doesNotMatch(
 			a.fragmentShader,
@@ -433,7 +503,7 @@ test( 'aux/pmrem: captures the exercised stages with real faceIndex and target t
 			assert.equal( selector.target.colors.length, 1, `${ subKind }: one atlas color attachment expected` );
 			assert.equal( selector.target.colors[ 0 ].dataType, halfFloatType, `${ subKind }: atlas must be HalfFloat` );
 			const attributes = selector.object.geometry.attributes.map( ( entry ) => entry[ 0 ] );
-			assert.deepEqual( attributes, [ 'faceIndex', 'position', 'uv' ], `${ subKind }: exact PMREM vertex layout expected` );
+			assert.deepEqual( attributes, [ 'outputDirection', 'position' ], `${ subKind }: exact native PMREM vertex layout expected` );
 
 		}
 
@@ -594,7 +664,7 @@ test( 'aux/pmrem: cube input captures cubemap topology and hashes the compiled a
 	assert.equal( size32.artifact.internalPass.stage, 'cubemap' );
 	assert.equal( size32.artifact.internalPass.inputs[ 0 ].role, 'source' );
 	assert.equal( size32.artifact.internalPass.inputs[ 0 ].topology.dimension, 'cube' );
-	assert.match( size32.artifact.vertexShader, /faceIndex/ );
+	assert.match( size32.artifact.vertexShader, /outputDirection\s*:\s*vec3<f32>/ );
 	assert.deepEqual( size32.artifact.replayConfig, {
 		schema: 'pmrem-layout@1',
 		cubeSize: 32,

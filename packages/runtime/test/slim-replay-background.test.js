@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Color, EventDispatcher, Texture } from 'three';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import ReplayBackground from '../src/slim-replay-background.js';
 import {
@@ -179,6 +179,28 @@ test( 'replay Background hashes a raw input to select exactly among multiple cap
 	const scene = { background: null, backgroundNode: secondInput };
 	manager.update( scene, renderList(), renderContext() );
 	assert.equal( manager.get( scene ).backgroundMesh.material.precompiledArtifact.fragmentShader, 'fragment:blue' );
+
+} );
+
+test( 'replay Background selects the injected development hash domain for captures without registry version metadata', ( t ) => {
+
+	const previous = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	t.after( () => {
+
+		if ( previous === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = previous;
+
+	} );
+	const input = new BackgroundInput();
+	input.graphValue = 'source-domain-proof';
+	const development = { ...HASH_OPTIONS, threeVersion: THREE_RELEASE_PROFILES.development.packageVersion };
+	registerAuxArtifact( 'background', hashNodeGraphSync( input, { shape: 'background', ...HASH_OPTIONS } ), artifact( 'stable' ) );
+	registerAuxArtifact( 'background', hashNodeGraphSync( input, { shape: 'background', ...development } ), artifact( 'development' ) );
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = development.threeVersion;
+	const manager = new ReplayBackground( renderer(), {} );
+	const scene = { background: null, backgroundNode: input };
+	manager.update( scene, renderList(), renderContext() );
+	assert.equal( manager.get( scene ).backgroundMesh.material.precompiledArtifact.fragmentShader, 'fragment:development' );
 
 } );
 

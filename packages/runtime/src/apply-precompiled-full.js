@@ -8,11 +8,12 @@
  */
 
 import { preparePrecompiledArtifact } from './apply-precompiled-common.js';
+import { hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
 
 export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
-	const artifact = preparePrecompiledArtifact( material, artifactModule, expectedHash );
+	const artifact = preparePrecompiledArtifact( material, artifactModule, expectedHash, hashMaterialSync );
 	const name = artifactModule.name || artifact.__name;
 	if ( artifactModule.__hash && ! artifact.__hash ) {
 

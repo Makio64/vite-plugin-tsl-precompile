@@ -3,15 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { REVISION } from 'three/src/constants.js';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import {
 	hash as threeHash,
 	hashArray as threeHashArray,
 	hashString as threeHashString,
 } from 'three/src/nodes/core/NodeUtils.js';
-import {
-	NodeAccess as threeNodeAccess,
-	NodeUpdateType as threeNodeUpdateType,
-} from 'three/src/nodes/core/constants.js';
+import * as threeNodeConstants from 'three/src/nodes/core/constants.js';
+import * as replayPrimitives from '../src/slim-replay-node-core-primitives.js';
 import {
 	hash,
 	hashArray,
@@ -25,9 +24,9 @@ import {
 	TSL,
 } from '../src/slim-stubs.js';
 
-test( 'replay-owned hashes retain exact Three r185 string behavior', () => {
+test( 'replay-owned hashes retain exact installed Three string behavior', () => {
 
-	assert.equal( REVISION, '185', 'update the replay primitive and its parity fixtures before upgrading Three' );
+	assert.ok( Object.values( THREE_RELEASE_PROFILES ).some( ( profile ) => profile.revision === REVISION ), 'hash parity must run against a supported native Three release' );
 	const strings = [
 		'',
 		'a',
@@ -46,7 +45,7 @@ test( 'replay-owned hashes retain exact Three r185 string behavior', () => {
 
 } );
 
-test( 'replay-owned hashes retain exact Three r185 array and variadic numeric behavior', () => {
+test( 'replay-owned hashes retain exact installed Three array and variadic numeric behavior', () => {
 
 	const arrays = [
 		[],
@@ -73,14 +72,19 @@ test( 'replay-owned hashes retain exact Three r185 array and variadic numeric be
 
 } );
 
-test( 'replay-owned node constants retain the exact Three r185 values and object shapes', () => {
+test( 'replay-owned node constants cover every installed native export with exact values and mutable object shapes', () => {
 
-	assert.deepEqual( NodeAccess, threeNodeAccess );
+	const nativeNames = Object.keys( threeNodeConstants ).sort();
+	assert.deepEqual( Object.keys( replayPrimitives ).filter( ( name ) => ! [ 'hash', 'hashArray', 'hashString' ].includes( name ) ).sort(), nativeNames );
+	for ( const name of nativeNames ) {
+
+		assert.deepEqual( replayPrimitives[ name ], threeNodeConstants[ name ], name );
+		assert.equal( Object.isFrozen( replayPrimitives[ name ] ), Object.isFrozen( threeNodeConstants[ name ] ), name );
+
+	}
 	assert.deepEqual( Object.keys( NodeAccess ), [ 'READ_ONLY', 'WRITE_ONLY', 'READ_WRITE' ] );
-	assert.equal( Object.isFrozen( NodeAccess ), Object.isFrozen( threeNodeAccess ) );
-	assert.deepEqual( NodeUpdateType, threeNodeUpdateType );
 	assert.deepEqual( Object.keys( NodeUpdateType ), [ 'NONE', 'FRAME', 'RENDER', 'OBJECT' ] );
-	assert.equal( Object.isFrozen( NodeUpdateType ), Object.isFrozen( threeNodeUpdateType ) );
+	assert.notEqual( replayPrimitives.shaderStages, replayPrimitives.defaultShaderStages, 'native shaderStages is a separate mutable array' );
 
 } );
 

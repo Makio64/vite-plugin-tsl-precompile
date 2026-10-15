@@ -430,6 +430,7 @@ async function probeRoute( browser, baseUrl, route, timeoutMs ) {
 
 	} finally {
 
+		await collector.settle();
 		browserFailures = collector.failures();
 		collector.dispose();
 		await context.close();

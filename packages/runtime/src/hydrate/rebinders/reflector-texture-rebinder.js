@@ -37,7 +37,7 @@ export function resolveReflectorRenderTarget( baseNode, camera ) {
 
 }
 
-export function collectMaterialReflectorBaseNodes( material ) {
+export function collectMaterialReflectorBaseNodes( material, artifact = null ) {
 
 	if ( ! material ) return [];
 	const list = material.__tslpReflectorBaseNodes;
@@ -56,6 +56,13 @@ export function collectMaterialReflectorBaseNodes( material ) {
 		return out;
 
 	}
+	// Captured texture dependencies prove whether discovery is necessary.
+	// Auxiliary materials often retain a large fragment graph for their own
+	// effect code, even though none of that graph requires a reflector pass.
+	if ( artifact && ! ( artifact.uniformPlan || [] ).some( group => ( group.textures || [] ).some( entry =>
+		entry.source?.kind === 'reflector.texture' || entry.source?.fromMaterialGraph === true ||
+		Number.isInteger( entry.source?.reflectorIndex )
+	) ) ) return out;
 	for ( const node of collectReflectorBaseNodes( material ) ) append( node );
 	return out;
 

@@ -209,20 +209,27 @@ test( 'batch capture retains WebGPU and WebGL auxiliary variants sharing one con
 
 } );
 
-function captureHandler( payload, bucket, validateAuxiliaryFamilyPayload = () => {} ) {
+function captureHandler( payload, bucket, validateAuxiliaryFamilyPayload = () => {}, options = {} ) {
 
+	const captures = new Map( bucket ? [ [ 'family.html', bucket ] ] : [] );
+	const request = { resume() { this.resumed = true; } };
 	const start = RUNNER_SOURCE.indexOf( 'async function handleCapture(' );
 	const end = RUNNER_SOURCE.indexOf( 'function safeResolveUnder(', start );
 	assert.ok( start >= 0 && end > start, 'expected the batch capture request handler' );
 	const handleCapture = Function(
-		'readBody',
-		'captureBucket',
+		'readCaptureBody',
+		'captures',
 		'applyBatchCapturePayload',
 		'validateAuxiliaryFamilyPayload',
 		`"use strict";\n${ RUNNER_SOURCE.slice( start, end ) }\nreturn handleCapture;`,
 	)(
-		async () => JSON.stringify( payload ),
-		() => bucket,
+		async () => {
+
+			if ( options.readBody ) return options.readBody( captures );
+			return JSON.stringify( payload );
+
+		},
+		captures,
 		applyBatchCapturePayload,
 		validateAuxiliaryFamilyPayload,
 	);
@@ -241,9 +248,11 @@ function captureHandler( payload, bucket, validateAuxiliaryFamilyPayload = () =>
 		},
 	};
 	return {
+		captures,
+		request,
 		response,
 		run: () => handleCapture(
-			{},
+			request,
 			response,
 			new URL( 'http://localhost/__tslp__/capture?example=family.html' ),
 		),
@@ -346,5 +355,58 @@ test( 'run-e2e capture endpoint returns 400 without exposing a partial family', 
 		bucket.aux.map( ( entry ) => entry.artifact.id ),
 		[ 'old-vertical', 'old-horizontal' ],
 	);
+
+} );
+
+test( 'late capture requests cannot recreate a completed case bucket', async () => {
+
+	let reads = 0;
+	const handler = captureHandler( {}, null, undefined, {
+		readBody() { reads ++; throw new Error( 'inactive bodies must not be read' ); },
+	} );
+	await handler.run();
+	assert.equal( handler.response.statusCode, 409 );
+	assert.match( JSON.parse( handler.response.body ).error, /no longer active/ );
+	assert.equal( reads, 0 );
+	assert.equal( handler.request.resumed, true );
+	assert.equal( handler.captures.size, 0 );
+
+} );
+
+test( 'a delayed stock body cannot publish into the dedicated artifact capture generation', async () => {
+
+	const bucket = { user: {}, aux: [] };
+	const next = { user: {}, aux: [] };
+	const handler = captureHandler( {}, bucket, undefined, {
+		readBody( captures ) {
+
+			captures.set( 'family.html', next );
+			return JSON.stringify( { name: 'stale', artifact: { id: 'stale' } } );
+
+		},
+	} );
+	await handler.run();
+	assert.equal( handler.response.statusCode, 409 );
+	assert.match( JSON.parse( handler.response.body ).error, /changed while its body was read/ );
+	assert.deepEqual( bucket, { user: {}, aux: [] } );
+	assert.deepEqual( next, { user: {}, aux: [] } );
+
+} );
+
+test( 'the capture endpoint preserves the bounded reader status without publishing', async () => {
+
+	const bucket = { user: {}, aux: [] };
+	const handler = captureHandler( {}, bucket, undefined, {
+		readBody() {
+
+			const error = new Error( 'capture request body exceeds the byte limit' );
+			error.statusCode = 413;
+			throw error;
+
+		},
+	} );
+	await handler.run();
+	assert.equal( handler.response.statusCode, 413 );
+	assert.deepEqual( bucket, { user: {}, aux: [] } );
 
 } );

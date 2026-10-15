@@ -2,16 +2,16 @@
   "schema": "tslp-slim-budget@1",
   "gzipLevel": 9,
   "baseline": {
-    "threeVersion": "0.185.1",
-    "reason": "Three 0.185.1 dual-backend replay now retains the real compiler-free WebGL2 backend alongside WebGPU, including native GLSL artifact routing and WebGL2 transform-feedback hydration. The measured increase is the retained WebGL backend/runtime surface; every compiler, stock-adapter, retained Node/TSL, and bare-Three identity budget remains zero."
+    "threeVersion": "0.186.1",
+    "reason": "Three 0.186.1 retains the real compiler-free WebGL2 backend alongside WebGPU, native GLSL routing, transform-feedback hydration, reflector support, and captured PMREM/shadow scheduling. The upgrade includes native Renderer, WebGPUBackend, render-target and texture-source changes plus r186 spherical PMREM blur and sampler compatibility. New QuadMesh and RenderPipeline TSL construction is removed by exact source guards; every compiler, stock-adapter, retained Node/TSL and bare-Three identity count remains zero. The prior r185.1 measurements were 993259 raw / 273267 gzip prebuilt, 747420 raw / 209929 gzip helper consumer, and 176256 / 185490 gzip source-minimal / source-advanced. The pinned r186.1 measurements are 1014909 raw / 277936 gzip prebuilt, 768627 raw / 214903 gzip helper consumer, and 186724 / 196230 gzip source-minimal / source-advanced. Each cap preserves its previous absolute headroom: prebuilt 11741 raw / 3733 gzip, helper 12580 raw / 4071 gzip, source-minimal 7744 gzip and source-advanced 8510 gzip. The helper consumer still resolves exactly one prebuilt runtime and zero runtime source modules."
   },
   "prebuilt": {
-    "baselineRawBytes": 955613,
-    "rawHeadroomBytes": 14387,
-    "maxRawBytes": 970000,
-    "baselineGzipBytes": 261600,
-    "gzipHeadroomBytes": 6400,
-    "maxGzipBytes": 268000,
+    "baselineRawBytes": 1014909,
+    "rawHeadroomBytes": 11741,
+    "maxRawBytes": 1026650,
+    "baselineGzipBytes": 277936,
+    "gzipHeadroomBytes": 3733,
+    "maxGzipBytes": 281669,
     "maxCompilerModules": 0,
     "maxStockAdapterModules": 0,
     "maxRetainedNodeModules": 0,
@@ -20,12 +20,12 @@
   "consumer": {
     "fixtures": {
       "prebuiltHelpers": {
-        "baselineRawBytes": 725953,
-        "rawHeadroomBytes": 14047,
-        "maxRawBytes": 740000,
-        "baselineGzipBytes": 203034,
-        "gzipHeadroomBytes": 5966,
-        "maxGzipBytes": 209000,
+        "baselineRawBytes": 768627,
+        "rawHeadroomBytes": 12580,
+        "maxRawBytes": 781207,
+        "baselineGzipBytes": 214903,
+        "gzipHeadroomBytes": 4071,
+        "maxGzipBytes": 218974,
         "expectedRuntimeModules": 1,
         "expectedPrebuiltRuntimeModules": 1,
         "maxRuntimeSourceModules": 0
@@ -40,14 +40,14 @@
     "maxBareThreeIdentityModules": 0,
     "fixtures": {
       "minimal": {
-        "baselineGzipBytes": 176256,
+        "baselineGzipBytes": 186724,
         "gzipHeadroomBytes": 7744,
-        "maxGzipBytes": 184000
+        "maxGzipBytes": 194468
       },
       "advanced": {
-        "baselineGzipBytes": 185490,
+        "baselineGzipBytes": 196230,
         "gzipHeadroomBytes": 8510,
-        "maxGzipBytes": 194000
+        "maxGzipBytes": 204740
       }
     }
   }

@@ -1,3 +1,6 @@
+import type { ThreeReleaseProfile } from './slim-three-policy.js';
+export function computeThreeReleaseFingerprint( packageRoot: string ): Promise<{ sha256: string; fileCount: number; bytes: number }>;
+export function readSlimThreeReleaseProfile( packageRoot: string, options?: { sourceCommit?: string } ): Promise<Readonly<ThreeReleaseProfile>>;
 export const SLIM_BUNDLE_SOURCE_SCHEMA: 'tslp-slim-bundle-sources@1';
 export const SLIM_BUNDLE_PROVENANCE_SCHEMA: 'tslp-slim-bundle-provenance@1';
 export const SLIM_BUNDLE_BUILD_TOOLCHAIN_VERSION: 'tslp-slim-rollup@2';
@@ -16,6 +19,8 @@ export type SlimBundleProvenanceErrorCode =
 
 export interface SlimBundleVersionIdentity {
 	three: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	policy: string;
 	artifactToolchain: string;
 	buildToolchain: string;
@@ -80,6 +85,8 @@ export function createSlimBundleSourceInputs( roots: {
 } ): SlimBundleSourceInputs;
 export function createSlimBundleVersionIdentity( versions: {
 	threeVersion: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	policyVersion: string;
 	artifactToolchainVersion: string;
 	buildToolchainVersion?: string;

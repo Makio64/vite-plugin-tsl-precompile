@@ -1,14 +1,57 @@
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { fingerprintJson, readSafeContainedFile } from './e2e-evidence.mjs';
 import { execTrustedGitSync } from '../../../scripts/release-state.mjs';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 export const THREE_CHECKOUT_VERSION_MISMATCH = 'TSLP_THREE_CHECKOUT_VERSION_MISMATCH';
 export const THREE_SOURCE_INTEGRITY_MISMATCH = 'TSLP_THREE_SOURCE_INTEGRITY_MISMATCH';
 export const THREE_R185_OFFICIAL_COMMIT = '2431a09f46f34c560bc8e44b33be0e567723d5b9';
 export const THREE_R185_OFFICIAL_TREE = 'db4af93e35bd10c43f957137f7fb44c138e52ea0';
+
+// Historical campaign proofs retain their original release identity.
+const LEGACY_R185_PROFILE = Object.freeze( {
+	ref: 'r185',
+	packageVersion: '0.185.1',
+	revision: '185',
+	gitCommit: THREE_R185_OFFICIAL_COMMIT,
+	gitTree: THREE_R185_OFFICIAL_TREE,
+	objectFormat: 'sha1',
+} );
+
+/** A stored stable campaign is checked against its named release, never relabeled. */
+export function officialThreeReleaseForEvidence( packageVersion ) {
+
+	if ( packageVersion === LEGACY_R185_PROFILE.packageVersion ) return LEGACY_R185_PROFILE;
+	if ( packageVersion === THREE_RELEASE_PROFILES.stable.packageVersion ) return THREE_RELEASE_PROFILES.stable;
+	throw new ThreeCheckoutVersionError( `No official stable Three evidence profile matches ${ JSON.stringify( packageVersion ) }.` );
+
+}
+
+/** Local diagnostics use the installed renderer; corpus evidence owns its checkout. */
+export function resolveE2EThreeRoot( {
+	args = [],
+	env = process.env,
+	selfDir,
+	cwd = process.cwd(),
+	resolveModule = createRequire( import.meta.url ).resolve,
+} ) {
+
+	const override = args.find( ( argument ) => argument.startsWith( '--three-repo=' ) );
+	if ( override !== undefined ) return resolve( cwd, override.slice( '--three-repo='.length ) );
+	if ( env.TSLP_THREE_REPO ) return resolve( cwd, env.TSLP_THREE_REPO );
+	if ( env.TSLP_THREE_SOURCE_ROOT ) return resolve( cwd, env.TSLP_THREE_SOURCE_ROOT );
+	const local = args.some( ( argument ) => argument.startsWith( '--local-examples-root=' ) && argument.length > '--local-examples-root='.length );
+	const corpusRequired = args.includes( '--canonical-evidence' ) ||
+		args.includes( '--require-official-three-sources' ) ||
+		args.some( ( argument ) => argument.startsWith( '--tier=' ) && argument.length > '--tier='.length );
+	if ( local && ! corpusRequired ) return resolve( dirname( resolveModule( 'three' ) ), '..' );
+	return resolve( selfDir, '../../../../three.js' );
+
+}
 
 export function fingerprintThreeSourceVerificationRecords( records ) {
 
@@ -47,9 +90,10 @@ export class ThreeSourceIntegrityError extends Error {
 
 }
 
-export function assertOfficialThreeR185SourceVerification(
+export function assertPinnedThreeSourceVerification(
 	sourceVerification,
 	{
+		profile = THREE_RELEASE_PROFILES.stable,
 		sourceSnapshot = null,
 		sourceFingerprint = null,
 		label = 'Three source verification',
@@ -59,14 +103,14 @@ export function assertOfficialThreeR185SourceVerification(
 	const fail = ( reason ) => {
 
 		throw new Error(
-			`${ label } did not verify served sources against the official Three r185 Git tree: ${ reason }.`,
+			`${ label } did not verify served sources against the official Three ${ profile.ref } Git tree: ${ reason }.`,
 		);
 
 	};
 	if (
-		sourceVerification?.commit !== THREE_R185_OFFICIAL_COMMIT ||
-		sourceVerification?.tree !== THREE_R185_OFFICIAL_TREE ||
-		sourceVerification?.objectFormat !== 'sha1' ||
+		sourceVerification?.commit !== profile.gitCommit ||
+		sourceVerification?.tree !== profile.gitTree ||
+		sourceVerification?.objectFormat !== profile.objectFormat ||
 		! Number.isSafeInteger( sourceVerification.trackedBlobCount ) ||
 		sourceVerification.trackedBlobCount <= 0 ||
 		! Number.isSafeInteger( sourceVerification.verifiedBlobCount ) ||
@@ -92,9 +136,9 @@ export function assertOfficialThreeR185SourceVerification(
 			record.path.includes( '\\' ) ||
 			pathSegments.some( ( segment ) => segment === '' || segment === '.' || segment === '..' ) ||
 			( previousPath !== null && previousPath.localeCompare( record.path ) >= 0 ) ||
-			record.gitCommit !== THREE_R185_OFFICIAL_COMMIT ||
-			record.gitTree !== THREE_R185_OFFICIAL_TREE ||
-			record.gitObjectFormat !== 'sha1' ||
+			record.gitCommit !== profile.gitCommit ||
+			record.gitTree !== profile.gitTree ||
+			record.gitObjectFormat !== profile.objectFormat ||
 			! /^[0-7]{6}$/.test( record.gitMode || '' ) ||
 			! /^[a-f0-9]{40}$/.test( record.gitBlob || '' ) ||
 			! Number.isSafeInteger( record.bytes ) ||
@@ -158,6 +202,12 @@ export function assertOfficialThreeR185SourceVerification(
 
 	}
 	return sourceVerification;
+
+}
+
+export function assertOfficialThreeR185SourceVerification( sourceVerification, options = {} ) {
+
+	return assertPinnedThreeSourceVerification( sourceVerification, { ...options, profile: LEGACY_R185_PROFILE } );
 
 }
 
@@ -361,11 +411,24 @@ export function createThreeGitSourceVerifier( threeRepo, expectedCommit, label =
 
 export function createOfficialThreeR185SourceVerifier( threeRepo, label = 'Three r185 source' ) {
 
-	const verifier = createThreeGitSourceVerifier( threeRepo, THREE_R185_OFFICIAL_COMMIT, label );
-	if ( verifier.snapshot().tree !== THREE_R185_OFFICIAL_TREE ) {
+	return createPinnedThreeSourceVerifier( threeRepo, LEGACY_R185_PROFILE, label );
+
+}
+
+export function createOfficialThreeSourceVerifier( threeRepo, label = 'Three source' ) {
+
+	return createPinnedThreeSourceVerifier( threeRepo, THREE_RELEASE_PROFILES.stable, label );
+
+}
+
+export function createPinnedThreeSourceVerifier( threeRepo, profile = THREE_RELEASE_PROFILES.stable, label = 'Three source' ) {
+
+	const verifier = createThreeGitSourceVerifier( threeRepo, profile.gitCommit, label );
+	const snapshot = verifier.snapshot();
+	if ( snapshot.tree !== profile.gitTree || snapshot.objectFormat !== profile.objectFormat ) {
 
 		throw new ThreeSourceIntegrityError(
-			`[${ label }] official commit resolved to unexpected tree ${ verifier.snapshot().tree }.`,
+			`[${ label }] official commit resolved to unexpected tree ${ snapshot.tree } or object format ${ snapshot.objectFormat }.`,
 		);
 
 	}
@@ -528,12 +591,43 @@ export function assertThreeCheckoutMatchesVersion( threeRepo, expectedPackageVer
  */
 export function assertOfficialThreeR185Checkout( threeRepo, label = 'batch' ) {
 
-	const checkout = assertThreeCheckoutMatchesVersion( threeRepo, '0.185.1', label );
+	return assertPinnedThreeCheckout( threeRepo, LEGACY_R185_PROFILE, label );
+
+}
+
+export function assertOfficialThreeCheckout( threeRepo, label = 'batch' ) {
+
+	return assertPinnedThreeCheckout( threeRepo, THREE_RELEASE_PROFILES.stable, label );
+
+}
+
+/** Explicit stable or development provenance: package, revision, commit and tree. */
+export function assertPinnedThreeCheckout( threeRepo, profile = THREE_RELEASE_PROFILES.stable, label = 'batch' ) {
+
+	const checkout = readThreeCheckoutVersion( threeRepo, label );
+	if ( checkout.packageVersion !== profile.packageVersion || checkout.revision !== profile.revision ) {
+
+		throw new ThreeCheckoutVersionError(
+			`[${ label }] checkout identifies as ${ checkout.packageVersion } / ${ checkout.revision }, ` +
+			`expected pinned ${ profile.packageVersion } / ${ profile.revision }.`,
+		);
+
+	}
 	let commit;
+	let tree;
+	let objectFormat;
 	let status;
 	try {
 
 		commit = execTrustedGitSync( threeRepo, [ 'rev-parse', 'HEAD' ], {
+			encoding: 'utf8',
+			stdio: [ 'ignore', 'pipe', 'pipe' ],
+		} ).trim();
+		tree = execTrustedGitSync( threeRepo, [ 'rev-parse', 'HEAD^{tree}' ], {
+			encoding: 'utf8',
+			stdio: [ 'ignore', 'pipe', 'pipe' ],
+		} ).trim();
+		objectFormat = execTrustedGitSync( threeRepo, [ 'rev-parse', '--show-object-format' ], {
 			encoding: 'utf8',
 			stdio: [ 'ignore', 'pipe', 'pipe' ],
 		} ).trim();
@@ -545,15 +639,16 @@ export function assertOfficialThreeR185Checkout( threeRepo, label = 'batch' ) {
 	} catch ( cause ) {
 
 		throw new ThreeCheckoutVersionError(
-			`[${ label }] canonical evidence requires a Git checkout of the official r185 tag at ${ THREE_R185_OFFICIAL_COMMIT }.`,
+			`[${ label }] canonical evidence requires a Git checkout of the official ${ profile.ref } tag at ${ profile.gitCommit }.`,
 			{ cause },
 		);
 
 	}
-	if ( commit !== THREE_R185_OFFICIAL_COMMIT ) {
+	if ( commit !== profile.gitCommit || tree !== profile.gitTree || objectFormat !== profile.objectFormat ) {
 
 		throw new ThreeCheckoutVersionError(
-			`[${ label }] checkout HEAD is ${ commit || '<missing>' }, expected official r185 commit ${ THREE_R185_OFFICIAL_COMMIT }.`,
+			`[${ label }] checkout HEAD/tree is ${ commit || '<missing>' }/${ tree || '<missing>' } (${ objectFormat }), ` +
+			`expected official ${ profile.ref } commit ${ profile.gitCommit } / ${ profile.gitTree } (${ profile.objectFormat }).`,
 		);
 
 	}
@@ -561,13 +656,15 @@ export function assertOfficialThreeR185Checkout( threeRepo, label = 'batch' ) {
 
 		const firstEntries = status.split( '\n' ).slice( 0, 8 ).join( ', ' );
 		throw new ThreeCheckoutVersionError(
-			`[${ label }] official r185 checkout has local or untracked changes (${ firstEntries }). Canonical evidence requires a clean checkout.`,
+			`[${ label }] official ${ profile.ref } checkout has local or untracked changes (${ firstEntries }). Canonical evidence requires a clean checkout.`,
 		);
 
 	}
 	return {
 		...checkout,
 		gitCommit: commit,
+		gitTree: tree,
+		gitObjectFormat: objectFormat,
 		clean: true,
 	};
 

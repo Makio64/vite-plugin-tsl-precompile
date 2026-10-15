@@ -140,6 +140,90 @@ function observeAndUnbind( renderer, ...targets ) {
 
 }
 
+test( 'resolution skips unrelated attachment metadata while preserving target topology and live replacement', () => {
+
+	const textures = [ 0, 1, 2 ].map( index => makeTexture( { name: `color-${ index }` } ) );
+	const depthTexture = makeTexture( { name: 'depth', isDepthTexture: true } );
+	const target = makeTarget( { colors: textures, depthTexture } );
+	const selector = createRendererRenderTargetTextureSelector( target, { texture: textures[ 1 ] } );
+	const renderer = makeRenderer();
+	const registry = createRendererRenderTargetTextureRegistry( renderer );
+	observeAndUnbind( renderer, target );
+	let unrelatedNameReads = 0;
+	for ( const texture of [ textures[ 0 ], textures[ 2 ], depthTexture ] ) {
+
+		Object.defineProperty( texture, 'name', { get() { unrelatedNameReads ++; return 'unrelated'; } } );
+
+	}
+	const options = { preferredTarget: target, preferredTexture: textures[ 1 ] };
+	assert.equal( registry.resolve( selector, options ).texture, textures[ 1 ] );
+	assert.equal( unrelatedNameReads, 0 );
+	textures[ 2 ].isCubeTexture = true;
+	assert.equal( registry.resolve( selector, options ).status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING, 'an unrelated attachment still participates in target topology validation' );
+	textures[ 2 ].isCubeTexture = false;
+	const replacement = makeTexture( { name: 'color-1' } );
+	target.textures[ 1 ] = replacement;
+	assert.equal( registry.resolve( selector, options ).texture, replacement );
+	assert.equal( unrelatedNameReads, 0 );
+	renderer.setRenderTarget( target );
+	const hazard = registry.resolve( selector, options );
+	assert.equal( hazard.status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.HAZARD );
+	assert.equal( hazard.hazardCount, 1 );
+	assert.equal( hazard.candidateCount, 4, 'diagnostics count all current attachments' );
+
+} );
+
+test( 'duplicate attachment identities retain first-address selection, ambiguity, and hazard counts', () => {
+
+	const texture = makeTexture( { name: 'shared' } );
+	const target = makeTarget( { colors: [ texture, texture ] } );
+	const first = createRendererRenderTargetTextureSelector( target, { role: 'color', index: 0 } );
+	const second = createRendererRenderTargetTextureSelector( target, { role: 'color', index: 1 } );
+	const renderer = makeRenderer();
+	const registry = createRendererRenderTargetTextureRegistry( renderer );
+	observeAndUnbind( renderer, target );
+	const ambiguous = registry.resolve( first );
+	assert.equal( ambiguous.status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.AMBIGUOUS );
+	assert.equal( ambiguous.matchCount, 2 );
+	assert.equal( registry.resolve( second ).status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING );
+	target.depthTexture = texture;
+	assert.equal( registry.resolve( first ).matchCount, 3, 'a color/depth identity alias also remains ambiguous' );
+	const depth = createRendererRenderTargetTextureSelector( target, { role: 'depth' } );
+	assert.equal( registry.resolve( depth ).status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING );
+	const safe = makeTarget( { colors: [ makeTexture( { name: 'shared' } ), makeTexture( { name: 'other' } ) ] } );
+	observeAndUnbind( renderer, safe );
+	renderer.setRenderTarget( target );
+	const hazard = registry.resolve( first );
+	assert.equal( hazard.status, RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.HAZARD );
+	assert.equal( hazard.hazardCount, 3 );
+	assert.equal( hazard.safeMatchCount, 1 );
+	assert.equal( hazard.candidateCount, 5 );
+
+} );
+
+test( 'extent validation keeps nullable positive integers and rejects malformed scalar values', () => {
+
+	const target = makeTarget( { colors: [ makeTexture( { name: 'named' } ) ] } );
+	const selector = createRendererRenderTargetTextureSelector( target );
+	const renderer = makeRenderer();
+	const registry = createRendererRenderTargetTextureRegistry( renderer );
+	observeAndUnbind( renderer, target );
+	const options = { preferredTarget: target, preferredTexture: target.texture };
+	for ( const field of [ 'width', 'height', 'depth' ] ) {
+
+		for ( const value of [ null, 1, 100, undefined, 0, - 1, 1.5, NaN, Infinity, '1', true, {} ] ) {
+
+			const candidate = structuredClone( selector );
+			candidate.hints.extent[ field ] = value;
+			const result = registry.resolve( candidate, options );
+			assert.equal( result.reason, value === null || Number.isInteger( value ) && value > 0 ? null : 'invalid-extent-hint' );
+
+		}
+
+	}
+
+} );
+
 test( 'render-target texture selector captures attachment, target topology, texture shape, and hints', () => {
 
 	const first = makeTexture( { name: 'normal', format: 1015, type: 1016, colorSpace: '' } );

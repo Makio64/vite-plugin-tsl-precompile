@@ -1274,12 +1274,19 @@ test( 'precompile light cloning preserves projector color node graphs', () => {
 	const light = new FakeObject3D();
 	light.isLight = true;
 	light.colorNode = colorNode;
+	light.id = 20;
 	scene.add( light );
+	const olderLight = new FakeObject3D();
+	olderLight.id = 10;
+	olderLight.isLight = true;
+	olderLight.colorNode = { isNode: true, label: 'older-light' };
+	scene.add( olderLight );
 	const dest = new FakeObject3D();
 
 	__cloneLightsIntoForTests( scene, dest );
 
-	assert.equal( dest.children.length, 1 );
-	assert.equal( dest.children[ 0 ].colorNode, colorNode );
+	assert.equal( dest.children.length, 2 );
+	assert.equal( dest.children[ 0 ].colorNode, olderLight.colorNode, 'clones preserve light creation order, not scene traversal order' );
+	assert.equal( dest.children[ 1 ].colorNode, colorNode );
 
 } );

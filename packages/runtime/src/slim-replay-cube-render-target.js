@@ -13,7 +13,6 @@ import {
 	createCubeRenderTargetAuxConfig,
 } from '@tsl-precompile/contract/cube-render-target';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
 import {
 	attachArtifactTextureRefs,
@@ -21,13 +20,10 @@ import {
 	resolveAuxArtifactForInput,
 } from './aux-loader.js';
 import { hashPlainConfigSync } from './graph-hash.js';
-import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from './slim-source-policy.js';
+import { createRuntimeSlimHashOptions } from './slim-source-policy.js';
 
 const SHAPE = 'cube-render-target';
-const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
-	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
-} );
+const DEFAULT_HASH_OPTIONS = /*@__PURE__*/ createRuntimeSlimHashOptions();
 
 /**
  * Resolve and instantiate CubeRenderTarget's captured equirectangular

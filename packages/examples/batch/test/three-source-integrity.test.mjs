@@ -137,14 +137,15 @@ test( 'canonical stock and visual runners verify served bytes and recheck the ch
 	const visualSource = readFileSync( new URL( '../run-e2e.mjs', import.meta.url ), 'utf8' );
 	const campaignSource = readFileSync( new URL( '../run-evidence-campaign.mjs', import.meta.url ), 'utf8' );
 	assert.match( stockSource, /officialThreeSourceVerifier\?\.verify\( filePath, buf \)/ );
-	assert.match( stockSource, /assertOfficialThreeR185Checkout\( threeRepo, 'batch post-run canonical evidence' \)/ );
+	assert.match( stockSource, /assertOfficialThreeCheckout\( threeRepo, 'batch post-run canonical evidence' \)/ );
 	assert.match( stockSource, /installBrowserFailureCollector\( page, \{ pageUrl \} \)/ );
+	assert.match( stockSource, /await failureCollector\.settle\(\);\s*const failures = failureCollector\.messages\(\);/ );
 	assert.doesNotMatch( stockSource, /Failed to load resource\/i\.test/ );
 	assert.match( stockSource, /failureCollector\?\.dispose\(\);[\s\S]*await context\.close\(\)\.catch/ );
-	assert.match( stockSource, /await browser\?\.close\(\)\.catch[\s\S]*if \( server\.listening \)/ );
+	assert.match( stockSource, /await closeOwnedEvidenceBrowser\( browser \);[\s\S]*if \( server\.listening \)/ );
 	assert.match( stockSource, /res\.end\( 'internal server error' \)/ );
 	assert.match( visualSource, /sourceRecorder\.setThreeSourceVerifier\(\s*officialThreeSourceVerifier\s*\)/ );
-	assert.match( visualSource, /assertOfficialThreeR185Checkout\( threeRepo, 'batch-e2e post-run canonical evidence' \)/ );
+	assert.match( visualSource, /assertPinnedThreeCheckout\( threeRepo, SLIM_RELEASE_PROFILE, 'batch-e2e post-run canonical evidence' \)/ );
 	assert.match( visualSource, /trackedReadFileSync\( join\( threeRepo, 'build\/three\.webgpu\.js' \), 'utf8' \)/ );
 	assert.doesNotMatch( visualSource, /pathToFileURL\( join\( threeRepo/ );
 	assert.match( campaignSource, /'--require-official-three-sources'/ );

@@ -11,15 +11,17 @@ import { DepthTexture } from 'three/src/textures/DepthTexture.js';
 import { RenderTarget } from 'three/src/core/RenderTarget.js';
 import QuadMesh from 'three/src/renderers/common/QuadMesh.js';
 import {
+	BasicShadowMap,
 	GreaterEqualCompare,
 	HalfFloatType,
 	LessEqualCompare,
 	NearestFilter,
+	PCFShadowMap,
+	PCFSoftShadowMap,
 	RGFormat,
 	VSMShadowMap,
 } from 'three/src/constants.js';
 
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { assertInternalPassFamily } from '@tsl-precompile/contract/internal-pass';
 import { createVSMSupportConfig } from '@tsl-precompile/contract/vsm-config';
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
@@ -29,17 +31,14 @@ import {
 } from '../aux-loader.js';
 import { getShadowArtifact } from '../_vendor-PrecompiledArtifactRegistry.js';
 import { hashPlainConfigSync } from '../graph-hash.js';
-import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from '../slim-source-policy.js';
+import { createRuntimeSlimHashOptions } from '../slim-source-policy.js';
 import {
 	resetRendererAndSceneState,
 	restoreRendererAndSceneState,
 } from '../slim-renderer-utils.js';
 import { createInternalPassMaterial } from './internal-pass.js';
 
-const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
-	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
-} );
+const DEFAULT_HASH_OPTIONS = /*@__PURE__*/ createRuntimeSlimHashOptions();
 
 function shadowError( code, message, detail = null ) {
 
@@ -106,14 +105,14 @@ function prepareCameraForRenderer( renderer, camera ) {
 
 }
 
-function unsupportedVsmReason( light ) {
+function unsupportedShadowReason( light, vsm ) {
 
-	if ( light.isPointLight ) return 'Three r185 does not run VSM blur for PointLightShadow.';
+	if ( light.isPointLight ) return vsm ? 'Three r185 does not run VSM blur for PointLightShadow.' : 'Point-light cube shadow scheduling is not captured by the 2D scheduler.';
 	const shadow = light.shadow;
 	if ( ! (
 		light.isDirectionalLight && shadow.isDirectionalLightShadow ||
 		light.isSpotLight && shadow.isSpotLightShadow
-	) ) return 'Only ordinary DirectionalLightShadow and SpotLightShadow VSM topologies are captured.';
+	) ) return 'Only ordinary DirectionalLightShadow and SpotLightShadow topologies are captured.';
 	const viewportCount = typeof shadow.getViewportCount === 'function' ? shadow.getViewportCount() : 1;
 	if ( viewportCount !== 1 ) return `Layered or multi-viewport VSM is not captured (viewportCount=${ viewportCount }).`;
 	const map = shadow.map;
@@ -250,8 +249,8 @@ function resizeState( renderer, state, light ) {
 	state.raw.depthTexture.image.width = width;
 	state.raw.depthTexture.image.height = height;
 	state.raw.depthTexture.needsUpdate = true;
-	state.vertical.setSize( width, height );
-	state.horizontal.setSize( width, height );
+	state.vertical?.setSize( width, height );
+	state.horizontal?.setSize( width, height );
 	state.needsInitialRender = true;
 
 }
@@ -264,7 +263,7 @@ function disposeLightState( state ) {
 
 		if ( shadow.map === state.raw ) shadow.map = null;
 		if ( shadow.mapPass === state.horizontal ) shadow.mapPass = null;
-		if ( shadow.__tslpVsmShadowTexture === state.horizontal.texture ) shadow.__tslpVsmShadowTexture = null;
+		if ( state.horizontal && shadow.__tslpVsmShadowTexture === state.horizontal.texture ) shadow.__tslpVsmShadowTexture = null;
 
 	}
 	for ( const target of [ state.raw, state.vertical, state.horizontal ] ) {
@@ -272,7 +271,7 @@ function disposeLightState( state ) {
 		if ( target && typeof target.dispose === 'function' ) target.dispose();
 
 	}
-	for ( const controller of [ state.controllers.vertical, state.controllers.horizontal ] ) {
+	for ( const controller of [ state.controllers?.vertical, state.controllers?.horizontal ] ) {
 
 		if ( controller && controller.material && typeof controller.material.dispose === 'function' ) controller.material.dispose();
 
@@ -308,10 +307,11 @@ export function createPrecompiledShadowSupport( options = {} ) {
 		}
 		const shadow = light.shadow;
 		const raw = makeRawShadowTarget( renderer, shadow );
-		raw.depthTexture.compareFunction = null;
-		const controllers = createVsmControllers( scene, config );
-		const vertical = makeVsmTarget( shadow.mapSize.width, shadow.mapSize.height, controllers.vertical.artifact, 'VSMVertical' );
-		const horizontal = makeVsmTarget( shadow.mapSize.width, shadow.mapSize.height, controllers.horizontal.artifact, 'VSMHorizontal' );
+		const vsm = renderer.shadowMap.type === VSMShadowMap;
+		if ( vsm ) raw.depthTexture.compareFunction = null;
+		const controllers = vsm ? createVsmControllers( scene, config ) : null;
+		const vertical = vsm ? makeVsmTarget( shadow.mapSize.width, shadow.mapSize.height, controllers.vertical.artifact, 'VSMVertical' ) : null;
+		const horizontal = vsm ? makeVsmTarget( shadow.mapSize.width, shadow.mapSize.height, controllers.horizontal.artifact, 'VSMHorizontal' ) : null;
 		state = {
 			scene,
 			light,
@@ -379,12 +379,20 @@ export function createPrecompiledShadowSupport( options = {} ) {
 		try {
 
 			scene.overrideMaterial = depthMaterial;
-			renderer.setRenderObjectFunction( createShadowRenderObjectFunction( renderer, shadow, VSMShadowMap ) );
+			renderer.setRenderObjectFunction( createShadowRenderObjectFunction( renderer, shadow, renderer.shadowMap.type ) );
 			renderer.setClearColor( 0x000000, 0 );
 			renderer.setRenderTarget( state.raw );
 			const oldName = scene.name;
 			scene.name = `Shadow Map [ ${ light.name || 'ID: ' + light.id } ]`;
 			try { renderer.render( scene, shadow.camera ); } finally { scene.name = oldName; }
+			if ( ! state.controllers ) {
+
+				shadow.map = state.raw;
+				shadow.needsUpdate = false;
+				state.needsInitialRender = false;
+				return;
+
+			}
 
 			// The caster filter rejects an ordinary fullscreen quad. Three
 			// restores the caller's render-object function before VSM replay;
@@ -432,14 +440,15 @@ export function createPrecompiledShadowSupport( options = {} ) {
 			lights: 0,
 			unsupported: [],
 		};
-		if ( ! renderer.shadowMap || renderer.shadowMap.type !== VSMShadowMap ) throw shadowError(
+		if ( ! renderer.shadowMap || ! [ BasicShadowMap, PCFShadowMap, PCFSoftShadowMap, VSMShadowMap ].includes( renderer.shadowMap.type ) ) throw shadowError(
 			'SHADOW_TYPE_UNSUPPORTED',
-			'The precompiled scheduler currently owns VSMShadowMap. Use the existing fallback adapter for other shadow-map types.',
+			'The precompiled scheduler requires a captured Basic, PCF, PCFSoft, or VSM shadow-map type.',
 			{ shadowType: renderer.shadowMap && renderer.shadowMap.type },
 		);
 		const lights = collectShadowLights( scene );
+		const vsm = renderer.shadowMap.type === VSMShadowMap;
 		const unsupported = lights
-			.map( ( light ) => ( { light, reason: unsupportedVsmReason( light ) } ) )
+			.map( ( light ) => ( { light, reason: unsupportedShadowReason( light, vsm ) } ) )
 			.filter( ( entry ) => entry.reason !== null );
 		const unsupportedLights = new Set( unsupported.map( ( entry ) => entry.light ) );
 		const supported = lights.filter( ( light ) => ! unsupportedLights.has( light ) );
@@ -458,7 +467,7 @@ export function createPrecompiledShadowSupport( options = {} ) {
 		// VSM WGSL is keyed by its depth/moments binding topology. Map size,
 		// light type, radius, and blur samples are live uniforms and therefore
 		// share one reusable family.
-		const config = createVSMSupportConfig( { renderer } );
+		const config = vsm ? createVSMSupportConfig( { renderer } ) : { shadowType: renderer.shadowMap.type };
 		let rendered = 0;
 		for ( const light of supported ) {
 

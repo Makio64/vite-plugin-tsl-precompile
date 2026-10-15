@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import StorageBufferAttribute from 'three/src/renderers/common/StorageBufferAttribute.js';
+import { RenderObjectRefreshType } from 'three/src/constants.js';
 
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
 import ReplayNodeFrame from '../src/slim-replay-node-frame.js';
@@ -12,6 +13,9 @@ import { getRendererRenderTargetTextureRegistry } from '../src/slim-support/rend
 import { shouldAdvanceTemporalState, withTemporalFrame } from '../src/slim-support/temporal-frame.js';
 import { createRenderObjectContextSelector } from '@tsl-precompile/contract/render-selector';
 import { materializeArtifactVariantSelectorAdapters } from '@tsl-precompile/contract/variant-selector-adapter';
+import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from '@tsl-precompile/contract/variant-selector-sidecar';
+import { writePMREMScalar } from '../src/writers.js';
+import CubePMREMGenerator from '../src/slim-stub-cube-pmrem-generator.js';
 
 function fakeRenderer() {
 
@@ -79,6 +83,174 @@ function renderObject( renderer, sourceMaterial, overrides = {} ) {
 	};
 
 }
+
+test( 'r186 native Renderer refresh dispatch updates boolean replay observers and numeric fallback observers', async () => {
+
+	const { default: Renderer } = await import( 'three/src/renderers/common/Renderer.js' );
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const calls = [];
+	let refresh = true;
+	const state = { updateBeforeNodes: [ {} ], updateNodes: [ {} ], updateAfterNodes: [ {} ] };
+	const live = renderObject( renderer, material(), {
+		getNodeBuilderState: () => state,
+		getMonitor: () => ( { needsRefresh: () => refresh } ),
+	} );
+	manager.nodeFrame.updateBeforeNode = () => calls.push( 'before' );
+	manager.nodeFrame.updateNode = () => calls.push( 'nodes' );
+	manager.nodeFrame.updateAfterNode = () => calls.push( 'after' );
+	renderer._nodes = manager;
+	renderer._objects = { get: () => live };
+	renderer._currentRenderBundle = null;
+	renderer._geometries = { updateForRender: () => calls.push( 'geometry' ) };
+	renderer._bindings = { updateForRender: () => calls.push( 'all-bindings' ), updateSharedForRender: () => calls.push( 'shared-bindings' ) };
+	renderer._pipelines = { updateForRender: () => calls.push( 'pipeline' ), isReady: () => true };
+	renderer.backend.draw = () => calls.push( 'draw' );
+	for ( const [ value, expected ] of [
+		[ true, [ 'before', 'geometry', 'nodes', 'all-bindings', 'pipeline', 'draw', 'after' ] ],
+		[ RenderObjectRefreshType.FULL, [ 'before', 'geometry', 'nodes', 'all-bindings', 'pipeline', 'draw', 'after' ] ],
+		[ RenderObjectRefreshType.SHARED, [ 'before', 'nodes', 'shared-bindings', 'pipeline', 'draw', 'after' ] ],
+		[ false, [ 'pipeline', 'draw' ] ],
+		[ RenderObjectRefreshType.NONE, [ 'pipeline', 'draw' ] ],
+	] ) {
+
+		refresh = value;
+		calls.length = 0;
+		Renderer.prototype._renderObjectDirect.call( renderer, live.object, live.material, live.scene, live.camera, live.lightsNode, null, null );
+		assert.deepEqual( calls, expected );
+
+	}
+
+} );
+
+test( 'r187 preparation callback runs before cold replay hydration and cached states keep the synchronous path', async () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const live = renderObject( renderer, material() );
+	let yields = 0;
+	const pending = manager.getForRender( live, async () => {
+
+		yields ++;
+		assert.equal( manager.get( live ).nodeBuilderState, undefined );
+
+	} );
+	assert.ok( pending instanceof Promise );
+	const state = await pending;
+	assert.equal( yields, 1 );
+	assert.equal( manager.getForRender( live, () => { yields ++; } ), state );
+	assert.equal( await manager.getForRenderAsync( live, () => { yields ++; } ), state );
+	assert.equal( yields, 1 );
+	const failed = renderObject( renderer, material() );
+	await assert.rejects( manager.getForRenderAsync( failed, async () => { throw new Error( 'preparation failed' ); } ), /preparation failed/ );
+	assert.equal( manager.get( failed ).nodeBuilderState, undefined );
+	assert.ok( manager.getForRender( failed ), 'failed preparation can be retried' );
+
+} );
+
+test( 'r187 program keys cache per material version and keep override keys live within one version', () => {
+
+	const renderer = fakeRenderer();
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	let reads = 0;
+	let currentKey = 'initial';
+	const source = { version: 0, customProgramCacheKey() { reads ++; return currentKey; } };
+	const scene = { overrideMaterial: null };
+	assert.equal( manager.getCustomProgramCacheKey( source, scene ), 'initial' );
+	assert.equal( manager.getCustomProgramCacheKey( source, scene ), 'initial' );
+	assert.equal( reads, 1 );
+	currentKey = 'changed';
+	source.version ++;
+	assert.equal( manager.getCustomProgramCacheKey( source, scene ), 'changed' );
+	assert.equal( reads, 2 );
+	scene.overrideMaterial = source;
+	currentKey = 'override-a';
+	assert.equal( manager.getCustomProgramCacheKey( source, scene ), 'override-a' );
+	currentKey = 'override-b';
+	assert.equal( manager.getCustomProgramCacheKey( source, scene ), 'override-b' );
+	assert.equal( reads, 4 );
+	manager.dispose();
+	assert.equal( manager.getCustomProgramCacheKey( source, { overrideMaterial: null } ), 'override-b' );
+	assert.equal( reads, 5 );
+
+} );
+
+test( 'r187 generated PMREM cubes hydrate exact live resources and update mip scalars after a rebake', () => {
+
+	const renderer = fakeRenderer();
+	renderer.backend.get = () => ( {} );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const generator = new CubePMREMGenerator( renderer );
+	generator._setSize( 256 );
+	const first = generator._allocateTarget();
+	first.texture.name = 'caller-renamed-PMREM';
+	const source = { kind: 'artifact.texture', textureUuid: 'captured-cube', isPMREMTexture: true, textureName: 'caller-renamed-PMREM', renderTargetSelector: { stale: 'generic target selector' } };
+	const captured = artifact( {
+		fragmentShader: 'var environment: texture_cube<f32>;',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 2, byteLength: 16 }, { name: 'environment', kind: 'sampled-texture', visibility: 2 } ] } ],
+		uniformPlan: [ { name: 'object', byteLength: 16, slots: [
+			{ offset: 0, size: 4, dtype: 'number', source: { kind: 'pmrem.maxLod', textureUuid: source.textureUuid } },
+			{ offset: 4, size: 4, dtype: 'number', source: { kind: 'pmrem.size', textureUuid: source.textureUuid } },
+		], textures: [ { name: 'environment', bindingKind: 'sampled-texture', textureType: 'cube', source } ] } ],
+	} );
+	const scene = { environment: first.texture };
+	const live = renderObject( renderer, material( captured ), { scene } );
+	const state = manager.getForRender( live );
+	live.getNodeBuilderState = () => state;
+	const [ uniform, sampled ] = state.bindings[ 0 ].bindings;
+	assert.equal( sampled.texture, first.texture );
+	manager.updateForRender( live );
+	assert.deepEqual( [ ...uniform.buffer ].slice( 0, 2 ), [ 5, 256 ] );
+	generator._setSize( 512 );
+	const next = generator._allocateTarget();
+	scene.environment = next.texture;
+	manager.nodeFrame.renderId ++;
+	manager.updateBefore( live );
+	manager.updateForRender( live );
+	assert.equal( sampled.texture, next.texture );
+	assert.deepEqual( [ ...uniform.buffer ].slice( 0, 2 ), [ 6, 512 ] );
+	assert.equal( captured._textureRefs, undefined );
+	manager.dispose(); generator.dispose(); first.dispose(); next.dispose();
+
+} );
+
+test( 'replay NodeManager binds live scene PMREM on hydration and follows a rebake', () => {
+
+	const renderer = fakeRenderer();
+	renderer.backend.get = () => ( {} );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const source = { kind: 'artifact.texture', textureUuid: 'captured', mapping: 306, textureName: 'PMREM.cubeUv', imageWidth: 336, imageHeight: 256 };
+	const captured = artifact( {
+		fragmentShader: 'var env: texture_2d<f32>;',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', visibility: 2, byteLength: 16 }, { name: 'env', kind: 'sampled-texture', visibility: 2 } ] } ],
+		uniformPlan: [ { name: 'object', byteLength: 16,
+			slots: [ { offset: 0, size: 4, dtype: 'number', source: { ...source, kind: 'pmrem.maxMip' } } ],
+			textures: [ { name: 'env', textureType: '2d', bindingKind: 'sampled-texture', source } ] } ],
+		_generatedUpdateGroup( frame, material, view ) {
+
+			writePMREMScalar( view, 0, 'pmrem.maxMip', material.precompiledArtifact, material, frame, source );
+
+		},
+	} );
+	const first = { isTexture: true, mapping: 306, name: 'PMREM.cubeUv', image: { width: 768, height: 1024 } };
+	const scene = { environment: first };
+	const live = renderObject( renderer, material( captured ), { scene } );
+	const state = manager.getForRender( live );
+	live.getNodeBuilderState = () => state;
+	const binding = state.bindings[ 0 ].bindings[ 1 ];
+	assert.equal( binding.texture, first );
+	manager.updateForRender( live );
+	assert.equal( state.bindings[ 0 ].bindings[ 0 ].buffer[ 0 ], 8 );
+	const next = { ...first, image: { width: 384, height: 512 } };
+	scene.environment = next;
+	manager.nodeFrame.renderId ++;
+	manager.updateBefore( live );
+	assert.equal( binding.texture, next );
+	manager.updateForRender( live );
+	assert.equal( state.bindings[ 0 ].bindings[ 0 ].buffer[ 0 ], 7 );
+	assert.equal( captured._textureRefs, undefined, 'live resources stay in the hydration-owned artifact view' );
+
+} );
 
 test( 'ReplayNodeManager installs render-target discovery before the first target bind', () => {
 
@@ -224,6 +396,33 @@ test( 'replay NodeManager applies the background selector profile from aux metad
 
 	const manager = new ReplayNodeManager( sourceRenderer, sourceRenderer.backend );
 	assert.doesNotThrow( () => manager.getForRender( live ) );
+
+} );
+
+test( 'replay NodeManager creates projected selectors directly and supports older project-only adapters', () => {
+
+	const renderer = fakeRenderer();
+	const signed = artifact( { materialShape: 'mesh-basic', renderContextSelectors: [ '{}' ] } );
+	materializeArtifactVariantSelectorAdapters( signed );
+	const adapter = signed[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
+	const live = renderObject( renderer, material( signed ) );
+	const manager = new ReplayNodeManager( renderer, renderer.backend );
+	const expected = adapter.project( createRenderObjectContextSelector( live, renderer ), 'mesh-basic' );
+	let creates = 0;
+	signed[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ] = {
+		...adapter,
+		create( ...args ) { creates ++; return adapter.create( ...args ); },
+		project() { assert.fail( 'direct creation must not reparse its result' ); },
+	};
+	assert.equal( manager._createReplaySelection( live ).renderContextSelector, expected );
+	assert.equal( creates, 1 );
+	let projects = 0;
+	signed[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ] = {
+		match: adapter.match,
+		project( ...args ) { projects ++; return adapter.project( ...args ); },
+	};
+	assert.equal( manager._createReplaySelection( live ).renderContextSelector, expected );
+	assert.equal( projects, 1 );
 
 } );
 
@@ -660,7 +859,7 @@ test( 'replay NodeManager supports compute, update scheduling, groups, and dispo
 	manager.updateForRender( ro );
 	manager.updateAfter( ro );
 	assert.deepEqual( calls, [ 'before', 'update', 'after' ] );
-	assert.equal( manager.needsRefresh( ro ), true );
+	assert.equal( manager.needsRefresh( ro ), RenderObjectRefreshType.FULL );
 	assert.equal( ( await manager.getForRenderAsync( renderObject( renderer, material() ) ) ).vertexShader, 'vertex' );
 	const asyncFailure = manager.getForRenderAsync( renderObject( renderer, { type: 'Material' } ) );
 	assert.ok( asyncFailure instanceof Promise );

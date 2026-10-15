@@ -38,11 +38,18 @@
  * @module AuxLoader
  */
 
+import { isRendererRegistryShape } from '@tsl-precompile/contract/artifact-variants';
+import { createThreeEmitterHashFields } from '@tsl-precompile/contract/three-emitter-identity';
+import { stampAuxEmitterProvenance } from './auxiliary/aux-emitter-provenance.js';
 import { registerPrecompiledArtifact, unregisterPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
+import { attachCollectedPostprocessTextures } from './slim-support/artifact-texture-wiring.js';
 import { getLiveNodeDependencies } from './slim-support/node-dependencies.js';
+import { setReplayPMREMGeneratorFactory } from './slim-support/pmrem-generator-factory.js';
+import { setReplayShadowSupportFactory } from './slim-support/renderer-shadows.js';
 
 /** @type {Map<string, Object>} */
 const REGISTRY = new Map();
+let pendingViewportRefs = new WeakSet();
 
 /**
  * Register a precompiled aux artifact. Called from the generated virtual
@@ -56,6 +63,39 @@ const REGISTRY = new Map();
  */
 export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 
+	registerAuxArtifactRecord( shape, configHash, artifact, opts, registerPrecompiledArtifact );
+
+}
+
+/** @internal Generated slim tables without renderer-registry shapes. */
+export function __registerAuxArtifactsOnly( entries, createPMREMGenerator = null, deferViewportRefs = false ) {
+
+	setReplayPMREMGeneratorFactory( createPMREMGenerator );
+	for ( const e of entries ) {
+
+		let artifact = e.artifact;
+		registerAuxArtifactRecord( e.shape, e.configHash, artifact, e, null, deferViewportRefs );
+		if ( ! deferViewportRefs ) continue;
+		// Reading the generated module's default table is also a lookup. Keep
+		// table replacement independent of the artifact already registered.
+		Object.defineProperty( e, 'artifact', {
+			get() { return prepareAuxArtifact( artifact ); },
+			set( value ) {
+
+				if ( Object.isFrozen( this ) ) throw new TypeError( 'Cannot replace an artifact in a frozen auxiliary entry.' );
+				artifact = value;
+
+			},
+			enumerable: true,
+			configurable: true,
+		} );
+
+	}
+
+}
+
+function registerAuxArtifactRecord( shape, configHash, artifact, opts, registerPrecompiled, deferViewportRefs = false ) {
+
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
 		throw new TypeError( 'registerAuxArtifact: shape must be a non-empty string' );
@@ -66,16 +106,34 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
 		throw new TypeError( 'registerAuxArtifact: configHash must be a non-empty string' );
 
 	}
+	if ( ! registerPrecompiled && isRendererRegistryShape( shape ) ) {
+
+		throw new TypeError( '__registerAuxArtifactsOnly: renderer-owned shapes require registerAuxArtifacts.' );
+
+	}
 	stampAuxMetadata( artifact, shape, configHash, opts );
 	normalizeRenderOutputFrameSizeUniform( artifact, shape );
 
-	// Pre-wire viewport/framebuffer texture fallbacks on registration so
-	// the artifact is ready for the hydrator before the first render frame.
+	// Public registration prepares viewport fallbacks immediately. Generated
+	// aux-only tables can defer this until lookup to skip unused pass setup.
 	// wireViewportTextureRefs is idempotent and silently no-ops until
 	// setupViewportTextureClasses() has been called.
-	wireViewportTextureRefs( artifact );
-	if ( isPrecompiledRegistryShape( shape ) ) registerPrecompiledArtifact( artifact );
+	if ( deferViewportRefs && artifact && typeof artifact === 'object' ) pendingViewportRefs.add( artifact );
+	else wireViewportTextureRefs( artifact );
+	if ( isRendererRegistryShape( shape ) ) registerPrecompiled( artifact );
 	REGISTRY.set( key( shape, configHash ), artifact );
+
+}
+
+function prepareAuxArtifact( artifact ) {
+
+	if ( artifact && pendingViewportRefs.has( artifact ) && _DepthTextureCtor && _FramebufferTextureCtor ) {
+
+		wireViewportTextureRefs( artifact );
+		pendingViewportRefs.delete( artifact );
+
+	}
+	return artifact;
 
 }
 
@@ -85,11 +143,15 @@ export function registerAuxArtifact( shape, configHash, artifact, opts = {} ) {
  *
  * @param {Array<{ shape: string, configHash: string, artifact: Object, name?: string, threeVersion?: string, pluginVersion?: string }>} entries
  */
-export function registerAuxArtifacts( entries ) {
+export function registerAuxArtifacts( entries, createPMREMGenerator = null, createShadowSupport = null ) {
 
+	setReplayPMREMGeneratorFactory( createPMREMGenerator );
+	setReplayShadowSupportFactory( createShadowSupport );
 	for ( const e of entries ) registerAuxArtifact( e.shape, e.configHash, e.artifact, {
 		name: e.name,
 		threeVersion: e.threeVersion,
+		threeRevision: e.threeRevision,
+		threeCommit: e.threeCommit,
 		pluginVersion: e.pluginVersion,
 	} );
 
@@ -130,7 +192,7 @@ export function loadAux( shape, configHash ) {
 
 	const k = key( shape, configHash );
 	const artifact = REGISTRY.get( k );
-	if ( artifact ) return artifact;
+	if ( artifact ) return prepareAuxArtifact( artifact );
 
 	const known = Array.from( REGISTRY.keys() ).filter( ( x ) => x.startsWith( shape + ':' ) );
 	if ( known.length >= 1 ) {
@@ -150,7 +212,7 @@ export function loadAux( shape, configHash ) {
 			);
 
 		}
-		return REGISTRY.get( known[ 0 ] );
+		return prepareAuxArtifact( REGISTRY.get( known[ 0 ] ) );
 
 	}
 
@@ -201,11 +263,11 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 
 	}
 
+	const boundArtifact = boundHash && REGISTRY.get( key( shape, boundHash ) );
+	if ( boundArtifact ) return auxEntry( shape, boundHash, boundArtifact, 'binding' );
 	const entries = registeredAuxEntries( shape );
 	if ( boundHash ) {
 
-		const artifact = REGISTRY.get( key( shape, boundHash ) );
-		if ( artifact ) return resolvedAuxEntry( shape, boundHash, artifact, 'binding' );
 		throw auxSelectionError(
 			'AUX_ARTIFACT_NOT_FOUND',
 			`[tsl-precompile/aux] no exact ${ JSON.stringify( shape ) } artifact exists for the bound configHash ` +
@@ -226,13 +288,13 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 
 			const hashOptions = entry.hashOptions || options.defaultHashOptions || null;
 			if ( ! validAuxHashOptions( hashOptions ) ) continue;
-			hashDomains.set( `${ hashOptions.threeVersion }\u0000${ hashOptions.pluginVersion }`, hashOptions );
+			hashDomains.set( auxHashDomainKey( hashOptions ), hashOptions );
 
 		}
 		if ( hashDomains.size === 0 && validAuxHashOptions( options.defaultHashOptions ) ) {
 
 			const hashOptions = options.defaultHashOptions;
-			hashDomains.set( `${ hashOptions.threeVersion }\u0000${ hashOptions.pluginVersion }`, hashOptions );
+			hashDomains.set( auxHashDomainKey( hashOptions ), hashOptions );
 
 		}
 		for ( const hashOptions of hashDomains.values() ) {
@@ -242,7 +304,7 @@ export function resolveAuxArtifactForInput( shape, input, options = {} ) {
 			if ( typeof computedHash !== 'string' || computedHash.length === 0 ) continue;
 			attemptedHashes.push( computedHash );
 			const artifact = REGISTRY.get( key( shape, computedHash ) );
-			if ( artifact ) return resolvedAuxEntry( shape, computedHash, artifact, 'hash' );
+			if ( artifact ) return auxEntry( shape, computedHash, artifact, 'hash' );
 
 		}
 
@@ -305,23 +367,30 @@ function registeredAuxEntries( shape ) {
 
 }
 
-function auxEntry( shape, configHash, artifact ) {
+function auxEntry( shape, configHash, artifact, matchedBy ) {
 
 	const threeVersion = readAuxMetadataString( artifact, '__tslpAuxThreeVersion' );
 	const pluginVersion = readAuxMetadataString( artifact, '__tslpAuxPluginVersion' );
-	return {
+	const emitterFields = createThreeEmitterHashFields( {
+		threeVersion,
+		threeRevision: readAuxMetadataString( artifact, '__tslpAuxThreeRevision' ) || artifact?.sourceThreeRevision,
+		threeCommit: readAuxMetadataString( artifact, '__tslpAuxThreeCommit' ) || artifact?.sourceThreeCommit,
+	} );
+	const entry = {
 		shape,
 		configHash,
 		name: artifact && ( artifact.__tslpAuxName || artifact.__name || artifact.name ) || null,
-		artifact,
-		hashOptions: threeVersion && pluginVersion ? { threeVersion, pluginVersion } : null,
+		artifact: prepareAuxArtifact( artifact ),
+		hashOptions: threeVersion && pluginVersion ? { threeVersion, ...emitterFields, pluginVersion } : null,
 	};
+	if ( matchedBy ) entry.matchedBy = matchedBy;
+	return entry;
 
 }
 
-function resolvedAuxEntry( shape, configHash, artifact, matchedBy ) {
+function auxHashDomainKey( options ) {
 
-	return { ...auxEntry( shape, configHash, artifact ), matchedBy };
+	return `${ options.threeVersion }\u0000${ options.pluginVersion }\u0000${ options.threeRevision || '' }\u0000${ options.threeCommit || '' }`;
 
 }
 
@@ -493,6 +562,10 @@ export function bindAuxConfig( node, shapeOrEntry, configHash = undefined ) {
 		throw new TypeError( 'bindAuxConfig: configHash must be a non-empty string.' );
 
 	}
+	if ( typeof entry.name === 'string' && entry.name.length > 0 ) Object.defineProperty( node, '__tslpAuxName', {
+		value: entry.name, configurable: true, writable: true,
+	} );
+	else if ( Object.hasOwn( node, '__tslpAuxName' ) ) delete node.__tslpAuxName;
 	Object.defineProperty( node, '__tslpAuxShape', {
 		value: entry.shape,
 		enumerable: false,
@@ -538,6 +611,7 @@ export function bindAuxByName( node, shape, nameOrConfigHash ) {
 function stampAuxMetadata( artifact, shape, configHash, opts = {} ) {
 
 	if ( ! artifact || typeof artifact !== 'object' ) return;
+	const emitterFields = createThreeEmitterHashFields( opts );
 	const auxName = opts.name || artifact.__tslpAuxName || artifact.__name || artifact.name || null;
 	try {
 
@@ -554,17 +628,12 @@ function stampAuxMetadata( artifact, shape, configHash, opts = {} ) {
 			Object.defineProperty( artifact, '__tslpAuxPluginVersion', { value: opts.pluginVersion, enumerable: false, configurable: true, writable: true } );
 
 		}
+		stampAuxEmitterProvenance( artifact, emitterFields );
 
 	} catch ( _ ) {
 		// Frozen/user-provided artifact objects still remain registered; they
 		// simply will not be discoverable by friendly name.
 	}
-
-}
-
-function isPrecompiledRegistryShape( shape ) {
-
-	return shape === 'shadow-depth' || shape === 'render-pipeline' || shape === 'output-transform';
 
 }
 
@@ -672,17 +741,8 @@ export function wireViewportTextureRefs( artifact ) {
 	if ( ! artifact || ! Array.isArray( artifact.uniformPlan ) ) return artifact;
 	if ( ! _DepthTextureCtor || ! _FramebufferTextureCtor ) return artifact;
 
-	const wgsl = [
-		artifact.vertexShader || '',
-		artifact.fragmentShader || '',
-		artifact.computeShader || '',
-	].join( '\n' );
-
-	const refs = artifact._textureRefs instanceof Map
-		? new Map( artifact._textureRefs )
-		: new Map();
-
-	let changed = false;
+	const originalRefs = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
+	let refs = originalRefs;
 
 	for ( const group of artifact.uniformPlan ) {
 
@@ -691,12 +751,17 @@ export function wireViewportTextureRefs( artifact ) {
 			const source = entry && entry.source || {};
 			if ( source.kind !== 'artifact.texture' || source.mapping !== 300 ) continue;
 			const uuid = source.textureUuid;
-			if ( ! uuid || refs.has( uuid ) ) continue;
+			if ( ! uuid || refs?.has( uuid ) ) continue;
+			if ( refs === originalRefs ) refs = new Map( refs );
 
 			// Determine WGSL type for this binding.
 			const bindingName = entry.name || '';
 			const escaped = bindingName.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' );
-			const isDepth = new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth`, 'm' ).test( wgsl );
+			const depthDeclaration = new RegExp( `var\\s+${ escaped }\\s*:\\s*texture_depth` );
+			// Each shader is a separate module; declarations cannot span stages.
+			const isDepth = depthDeclaration.test( artifact.vertexShader || '' )
+				|| depthDeclaration.test( artifact.fragmentShader || '' )
+				|| depthDeclaration.test( artifact.computeShader || '' );
 
 			let fallback;
 			if ( isDepth ) {
@@ -718,13 +783,12 @@ export function wireViewportTextureRefs( artifact ) {
 			}
 			fallback.needsUpdate = true;
 			refs.set( uuid, fallback );
-			changed = true;
 
 		}
 
 	}
 
-	if ( changed ) {
+	if ( refs !== originalRefs ) {
 
 		Object.defineProperty( artifact, '_textureRefs', {
 			value: refs,
@@ -778,6 +842,7 @@ export function attachArtifactTextureRefs( artifact, texture ) {
 export function cloneAuxArtifactForReplay( sourceArtifact ) {
 
 	if ( ! sourceArtifact || typeof sourceArtifact !== 'object' ) return sourceArtifact;
+	prepareAuxArtifact( sourceArtifact );
 	const descriptors = Object.getOwnPropertyDescriptors( sourceArtifact );
 	if ( sourceArtifact._textureRefs instanceof Map ) {
 
@@ -821,54 +886,18 @@ const POSTPROCESS_TEXTURE_WALK_SKIP_KEYS = new Set( [
 export function attachPostprocessTextureRefs( artifact, root ) {
 
 	if ( ! artifact || ! root ) return artifact;
+	return createPostprocessTextureAttacher( root )( artifact );
+
+}
+
+// One preparation transaction can bind many sub-passes to the same live graph.
+// Keep this snapshot local to that transaction: a later resize/replacement must
+// collect current textures again.
+export function createPostprocessTextureAttacher( root ) {
 
 	const candidates = [];
 	collectPostprocessTextures( root, candidates );
-	if ( candidates.length === 0 ) return artifact;
-
-	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
-	let changed = false;
-
-	for ( const group of artifact.uniformPlan || [] ) {
-
-		for ( const entry of group.textures || [] ) {
-
-			const source = entry && entry.source || {};
-			if ( ! source.textureUuid ) continue;
-			const passDepth = source.kind === 'depth.texture'
-				&& source.fromMaterialGraph === true
-				&& ! source.lightUuid
-				&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
-			if ( source.kind !== 'artifact.texture' && ! passDepth ) continue;
-			const wantedNames = passDepth
-				? [ 'depth' ]
-				: [ source.textureName, entry.name ].filter( ( name ) => typeof name === 'string' && name.length > 0 );
-			if ( wantedNames.length === 0 ) continue;
-			const match = candidates.find( ( candidate ) => candidate.texture
-				&& ( ! passDepth || candidate.texture.isDepthTexture === true || candidate.names.includes( 'depth' ) )
-				&& candidate.names.some( ( name ) => wantedNames.includes( name ) ) );
-			if ( match && match.texture && match.texture.isTexture === true ) {
-
-				refs.set( source.textureUuid, match.texture );
-				changed = true;
-
-			}
-
-		}
-
-	}
-
-	if ( changed ) {
-
-		Object.defineProperty( artifact, '_textureRefs', {
-			value: refs,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
-
-	}
-	return artifact;
+	return artifact => attachCollectedPostprocessTextures( artifact, candidates );
 
 }
 
@@ -959,66 +988,65 @@ export function attachPostprocessObject3DTargets( material, root ) {
 
 }
 
-function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
+/** Visit deep, shared post graphs without dropping resources at an arbitrary depth. */
+function* walkPostprocessGraph( root ) {
 
-	if ( ! root || depth > 32 ) return;
-	if ( typeof root !== 'object' && typeof root !== 'function' ) return;
-	if ( seen.has( root ) ) return;
-	seen.add( root );
-	for ( const dependency of getLiveNodeDependencies( root ) ) {
+	const pending = [ root ];
+	const seen = new Set();
+	while ( pending.length > 0 ) {
 
-		collectPostprocessTextures( dependency.node, out, seen, depth + 1 );
+		const node = pending.pop();
+		if ( ! node || ( typeof node !== 'object' && typeof node !== 'function' ) || seen.has( node ) ) continue;
+		seen.add( node );
+		yield node;
+		if ( node.isTexture === true ) continue;
 
-	}
+		const children = getLiveNodeDependencies( node ).map( dependency => dependency.node );
+		let keys = [];
+		try { keys = Object.getOwnPropertyNames( node ); } catch ( _ ) { continue; }
+		for ( const key of keys ) {
 
-	if ( root.isTexture === true ) {
-
-		rememberPostprocessTexture( out, root );
-		return;
-
-	}
-
-	if ( root.isPassTextureNode === true ) {
-
-		try { if ( typeof root.updateTexture === 'function' ) root.updateTexture(); } catch ( _ ) {}
-		const textureName = typeof root.textureName === 'string' ? root.textureName : null;
-		let texture = root.value && root.value.isTexture === true ? root.value : null;
-		if ( ! texture && root.passNode && typeof root.passNode.getTexture === 'function' ) {
-
-			try { texture = root.passNode.getTexture( textureName || 'output' ); } catch ( _ ) { texture = null; }
+			if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
+			let value;
+			try { value = node[ key ]; } catch ( _ ) { continue; }
+			if ( Array.isArray( value ) ) children.push( ...value );
+			else children.push( value );
 
 		}
-		rememberPostprocessTexture( out, texture, [ textureName ] );
+		// Keep the previous depth-first discovery order for named attachments.
+		for ( let index = children.length - 1; index >= 0; index -- ) pending.push( children[ index ] );
 
 	}
 
-	if ( root.isPassNode === true ) {
+}
 
-		collectPassNodeTextures( root, out );
+function collectPostprocessTextures( root, out ) {
 
-	}
+	for ( const node of walkPostprocessGraph( root ) ) {
 
-	if ( root.isRenderTarget === true || root.texture && root.texture.isTexture === true && typeof root.setSize === 'function' ) {
+		if ( node.isTexture === true ) {
 
-		collectRenderTargetTextures( root, out );
+			rememberPostprocessTexture( out, node );
+			continue;
 
-	}
+		}
+		if ( node.isPassTextureNode === true ) {
 
-	let keys = [];
-	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return; }
-	for ( const key of keys ) {
+			try { if ( typeof node.updateTexture === 'function' ) node.updateTexture(); } catch ( _ ) {}
+			const textureName = typeof node.textureName === 'string' ? node.textureName : null;
+			let texture = node.value && node.value.isTexture === true ? node.value : null;
+			if ( ! texture && node.passNode && typeof node.passNode.getTexture === 'function' ) {
 
-		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
-		let value = null;
-		try { value = root[ key ]; } catch ( _ ) { continue; }
-		if ( ! value ) continue;
-		if ( Array.isArray( value ) ) {
+				try { texture = node.passNode.getTexture( textureName || 'output' ); } catch ( _ ) { texture = null; }
 
-			for ( const item of value ) collectPostprocessTextures( item, out, seen, depth + 1 );
+			}
+			rememberPostprocessTexture( out, texture, [ textureName ] );
 
-		} else {
+		}
+		if ( node.isPassNode === true ) collectPassNodeTextures( node, out );
+		if ( node.isRenderTarget === true || node.texture && node.texture.isTexture === true && typeof node.setSize === 'function' ) {
 
-			collectPostprocessTextures( value, out, seen, depth + 1 );
+			collectRenderTargetTextures( node, out );
 
 		}
 
@@ -1026,38 +1054,11 @@ function collectPostprocessTextures( root, out, seen = new Set(), depth = 0 ) {
 
 }
 
-function findPostprocessPassCamera( root, seen = new Set(), depth = 0 ) {
+function findPostprocessPassCamera( root ) {
 
-	if ( ! root || depth > 32 ) return null;
-	if ( typeof root !== 'object' && typeof root !== 'function' ) return null;
-	if ( seen.has( root ) ) return null;
-	seen.add( root );
+	for ( const node of walkPostprocessGraph( root ) ) {
 
-	if ( root.isPassNode === true && root.camera && ! isRetroPassNode( root ) ) return root.camera;
-
-	let keys = [];
-	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return null; }
-	for ( const key of keys ) {
-
-		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
-		let value = null;
-		try { value = root[ key ]; } catch ( _ ) { continue; }
-		if ( ! value ) continue;
-		if ( Array.isArray( value ) ) {
-
-			for ( const item of value ) {
-
-				const camera = findPostprocessPassCamera( item, seen, depth + 1 );
-				if ( camera ) return camera;
-
-			}
-
-		} else {
-
-			const camera = findPostprocessPassCamera( value, seen, depth + 1 );
-			if ( camera ) return camera;
-
-		}
+		if ( node.isPassNode === true && node.camera && ! isRetroPassNode( node ) ) return node.camera;
 
 	}
 	return null;
@@ -1071,32 +1072,11 @@ function isRetroPassNode( node ) {
 
 }
 
-function collectPostprocessUpdateBeforeNodes( root, out, seen = new Set(), depth = 0 ) {
+function collectPostprocessUpdateBeforeNodes( root, out ) {
 
-	if ( ! root || depth > 32 ) return;
-	if ( typeof root !== 'object' && typeof root !== 'function' ) return;
-	if ( seen.has( root ) ) return;
-	seen.add( root );
+	for ( const node of walkPostprocessGraph( root ) ) {
 
-	if ( shouldAttachPostprocessUpdateBeforeNode( root ) && ! out.includes( root ) ) out.push( root );
-
-	let keys = [];
-	try { keys = Object.getOwnPropertyNames( root ); } catch ( _ ) { return; }
-	for ( const key of keys ) {
-
-		if ( POSTPROCESS_TEXTURE_WALK_SKIP_KEYS.has( key ) ) continue;
-		let value = null;
-		try { value = root[ key ]; } catch ( _ ) { continue; }
-		if ( ! value ) continue;
-		if ( Array.isArray( value ) ) {
-
-			for ( const item of value ) collectPostprocessUpdateBeforeNodes( item, out, seen, depth + 1 );
-
-		} else {
-
-			collectPostprocessUpdateBeforeNodes( value, out, seen, depth + 1 );
-
-		}
+		if ( shouldAttachPostprocessUpdateBeforeNode( node ) && ! out.includes( node ) ) out.push( node );
 
 	}
 
@@ -1223,6 +1203,7 @@ export function attachMRTTextureRefs( artifact, renderTarget ) {
 export function __resetAuxRegistryForTests() {
 
 	REGISTRY.clear();
+	pendingViewportRefs = new WeakSet();
 	WARNED_FALLBACKS.clear();
 	unregisterPrecompiledArtifacts();
 

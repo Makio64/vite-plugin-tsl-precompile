@@ -4,6 +4,8 @@ export interface AuxArtifactRegistration<TArtifact = unknown> {
 	artifact: TArtifact;
 	name?: string;
 	threeVersion?: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion?: string;
 }
 

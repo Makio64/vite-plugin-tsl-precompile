@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Color, Matrix4 } from 'three';
 
-import { updateDynamicLightUniforms } from '../src/hydrate/dynamic-light-buffers.js';
+import { createDynamicLightUniformUpdater, updateDynamicLightUniforms } from '../src/hydrate/dynamic-light-buffers.js';
 
 function makeLight( opts ) {
 
@@ -131,5 +131,13 @@ fn main() {
 	assert.deepEqual( Array.from( positions.slice( 4, 8 ) ), [ 4, 5, 6, 30 ] );
 	assert.deepEqual( Array.from( colors.slice( 4, 8 ) ), [ 2, 3, 4, 0 ] );
 	assert.deepEqual( Array.from( decays.slice( 4, 8 ) ), [ 1.5, 0, 0, 1 ] );
+
+	const update = createDynamicLightUniformUpdater( artifact, group );
+	pointA.intensity = 4;
+	frame.camera.matrixWorldInverse.makeTranslation( 0, 0, - 1 );
+	assert.equal( update( renderView, uniformBuffers, frame ), true );
+	assert.deepEqual( Array.from( colors.slice( 0, 4 ) ), [ 4, 2, 1, 0 ] );
+	assert.deepEqual( Array.from( positions.slice( 0, 4 ) ), [ 1, 2, 2, 12 ] );
+	assert.equal( createDynamicLightUniformUpdater( artifact, { name: 'object' } ), null );
 
 } );

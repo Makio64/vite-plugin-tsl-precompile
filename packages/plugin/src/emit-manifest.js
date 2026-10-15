@@ -11,15 +11,19 @@
  * @module EmitManifest
  */
 
+import { isRendererRegistryShape } from '@tsl-precompile/contract/artifact-variants';
+import { slimRuntimeEntryForMode } from './slim-source.js';
 import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
 import { forEachArtifactPayload } from '@tsl-precompile/contract/artifact-traversal';
 import { normalizeArtifactLightIdentitiesDeep } from '@tsl-precompile/contract/light-identities';
 import { emitUpdaterSource } from './emit-updater.js';
+import { emitSharedUniformGroupKeys } from './shared-uniform-groups.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 
 export const ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT = '@tsl-precompile/contract/attribute-generators';
 export const VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT = '@tsl-precompile/contract/variant-selector-adapter';
+export const DYNAMIC_BINDINGS_MATERIALIZER_IMPORT = '@tsl-precompile/contract/dynamic-bindings';
 
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
@@ -53,9 +57,9 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	// `dynamicBindings` is a validated, derived view of `uniformPlan`. Persisted
 	// captures keep it as a convergence guard, but serializing the same source
 	// records twice makes generated modules larger and slower to parse. Drop the
-	// redundant literal before light normalization, then reconstruct the public
-	// root/variant views from references into the emitted plan. This preserves
-	// the virtual-module API without duplicating source snapshots in its payload.
+	// redundant literal, then let the shared contract reconstruct the public
+	// root/variant views once from the emitted plan. This preserves the virtual-
+	// module API without repeating descriptor metadata or source snapshots.
 	const normalizedArtifact = normalizeArtifactLightIdentitiesDeep( artifact );
 	const artifactForEmission = replayEmission ? omitDynamicBindingsDeep( normalizedArtifact ) : normalizedArtifact;
 	const dynamicBindingRestorations = replayEmission ? emitDynamicBindingRestorations( artifactForEmission ) : [];
@@ -86,7 +90,19 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 			.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' )
 		: null;
 
+	const registerAuxiliary = sourceValidationMode === 'callsite' && isRendererRegistryShape( artifact.materialShape );
 	const lines = [];
+	if ( registerAuxiliary ) {
+
+		lines.push( `import { registerPrecompiledArtifacts as __registerAuxiliary } from ${ JSON.stringify( slimRuntimeEntryForMode( opts.slim === true ? 'prebuilt' : opts.slim ) ) };` );
+		lines.push( 'export { __registerAuxiliary };' );
+
+	}
+	if ( dynamicBindingRestorations.some( line => line.includes( '__tslp_collectDynamicBindings(' ) ) ) {
+
+		lines.push( `import { collectArtifactDynamicBindings as __tslp_collectDynamicBindings } from ${ JSON.stringify( DYNAMIC_BINDINGS_MATERIALIZER_IMPORT ) };` );
+
+	}
 	if ( materializeAttributeDescriptors ) {
 
 		lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
@@ -118,7 +134,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 			`export const update = null;`,
 			`export const updateGroup = null;`,
 			'',
-			`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+			`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings${ registerAuxiliary ? ', __registerAuxiliary' : '' } };`,
 			'',
 		);
 		return { source: lines.join( '\n' ), unsupportedKinds };
@@ -135,12 +151,13 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		...( materializeAttributeDescriptors ? [ '__tslp_materializeAttributes( artifact );' ] : [] ),
 		...( materializeVariantSelectorAdapter ? [ '__tslp_materializeVariantSelectors( artifact );' ] : [] ),
 		...dynamicBindingRestorations,
+		...emitSharedUniformGroupKeys( artifactForEmission ),
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
 		`export const dynamicBindings = artifact.dynamicBindings;`,
 		'',
-		`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+		`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings${ registerAuxiliary ? ', __registerAuxiliary' : '' } };`,
 		'',
 	);
 
@@ -191,7 +208,10 @@ function emitDynamicBindingRestorations( artifact ) {
 	const visit = ( member, memberExpression ) => {
 
 		if ( ! member || typeof member !== 'object' || Array.isArray( member ) ) return;
-		lines.push( `${ memberExpression }.dynamicBindings = ${ emitDynamicBindingArrayExpression( member, memberExpression ) };` );
+		const bindings = collectArtifactDynamicBindings( member ).length > 0
+			? `__tslp_collectDynamicBindings(${ memberExpression })`
+			: '[]';
+		lines.push( `${ memberExpression }.dynamicBindings = ${ bindings };` );
 		if ( ! member.variants || typeof member.variants !== 'object' || Array.isArray( member.variants ) ) return;
 		for ( const [ key, variant ] of Object.entries( member.variants ) ) {
 
@@ -202,44 +222,6 @@ function emitDynamicBindingRestorations( artifact ) {
 	};
 	visit( artifact, 'artifact' );
 	return lines;
-
-}
-
-function emitDynamicBindingArrayExpression( artifact, artifactExpression ) {
-
-	const sourceExpressions = new Map();
-	for ( let groupIndex = 0; groupIndex < ( artifact.uniformPlan || [] ).length; groupIndex ++ ) {
-
-		const group = artifact.uniformPlan[ groupIndex ];
-		for ( const collection of [ 'slots', 'textures', 'storageBuffers' ] ) {
-
-			const entries = group && Array.isArray( group[ collection ] ) ? group[ collection ] : [];
-			for ( let entryIndex = 0; entryIndex < entries.length; entryIndex ++ ) {
-
-				const source = entries[ entryIndex ] && entries[ entryIndex ].source;
-				if ( ! source || typeof source !== 'object' || sourceExpressions.has( source ) ) continue;
-				sourceExpressions.set(
-					source,
-					`${ artifactExpression }.uniformPlan[${ groupIndex }].${ collection }[${ entryIndex }].source`,
-				);
-
-			}
-
-		}
-
-	}
-
-	const entries = collectArtifactDynamicBindings( artifact ).map( ( entry ) => {
-
-		const sourceExpression = sourceExpressions.get( entry.source );
-		if ( ! sourceExpression ) throw new Error( '[tsl-precompile] could not link a derived dynamic binding to its emitted uniformPlan source' );
-		const metadata = { ...entry };
-		delete metadata.source;
-		const literal = JSON.stringify( metadata );
-		return `${ literal.slice( 0, - 1 ) },"source":${ sourceExpression }}`;
-
-	} );
-	return `[${ entries.join( ',' ) }]`;
 
 }
 

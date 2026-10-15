@@ -153,6 +153,78 @@ test( 'a body within the limit is read as utf-8', async () => {
 
 } );
 
+test( 'a completed reader releases received chunks while the request stays alive', async () => {
+
+	const req = request();
+	const concat = Buffer.concat;
+	let receivedChunks = null;
+	let concatenations = 0;
+	Buffer.concat = ( chunks, length ) => {
+
+		receivedChunks = chunks;
+		concatenations ++;
+		return concat( chunks, length );
+
+	};
+	try {
+
+		const bytes = Buffer.from( '{"name":"ócean"}' );
+		const promise = readCaptureBody( req, 1024 );
+		// Split inside a multibyte character to retain complete UTF-8 decoding.
+		req.emit( 'data', bytes.subarray( 0, 10 ) );
+		req.emit( 'data', bytes.subarray( 10 ) );
+		req.emit( 'end' );
+		assert.equal( await promise, '{"name":"ócean"}' );
+		assert.equal( concatenations, 1 );
+		assert.deepEqual( receivedChunks, [], 'request listeners must no longer retain the received Buffers' );
+		req.emit( 'data', Buffer.from( 'late data' ) );
+		req.emit( 'end' );
+		assert.equal( concatenations, 1, 'a duplicate end must not allocate another body buffer' );
+
+	} finally {
+
+		Buffer.concat = concat;
+
+	}
+
+} );
+
+test( 'rejected readers never concatenate buffered data when their drained streams end', async () => {
+
+	const concat = Buffer.concat;
+	let concatenations = 0;
+	Buffer.concat = ( chunks, length ) => {
+
+		concatenations ++;
+		return concat( chunks, length );
+
+	};
+	try {
+
+		for ( const terminal of [ 'oversized', 'aborted', 'error' ] ) {
+
+			const req = request();
+			const promise = readCaptureBody( req, 8 );
+			req.emit( 'data', Buffer.alloc( 6 ) );
+			if ( terminal === 'oversized' ) req.emit( 'data', Buffer.alloc( 6 ) );
+			else if ( terminal === 'error' ) req.emit( 'error', new Error( 'socket reset' ) );
+			else req.emit( 'aborted' );
+			await assert.rejects( promise, ( error ) => error.statusCode === ( terminal === 'oversized' ? 413 : 400 ) );
+			req.emit( 'data', Buffer.alloc( 16 ) );
+			req.emit( 'end' );
+			req.emit( 'end' );
+
+		}
+		assert.equal( concatenations, 0, 'rejected bodies must never allocate a decoded body buffer' );
+
+	} finally {
+
+		Buffer.concat = concat;
+
+	}
+
+} );
+
 test( 'a declared Content-Length over the limit is refused before any byte is buffered', async () => {
 
 	const req = request( { 'content-length': String( DEV_CAPTURE_MAX_BODY_BYTES + 1 ) } );

@@ -1,0 +1,14 @@
+{
+  "name": "examples-performance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "compare": "node compare.mjs",
+    "compare:releases": "node compare-releases.mjs",
+    "verify": "node ../../plugin/src/cli/verify.js artifacts --source src --source-root . --no-auto-mark"
+  },
+  "dependencies": { "@tsl-precompile/runtime": "workspace:*", "three": "0.186.1" },
+  "devDependencies": { "vite": "^8.0.16", "vite-plugin-tsl-precompile": "workspace:*", "playwright": "^1.59.1" }
+}

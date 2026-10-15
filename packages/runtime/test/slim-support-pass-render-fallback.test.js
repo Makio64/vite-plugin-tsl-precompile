@@ -412,3 +412,32 @@ test( 'shareRenderTargetTextures shares a bare render target into slim', () => {
 	assert.equal( slim.backend.get( color ).texture, full.backend.get( color ).texture );
 
 } );
+
+test( 'mapped material transactions restore arrays and overrides after nested rendering or mapper failure', async () => {
+
+	const { withMappedSceneMaterials } = await import( '../src/slim-support/pass-render-fallback.js' );
+	const original = { name: 'source' };
+	const mapped = { name: 'mapped' };
+	const array = [ original, original ];
+	const object = { material: array };
+	const scene = { overrideMaterial: original, traverse( visit ) { visit( object ); } };
+	assert.throws( () => withMappedSceneMaterials( scene, () => {
+
+		assert.equal( scene.overrideMaterial, original, 'override mapper can retain the live node material' );
+		assert.deepEqual( object.material, [ mapped, mapped ] );
+		withMappedSceneMaterials( scene, () => {}, () => original );
+		assert.deepEqual( object.material, [ mapped, mapped ] );
+		throw new Error( 'render failed' );
+
+	}, ( material, { override } ) => override ? material : mapped ), /render failed/ );
+	assert.equal( object.material, array );
+	assert.equal( scene.overrideMaterial, original );
+	assert.throws( () => withMappedSceneMaterials( scene, () => {}, ( material, { override } ) => {
+
+		if ( ! override ) throw new Error( 'mapping failed' );
+		return mapped;
+
+	} ), /mapping failed/ );
+	assert.equal( scene.overrideMaterial, original );
+
+} );

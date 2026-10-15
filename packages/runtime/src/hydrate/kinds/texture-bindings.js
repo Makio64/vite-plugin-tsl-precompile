@@ -1,10 +1,10 @@
 import Sampler from 'three/src/renderers/common/Sampler.js';
+import { installTextureBindingResourceRecovery } from './texture-binding-resource-recovery.js';
 import { SampledTexture, SampledCubeTexture, Sampled3DTexture, SampledArrayTexture } from 'three/src/renderers/common/SampledTexture.js';
 
-// WebGPUTextureUtils and WebGPUBindingUtils in Three r185 only test whether
-// TextureNode.compareNode is null. The precompiled runtime intentionally does
-// not retain the authored node graph, so a stable marker carries the captured
-// comparison intent without changing the Sampler's direct texture ownership.
+// Native r186/r187 query TextureNode.isSampleCompare(); the vendored legacy
+// renderer reads compareNode. Both carry captured comparison intent without
+// retaining an authored node graph or changing direct texture ownership.
 const COMPARISON_NODE_MARKER = Object.freeze( { isNode: true } );
 
 export function createSampledTextureBinding( {
@@ -46,6 +46,7 @@ export function createSamplerBinding( {
 	const binding = new Sampler( name, texture );
 	binding.textureNode = {
 		compareNode: comparison === true ? COMPARISON_NODE_MARKER : null,
+		isSampleCompare() { return this.compareNode !== null; },
 	};
 	return prepareTextureBinding( binding, visibility, groupNode );
 
@@ -55,6 +56,7 @@ function prepareTextureBinding( binding, visibility, groupNode ) {
 
 	binding.visibility = visibility | 0;
 	binding.groupNode = groupNode;
+	installTextureBindingResourceRecovery( binding );
 	installRebindableTextureBindingClone( binding );
 	return binding;
 

@@ -151,3 +151,17 @@ test( 'reflector material helpers prefer stashed base nodes and reflector index'
 	assert.equal( findReflectorBaseNodeInMaterial( material, - 1 ), first );
 
 } );
+
+test( 'hydration discovers reflector graphs only when captured dependencies need them', () => {
+
+	let visits = 0;
+	const base = { constructor: { type: 'ReflectorBaseNode' }, renderTargets: new Map(), updateBefore() {} };
+	const material = { colorNode: { isNode: true, traverse( visit ) { visits ++; visit( { isNode: true, _reflectorBaseNode: base } ); } } };
+	assert.deepEqual( collectMaterialReflectorBaseNodes( material, { uniformPlan: [] } ), [] );
+	assert.equal( visits, 0, 'unused graph must not be traversed during hydration' );
+	assert.deepEqual( collectMaterialReflectorBaseNodes( material, { uniformPlan: [ { textures: [ { source: { kind: 'reflector.texture' } } ] } ] } ), [ base ] );
+	assert.ok( visits > 0 );
+	material.__tslpReflectorBaseNodes = [ base ];
+	assert.deepEqual( collectMaterialReflectorBaseNodes( material, { uniformPlan: [] } ), [ base ], 'explicit live owners remain authoritative' );
+
+} );

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * Produce one exact 254-case visual-evidence campaign:
- *   - 209 official Three r185 examples in the canonical upstream root
- *   - 45 local routes in six isolated cohort roots
- *   - one aggregate coverage-evidence-set.json proving the exact union
+ * Produce the exact checked catalogue's visual-evidence campaign, with
+ * isolated upstream/local cohorts and one manifest-bound aggregate.
  */
 
 import { spawn } from 'node:child_process';
@@ -11,10 +9,11 @@ import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createRunId } from './e2e-evidence.mjs';
+import { createRunId, readEvidenceCatalogue } from './e2e-evidence.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( SELF, '../../..' );
+const catalogue = readEvidenceCatalogue( resolve( SELF, 'example-catalogue.json' ) );
 const optionPrefixes = [ '--three-repo=', '--output-root=', '--campaign-id=' ];
 
 function argumentValue( args, prefix ) {
@@ -24,14 +23,9 @@ function argumentValue( args, prefix ) {
 
 }
 
-export const evidenceCohorts = Object.freeze( [
-	'shadow-debug',
-	'postprocessing-debug',
-	'pmrem-debug',
-	'compute-debug',
-	'mrt-debug',
-	'wow-showcase',
-] );
+export const evidenceCohorts = Object.freeze( [ ...new Set( catalogue.records
+	.filter( ( record ) => record.sourceKind === 'local' )
+	.map( ( record ) => record.source.project ) ) ].sort() );
 
 export function assertFreshCampaignOutputRoot( outputRoot ) {
 
@@ -125,7 +119,7 @@ export async function runEvidenceCampaign( {
 
 	};
 
-	await runRecordedStage( 'running exact 209-case upstream cohort', 'run-e2e.mjs', [
+	await runRecordedStage( `running exact ${ catalogue.upstreamCaseNames.length }-case upstream cohort`, 'run-e2e.mjs', [
 		...common,
 		`--output-root=${ outputRoot }`,
 		'--canonical-evidence',
@@ -146,7 +140,7 @@ export async function runEvidenceCampaign( {
 	const interruption = isInterrupted();
 	if ( interruption ) return signalExitCode( interruption );
 
-	await runRecordedStage( 'validating the exact 254-case aggregate', 'run-coverage-summary.mjs', [
+	await runRecordedStage( `validating the exact ${ catalogue.caseCount }-case aggregate`, 'run-coverage-summary.mjs', [
 		`--output-root=${ outputRoot }`,
 	] );
 	logger.log(
@@ -191,7 +185,7 @@ function parseCliOptions( argv, env ) {
 	if ( ! threeRepoValue ) {
 
 		return {
-			error: '[evidence-campaign] --three-repo=<clean-official-r185-checkout> is required.',
+			error: '[evidence-campaign] --three-repo=<clean-official-three-checkout> is required.',
 		};
 
 	}

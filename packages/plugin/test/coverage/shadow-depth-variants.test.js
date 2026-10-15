@@ -197,6 +197,10 @@ test( 'compileTSL: shadow-depth aux artifacts retain custom shadow variants', as
 			source.kind === 'material.opacity' && source.bindingOwner === RENDER_BINDING_OWNER_KINDS.MATERIAL
 		), 'shadow override opacity explicitly opts out of the caster default' );
 
+		const scoped = await compileTSL( renderer, scene, camera, { noGlobalMRT: true, materials: [ mapMaterial ] } );
+		assert.ok( scoped.byMaterialUuid.get( mapMaterial.uuid ), 'explicit material capture retains its beauty program' );
+		assert.ok( scoped.every( candidate => candidate.materialShape !== 'shadow-depth' ), 'borrowed caster bindings do not include shared shadow programs in a material capture' );
+
 		const family = shadowArtifacts.find( ( artifact ) => artifact.variants && Object.keys( artifact.variants ).length > 1 );
 		assert.ok( family, `expected a shadow-depth variant family; saw ${ shadowArtifacts.length } shadow artifact(s)` );
 		const validation = validateArtifact( family, { label: 'shadow-depth family' } );

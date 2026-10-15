@@ -9,9 +9,22 @@ export interface MaterialRegistrationDescriptor {
 export interface MaterialSourceHashOptions {
 	name: string;
 	threeVersion: string;
+	threeRevision?: string;
+	threeCommit?: string;
 	pluginVersion?: string;
 	toolchainVersion?: string;
 }
+
+export interface AuxiliarySourceHashOptions {
+	shape: string;
+	threeVersion: string;
+	threeRevision?: string;
+	threeCommit?: string;
+	pluginVersion: string;
+}
+
+export function createNodeGraphHashPayload( node: unknown, options: AuxiliarySourceHashOptions ): string;
+export function createPlainConfigHashPayload( config: unknown, options: AuxiliarySourceHashOptions ): string;
 
 export function registerMaterial(
 	MaterialCtor: abstract new ( ...args: never[] ) => object,

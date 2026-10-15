@@ -64,6 +64,7 @@ import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { computeArtifactContentHash, computePlainConfigHash } from './hash.js';
 import { assertArtifactContentIntegrity } from './artifact-content-integrity.js';
+import { signedCaptureContentMatches } from './dev-capture-equality.js';
 import { ARTIFACT_CONTENT_HASH_VERSION, stripPrivateArtifactFieldsInPlace } from '@tsl-precompile/contract/artifact-content';
 import { collectArtifactVariantCandidates, mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { isAuxiliaryMaterialShape } from '@tsl-precompile/contract/auxiliary-shapes';
@@ -75,7 +76,8 @@ import {
 	assertInternalPassFamily,
 } from '@tsl-precompile/contract/internal-pass';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
+import { resolveDevCaptureRelease, assertDevCaptureVersion, assertDevCaptureEmitter, captureReleaseHashOptions, artifactEmitterHashFields, auxiliaryCaptureEnvelopesAgree } from './dev-capture-release.js';
 import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { normalizeMarkerSourceProvenance } from './_shared/source-provenance.js';
@@ -114,6 +116,7 @@ let atomicWriteCounter = 0;
  */
 export function attachDevCapture( server, opts ) {
 
+	const captureRelease = resolveDevCaptureRelease( opts.verifiedThreeRelease );
 	const artifactsDir = resolve( opts.artifactsDir );
 	const manifestPath = join( artifactsDir, 'manifest.json' );
 	let captureWriteQueue = Promise.resolve();
@@ -183,7 +186,7 @@ export function attachDevCapture( server, opts ) {
 				canonicalizeCaptureHashes( payload );
 
 			}
-			validatePayload( payload );
+			validatePayload( payload, { captureRelease } );
 			let resolvedSourceOwner = null;
 			if (
 				! isAuxPayload( payload )
@@ -264,12 +267,12 @@ function isAuxiliaryFamilyPayload( payload ) {
 
 }
 
-function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
+function validatePayload( payload, { auxiliaryFamilyMember = false, captureRelease = THREE_RELEASE_PROFILES.stable } = {} ) {
 
 	if ( ! payload || typeof payload !== 'object' || Array.isArray( payload ) ) throw einval( 'payload must be an object' );
 	if ( isAuxiliaryFamilyPayload( payload ) ) {
 
-		validateAuxiliaryFamilyPayload( payload );
+		validateAuxiliaryFamilyPayload( payload, captureRelease );
 		return;
 
 	}
@@ -278,6 +281,7 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 		throw einval( 'payload.artifact must be an object' );
 
 	}
+	if ( captureRelease.channel === 'development' && ! payload.artifact.artifactContentHashVersion ) assertDevCaptureEmitter( payload, captureRelease );
 	if ( payload.materialShape !== undefined && ! isAuxPayload( payload ) ) {
 
 		throw einval( `payload.materialShape is not a supported auxiliary shape: ${ JSON.stringify( payload.materialShape ) }` );
@@ -303,11 +307,8 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 			throw einval( 'aux payload.threeVersion must be an exact Three package version such as "0.185.1"' );
 
 		}
-		if ( payload.threeVersion !== SLIM_THREE_PACKAGE_VERSION ) {
-
-			throw einval( `aux payload.threeVersion must match the current exact baseline ${ SLIM_THREE_PACKAGE_VERSION }` );
-
-		}
+		assertDevCaptureVersion( payload.threeVersion, captureRelease, 'aux payload.threeVersion' );
+		assertDevCaptureEmitter( payload, captureRelease );
 		if ( payload.pluginVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
 
 			throw einval( `aux payload.pluginVersion must match the current toolchain ${ ARTIFACT_TOOLCHAIN_VERSION }` );
@@ -333,6 +334,7 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 			assertArtifactContentIntegrity( payload.artifact, payload.hash, {
 				label: `aux payload ${ JSON.stringify( `${ payload.materialShape }:${ payload.configHash }` ) }`,
 				shape: payload.materialShape,
+				...captureReleaseHashOptions( captureRelease ),
 				threeVersion: payload.threeVersion,
 				pluginVersion: payload.pluginVersion,
 				required: true,
@@ -383,11 +385,8 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 			throw einval( 'content-addressed payloads require sourceThreeVersion and sourceHashVersion' );
 
 		}
-		if ( threeVersion !== SLIM_THREE_PACKAGE_VERSION ) {
-
-			throw einval( `signed payload sourceThreeVersion must match the current exact baseline ${ SLIM_THREE_PACKAGE_VERSION }` );
-
-		}
+		assertDevCaptureVersion( threeVersion, captureRelease, 'signed payload sourceThreeVersion' );
+		assertDevCaptureEmitter( payload, captureRelease );
 		if ( toolchainVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
 
 			throw einval( `signed payload sourceHashVersion must match the current toolchain ${ ARTIFACT_TOOLCHAIN_VERSION }` );
@@ -395,6 +394,7 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 		}
 		const computed = computeArtifactContentHash( payload.artifact, {
 			shape: `material:${ payload.name }`,
+			...captureReleaseHashOptions( captureRelease ),
 			threeVersion,
 			pluginVersion: toolchainVersion,
 		} );
@@ -414,8 +414,9 @@ function validatePayload( payload, { auxiliaryFamilyMember = false } = {} ) {
 
 }
 
-export function validateAuxiliaryFamilyPayload( payload ) {
+export function validateAuxiliaryFamilyPayload( payload, configuredRelease = THREE_RELEASE_PROFILES.stable ) {
 
+	const captureRelease = resolveDevCaptureRelease( configuredRelease );
 	const family = payload.auxiliaryFamily;
 	if ( ! INTERNAL_PASS_FAMILIES.includes( family ) ) throw einval(
 		`auxiliary family payload.auxiliaryFamily must be one of ${ INTERNAL_PASS_FAMILIES.join( ', ' ) }`,
@@ -434,7 +435,7 @@ export function validateAuxiliaryFamilyPayload( payload ) {
 	let familyConfigHash = null;
 	for ( const member of payload.members ) {
 
-		validatePayload( member, { auxiliaryFamilyMember: true } );
+		validatePayload( member, { auxiliaryFamilyMember: true, captureRelease } );
 		if ( ! isAuxPayload( member ) ) throw einval( 'auxiliary family payload members must all be auxiliary captures' );
 		if ( ! allowedShapes.has( member.materialShape ) ) throw einval(
 			`auxiliary family ${ JSON.stringify( family ) } cannot contain shape ${ JSON.stringify( member.materialShape ) }`,
@@ -480,6 +481,7 @@ export function validateAuxiliaryFamilyPayload( payload ) {
 		const descriptor = artifact?.internalPass;
 		const expectedConfigHash = computePlainConfigHash( descriptor.config, {
 			shape: family,
+			...captureReleaseHashOptions( captureRelease ),
 			threeVersion,
 			pluginVersion,
 		} );
@@ -661,7 +663,7 @@ function aggregateSignedMaterialFamily( payload, existing, storedCapture, source
 	const storedArtifact = storedCapture.artifact;
 	const incomingArtifact = payload.artifact;
 	if ( ! isCurrentFullySignedArtifact( storedArtifact ) || ! isCurrentFullySignedArtifact( incomingArtifact ) ) return null;
-	if ( ! SIGNED_FAMILY_COMPATIBILITY_FIELDS.every( ( field ) =>
+	if ( ! [ 'sourceThreeRevision', 'sourceThreeCommit' ].every( ( field ) => storedArtifact[ field ] === incomingArtifact[ field ] ) || ! SIGNED_FAMILY_COMPATIBILITY_FIELDS.every( ( field ) =>
 		typeof storedArtifact[ field ] === 'string' && storedArtifact[ field ].length > 0 && storedArtifact[ field ] === incomingArtifact[ field ]
 	) ) {
 
@@ -671,6 +673,7 @@ function aggregateSignedMaterialFamily( payload, existing, storedCapture, source
 
 	const storedHash = computeArtifactContentHash( storedArtifact, {
 		shape: `material:${ payload.name }`,
+		...artifactEmitterHashFields( storedArtifact ),
 		threeVersion: storedArtifact.sourceThreeVersion,
 		pluginVersion: storedArtifact.sourceHashVersion,
 	} );
@@ -699,6 +702,7 @@ function aggregateSignedMaterialFamily( payload, existing, storedCapture, source
 	}
 	const mergedHash = computeArtifactContentHash( mergedArtifact, {
 		shape: `material:${ payload.name }`,
+		...artifactEmitterHashFields( mergedArtifact ),
 		threeVersion: mergedArtifact.sourceThreeVersion,
 		pluginVersion: mergedArtifact.sourceHashVersion,
 	} );
@@ -723,6 +727,8 @@ function isCurrentFullySignedArtifact( artifact ) {
 
 const AUXILIARY_SIGNED_FAMILY_COMPATIBILITY_FIELDS = Object.freeze( [
 	'internalPass',
+	'sourceThreeRevision',
+	'sourceThreeCommit',
 	'sourceGraphHash',
 	'sourceValidationMode',
 ] );
@@ -738,19 +744,7 @@ function aggregateSignedAuxiliaryFamily( payload, existing, storedCapture ) {
 	) return null;
 
 	const key = `${ payload.materialShape }:${ payload.configHash }`;
-	const envelopeCompatible =
-		existing.shape === payload.materialShape &&
-		existing.configHash === payload.configHash &&
-		existing.threeVersion === payload.threeVersion &&
-		existing.pluginVersion === payload.pluginVersion &&
-		storedCapture.__materialShape === payload.materialShape &&
-		storedCapture.__configHash === payload.configHash &&
-		storedCapture.threeVersion === payload.threeVersion &&
-		storedCapture.pluginVersion === payload.pluginVersion &&
-		storedArtifact.sourceThreeVersion === payload.threeVersion &&
-		storedArtifact.sourceHashVersion === payload.pluginVersion &&
-		incomingArtifact.sourceThreeVersion === payload.threeVersion &&
-		incomingArtifact.sourceHashVersion === payload.pluginVersion;
+	const envelopeCompatible = auxiliaryCaptureEnvelopesAgree( payload, existing, storedCapture );
 	const rootMetadataCompatible = AUXILIARY_SIGNED_FAMILY_COMPATIBILITY_FIELDS.every( ( field ) =>
 		stableJsonStringify( storedArtifact[ field ], `stored auxiliary ${ field }` ) ===
 		stableJsonStringify( incomingArtifact[ field ], `incoming auxiliary ${ field }` )
@@ -761,6 +755,7 @@ function aggregateSignedAuxiliaryFamily( payload, existing, storedCapture ) {
 
 	const hashOptions = {
 		shape: payload.materialShape,
+		...artifactEmitterHashFields( payload.artifact ),
 		threeVersion: payload.threeVersion,
 		pluginVersion: payload.pluginVersion,
 	};
@@ -997,6 +992,7 @@ function createStoredAuxArtifact( payload ) {
 		__hash: payload.hash || payload.configHash,
 		__name: payload.name || `aux-${ payload.materialShape }`,
 		threeVersion: payload.threeVersion,
+		...artifactEmitterHashFields( payload.artifact ),
 		pluginVersion: payload.pluginVersion,
 		artifact: payload.artifact,
 	};
@@ -1011,6 +1007,7 @@ function createAuxManifestEntry( payload, filename ) {
 		configHash: payload.configHash,
 		hash: payload.hash || null,
 		threeVersion: payload.threeVersion,
+		...artifactEmitterHashFields( payload.artifact ),
 		pluginVersion: payload.pluginVersion,
 	};
 
@@ -1101,32 +1098,7 @@ async function captureJsonFileMatches( filepath, value, opts = {} ) {
 
 		const stored = JSON.parse( await readFile( filepath, 'utf8' ) );
 		if ( stableJsonStringify( stored, 'stored capture' ) === stableJsonStringify( value, 'incoming capture' ) ) return true;
-		if ( typeof opts.contentShape !== 'string' || opts.contentShape.length === 0 ) return false;
-
-		// Fully signed artifact families can be semantically identical while
-		// Three's private cache keys and capture-session UUIDs differ. The current
-		// content hash proves payload equivalence; compare the wrapper separately
-		// so source-owner additions still update the stored envelope.
-		const storedArtifact = stored && stored.artifact;
-		const incomingArtifact = value && value.artifact;
-		if ( ! storedArtifact || ! incomingArtifact ) return false;
-		if ( storedArtifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ||
-			incomingArtifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) return false;
-		const storedEnvelope = { ...stored };
-		const incomingEnvelope = { ...value };
-		delete storedEnvelope.artifact;
-		delete incomingEnvelope.artifact;
-		if ( stableJsonStringify( storedEnvelope, 'stored capture envelope' ) !== stableJsonStringify( incomingEnvelope, 'incoming capture envelope' ) ) return false;
-
-		const threeVersion = storedArtifact.sourceThreeVersion;
-		const toolchainVersion = storedArtifact.sourceHashVersion;
-		if ( typeof threeVersion !== 'string' || typeof toolchainVersion !== 'string' ) return false;
-		if ( incomingArtifact.sourceThreeVersion !== threeVersion || incomingArtifact.sourceHashVersion !== toolchainVersion ) return false;
-		return computeArtifactContentHash( storedArtifact, {
-			shape: opts.contentShape,
-			threeVersion,
-			pluginVersion: toolchainVersion,
-		} ) === value.__hash;
+		return signedCaptureContentMatches( stored, value, opts.contentShape );
 
 	} catch ( _ ) {
 

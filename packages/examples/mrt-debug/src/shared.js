@@ -53,7 +53,7 @@ export async function createScene( { title, cameraPosition = [ 3.2, 2.0, 4.4 ], 
 			import( 'three/webgpu' ),
 		] );
 		captureRuntime.installPrecompileMarker( captureThree, { devEndpoint: CAPTURE_ENDPOINT } );
-		captureRuntime.setDevRenderer( renderer );
+		await captureRuntime.setDevRenderer( renderer );
 
 	}
 

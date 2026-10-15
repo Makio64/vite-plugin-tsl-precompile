@@ -20,7 +20,7 @@ treat compiler-free slim mode as a separate, stricter optimization.
 - Inspect the lockfile, package scripts, Vite config shape, renderer bootstrap, material factories, routes, and existing artifacts before editing.
 - Preserve the project's package manager and code style. Merge config arrays and objects; do not replace unrelated plugins, aliases, build options, or initialization logic.
 - Use compatibility-first sequencing for new or broken integrations. If an app is already intentionally configured for slim mode and has current capture/build evidence, preserve that mode and validate it in place; do not downgrade it merely to replay this workflow.
-- Keep `three` on the exact peer version required by the installed plugin and runtime. The current alpha requires `three@0.185.1`, Vite `>=6.4.3 <9`, and Node `>=24.0.0`; never use `^` or `~` for `three`. TypeScript projects must also install exact matching declarations, currently `@types/three@0.185.1`.
+- Keep `three` on the exact peer version required by the installed plugin and runtime. The current alpha requires `three@0.186.1`, Vite `>=6.4.3 <9`, and Node `>=24.0.0`; never use `^` or `~` for `three`. TypeScript projects must also install exact matching declarations, currently `@types/three@0.186.0`.
 - Install `vite-plugin-tsl-precompile` and `@tsl-precompile/runtime` at matching releases when versions are explicitly selected.
 - Never create or hand-edit capture JSON. Artifacts are generated build inputs and should be committed.
 - Do not claim completion merely because the source builds. A real render on
@@ -99,6 +99,10 @@ application's production backend-matched replay.
 
 ## 1. Audit the application
 
+For a requested copy or an unpublished/local plugin checkout, first read
+[local-consumer.md](references/local-consumer.md). It covers isolation, packed
+dependencies, and the distinction between a package root and Vite's app root.
+
 Find:
 
 1. The active Vite config and package-manager lockfile.
@@ -107,6 +111,15 @@ Find:
 3. Every reachable `*NodeMaterial` construction or factory and the last TSL graph assignment for each material.
 4. Routes, lazy states, camera types, light/shadow modes, geometry variants, clipping, instancing/skinning, MRT, post-processing, backgrounds, PMREM, and compute paths that may change shader topology.
 5. Existing `.precompile()` calls, `setupPrecompile()`, `artifacts/`, or plugin configuration. Extend valid integration instead of duplicating it.
+
+Record the production application build separately from a library build. A
+repository may use `vite build` for its library and `vite build --mode demo`
+for the actual pages. Automatic detection is scoped to Vite's `root`;
+use explicit markers for shared material source outside it and include those
+files in the verifier's source inputs.
+Inspect subclasses and factory returns as well as direct constructors;
+automatic detection of `new MeshBasicNodeMaterial()` does not establish
+coverage of `new SdfTextMaterial()` or materials loaded by a GLTF loader.
 
 If the project uses classic `WebGLRenderer`, is not Vite-based, or does not use
 TSL materials, stop and explain that the plugin does not apply without a
@@ -163,32 +176,32 @@ without explicit user approval.
 
 ## 2. Install compatible dependencies
 
-Use the detected package manager. Keep the plugin in `devDependencies`; keep the runtime and exact Three version in `dependencies`. Use the matching pair below for the current alpha:
+Use the detected package manager. Keep the plugin in `devDependencies`; keep the runtime and exact Three version in `dependencies` for an application. For a library with a separate demo, preserve its public dependency contract and follow the demo-only packaging checks in [local-consumer.md](references/local-consumer.md). Use the matching pair below for the current alpha:
 
 ```sh
 # pnpm
 pnpm add -D vite-plugin-tsl-precompile@alpha
-pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
 # TypeScript projects only:
-pnpm add -D @types/three@0.185.1 --save-exact
+pnpm add -D @types/three@0.186.0 --save-exact
 
 # npm
 npm install --save-dev vite-plugin-tsl-precompile@alpha
-npm install --save-exact @tsl-precompile/runtime@alpha three@0.185.1
+npm install --save-exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript projects only:
-npm install --save-dev --save-exact @types/three@0.185.1
+npm install --save-dev --save-exact @types/three@0.186.0
 
 # yarn
 yarn add --dev vite-plugin-tsl-precompile@alpha
-yarn add --exact @tsl-precompile/runtime@alpha three@0.185.1
+yarn add --exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript projects only:
-yarn add --dev --exact @types/three@0.185.1
+yarn add --dev --exact @types/three@0.186.0
 
 # bun
 bun add --dev vite-plugin-tsl-precompile@alpha
-bun add --exact @tsl-precompile/runtime@alpha three@0.185.1
+bun add --exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript projects only:
-bun add --dev --exact @types/three@0.185.1
+bun add --dev --exact @types/three@0.186.0
 ```
 
 Run only the commands for the lockfile that owns the project. If packages are already present, reconcile versions rather than adding duplicates. Confirm the resolved versions satisfy both packages' peer dependencies before continuing.
@@ -331,6 +344,13 @@ that reveals the materials and await
 `setup.waitForCaptureSettled({ since: status })`. Do not substitute a fixed
 sleep when this signal is available.
 
+Short-lived render targets need a narrower lifetime boundary: after drawing
+their marked material, await
+`setup.waitForCaptureSettled({ materials: [material] })` before disposing its
+resources. This waits for those material instances' latest captures without
+waiting for unrelated scene materials that are still being assembled. Keep
+this wait inside the development path.
+
 For post-processing, backgrounds, PMREM, MRT, compute, or compiler-free adoption, read [advanced-capture.md](references/advanced-capture.md) before changing setup.
 
 ## 7. Build and smoke-test
@@ -369,6 +389,13 @@ modes, re-run development capture, source-aware verification, the production
 build, and the representative preview on every production backend. For an app
 that began the task in a verified slim mode, keep it there and apply the slim
 checklist directly.
+
+When the user already requested a compiler-free/precompiled conversion of a
+separate copy, that request authorizes progressing to slim after compatibility
+passes. Do not treat a compatibility build as proof of shader replay: it still
+uses Three's live compiler. Preserve the working compatibility build as a
+visual reference and compare the same camera, viewport, time, and interaction
+states against slim. Report any explicit hybrid compute or renderer support.
 
 ## Definition of done
 

@@ -30,11 +30,16 @@
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --port=8729 --port-retries=20
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --target-tick=60
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --timings
+ *   node packages/examples/batch/run-e2e.mjs --filter=ocean --case-timeout-ms=300000
  *   node packages/examples/batch/run-e2e.mjs --filter=ocean --slim-bundle=/tmp/three.webgpu.slim.js
  *   TSLP_E2E_OUT=/tmp/tslp-ocean node packages/examples/batch/run-e2e.mjs --filter=ocean --reuse-reference-shot --no-save-shots
  */
 
 import { chromium } from 'playwright';
+import { launchOwnedEvidenceBrowser, closeOwnedEvidenceBrowser } from './e2e-browser-process.mjs';
+import { readCanvasBrightFraction } from './e2e-canvas-brightness.mjs';
+import { waitForFrozenWebGPUFrame } from './e2e-frozen-frame-readiness.mjs';
+import { installDeterministicObjectIds, rewriteThreeCoreDeterministicObjectIds, rewriteSlimDeterministicObjectIds } from './e2e-object-id-policy.mjs';
 import { createServer } from 'node:http';
 import { readdirSync, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -43,13 +48,15 @@ import { fileURLToPath } from 'node:url';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '@tsl-precompile/contract/texture-props';
 import { instrumentLiveUniformIdentities } from '../../plugin/src/babel-transform.js';
 import { validateAuxiliaryFamilyPayload } from '../../plugin/src/dev-capture-server.js';
+import { readCaptureBody } from 'vite-plugin-tsl-precompile/build/capture-request';
 import { installBrowserFailureCollector } from '../browser-failure-policy.mjs';
 
 import {
-	assertOfficialThreeR185Checkout,
+	assertPinnedThreeCheckout,
 	assertThreeCheckoutMatchesVersion,
-	createOfficialThreeR185SourceVerifier,
+	createPinnedThreeSourceVerifier,
 	readThreeGitIdentity,
+	resolveE2EThreeRoot,
 } from './_three-version.mjs';
 import {
 	E2E_EVIDENCE_MANIFEST,
@@ -69,12 +76,21 @@ import {
 	verifyEvidenceDescriptor,
 } from './e2e-evidence.mjs';
 import { createE2EEvidenceGate } from './e2e-evidence-gate.mjs';
-import { classifyDirectNodeMaterialCapture } from './e2e-direct-node-material-policy.mjs';
+import { firstFatalPageErrorMessage, installE2EFatalPageErrorGuard, isE2EFatalPageError } from './e2e-fatal-page-error.mjs';
+import {
+	DEFAULT_E2E_CASE_TIMEOUT_MS,
+	isE2ECaseTimeoutError,
+	runE2ECaseWithWatchdog,
+} from './e2e-case-watchdog.mjs';
+import {
+	classifyDirectNodeMaterialCapture,
+	isRendererOwnedBackgroundMaterial,
+	isRendererOwnedVsmMaterial,
+} from './e2e-direct-node-material-policy.mjs';
 import {
 	assertEvidenceEnvironment,
 	assertEvidenceEnvironmentMatches,
 	collectEvidenceEnvironment,
-	launchEvidenceBrowser,
 } from './e2e-environment.mjs';
 import {
 	drainAndSettleE2EGpuDiagnostics,
@@ -127,7 +143,7 @@ import {
 	psnrThresholdForExample,
 	tierExamples,
 } from './psnr.mjs';
-import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
+import { loadSlimBundle, slimBundleHashOptions, slimBundleReleaseProfile, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 import { coalesceUserArtifactVariantFamilies } from './user-artifact-families.mjs';
 import { rewriteR185AddonCompatibility } from './r185-addon-compat.mjs';
 import {
@@ -135,6 +151,7 @@ import {
 	computeE2EArtifactMetrics,
 } from './e2e-artifact-metrics.mjs';
 import { applyBatchCapturePayload } from './capture-payload-store.mjs';
+import { withE2ECaseResources } from './e2e-case-resources.mjs';
 import {
 	assertOutputFileTarget,
 	assertSafeJsonOutputName,
@@ -207,6 +224,7 @@ const SLIM_HASH_OPTS = ( () => {
 	}
 
 } )();
+const SLIM_RELEASE_PROFILE = slimBundleReleaseProfile( slimBundle );
 console.log( `[batch-e2e] slim bundle: ${ SLIM_BUNDLE } (sha256:${ slimBundle.shortSha256 })` );
 console.log( `[batch-e2e] slim bundle hash opts: threeVersion=${ SLIM_HASH_OPTS.threeVersion } pluginVersion=${ SLIM_HASH_OPTS.pluginVersion }` );
 console.log( `[batch-e2e] evidence input: ${ INPUT_ROOT }` );
@@ -225,9 +243,7 @@ function parseFloatOr( value, fallback ) {
 
 }
 
-const threeRepo = resolve(
-	getArg( '--three-repo=', process.env.TSLP_THREE_REPO || resolve( SELF, '../../../../three.js' ) )
-);
+const threeRepo = resolveE2EThreeRoot( { args, selfDir: SELF } );
 const localExamplesRootArg = getArg( '--local-examples-root=', '' );
 const localExamplesRoot = localExamplesRootArg ? resolve( localExamplesRootArg ) : null;
 const filter = getArg( '--filter=', '' );
@@ -255,6 +271,7 @@ let port = parseIntAtLeast( getArg( '--port=', '8729' ), 8729, 1 );
 const portRetries = parseIntAtLeast( getArg( '--port-retries=', '100' ), 100, 0 );
 const captureWaitMs = parseIntAtLeast( getArg( '--capture-wait-ms=', '12000' ), 12000, 0 );
 const HAS_EXPLICIT_CAPTURE_WAIT = args.some( ( arg ) => arg.startsWith( '--capture-wait-ms=' ) );
+const caseTimeoutMs = parseIntAtLeast( getArg( '--case-timeout-ms=', process.env.TSLP_E2E_CASE_TIMEOUT_MS || String( DEFAULT_E2E_CASE_TIMEOUT_MS ) ), DEFAULT_E2E_CASE_TIMEOUT_MS, 1 );
 const replayWaitMs = parseIntAtLeast( getArg( '--replay-wait-ms=', '5000' ), 5000, 0 );
 const targetTick = parseIntAtLeast( getArg( '--target-tick=', '0' ), 0, 0 );
 const HAS_EXPLICIT_TARGET_TICK = args.some( ( arg ) => arg.startsWith( '--target-tick=' ) );
@@ -283,6 +300,7 @@ try {
 
 }
 const EVIDENCE_AFFECTING_ARG_PREFIXES = [
+	'--case-timeout-ms=',
 	'--capture-wait-ms=',
 	'--replay-wait-ms=',
 	'--target-tick=',
@@ -321,7 +339,7 @@ if ( localExamplesRoot && ! existsSync( localExamplesRoot ) ) {
 	process.exit( 2 );
 
 }
-if ( EVIDENCE_CATALOGUE.threeVersion !== SLIM_HASH_OPTS.threeVersion ) {
+if ( ! localExamplesRoot && EVIDENCE_CATALOGUE.threeVersion !== SLIM_HASH_OPTS.threeVersion ) {
 
 	console.error(
 		`[batch-e2e] catalogue Three version ${ JSON.stringify( EVIDENCE_CATALOGUE.threeVersion ) } ` +
@@ -334,7 +352,9 @@ if ( EVIDENCE_CATALOGUE.threeVersion !== SLIM_HASH_OPTS.threeVersion ) {
 let threeCheckout;
 try {
 
-	threeCheckout = assertThreeCheckoutMatchesVersion( threeRepo, SLIM_HASH_OPTS.threeVersion, 'batch-e2e' );
+	threeCheckout = SLIM_RELEASE_PROFILE.channel === 'development'
+		? assertPinnedThreeCheckout( threeRepo, SLIM_RELEASE_PROFILE, 'batch-e2e development' )
+		: assertThreeCheckoutMatchesVersion( threeRepo, SLIM_HASH_OPTS.threeVersion, 'batch-e2e' );
 
 } catch ( error ) {
 
@@ -472,9 +492,10 @@ if ( officialThreeSourcesRequired ) {
 
 	try {
 
-		assertOfficialThreeR185Checkout( threeRepo, 'batch-e2e canonical evidence' );
-		officialThreeSourceVerifier = createOfficialThreeR185SourceVerifier(
+		assertPinnedThreeCheckout( threeRepo, SLIM_RELEASE_PROFILE, 'batch-e2e canonical evidence' );
+		officialThreeSourceVerifier = createPinnedThreeSourceVerifier(
 			threeRepo,
+			SLIM_RELEASE_PROFILE,
 			'batch-e2e official Three sources',
 		);
 
@@ -686,13 +707,14 @@ const SLIM_REPLAY_DIRECT_EXPORTS = new Set( [
 // discovery is independent of the alternate path's package boundary.
 const SLIM_BUNDLE_MODULE_URL = `data:text/javascript;base64,${ slimBundle.bytes.toString( 'base64' ) }`;
 const SLIM_REPLAY_SLIM_EXPORTS = Object.keys( await import( SLIM_BUNDLE_MODULE_URL ) );
-function readR185WebgpuExportNames() {
+function readNativeWebgpuExportNames() {
 
 	const source = trackedReadFileSync( join( threeRepo, 'build/three.webgpu.js' ), 'utf8' );
 	const blocks = [ ...source.matchAll( /^export\s*\{([^}]*)\}(?:\s+from\s+['"][^'"]+['"])?\s*;/gm ) ];
-	if ( blocks.length !== 2 ) {
+	const expectedBlocks = SLIM_RELEASE_PROFILE.channel === 'development' ? 3 : 2;
+	if ( blocks.length !== expectedBlocks ) {
 
-		throw new Error( `Expected two named export blocks in the exact r185 three.webgpu.js build, found ${ blocks.length }.` );
+		throw new Error( `Expected ${ expectedBlocks } named export blocks in the verified ${ SLIM_RELEASE_PROFILE.id } three.webgpu.js build, found ${ blocks.length }.` );
 
 	}
 	const names = [];
@@ -704,7 +726,7 @@ function readR185WebgpuExportNames() {
 			const match = /^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec( specifier );
 			if ( ! match ) {
 
-				throw new Error( `Could not parse exact r185 three.webgpu.js export ${ JSON.stringify( specifier ) }.` );
+				throw new Error( `Could not parse verified ${ SLIM_RELEASE_PROFILE.id } three.webgpu.js export ${ JSON.stringify( specifier ) }.` );
 
 			}
 			names.push( match[ 2 ] || match[ 1 ] );
@@ -715,7 +737,7 @@ function readR185WebgpuExportNames() {
 	return [ ...new Set( names ) ].sort();
 
 }
-const SLIM_REPLAY_FULL_EXPORTS = readR185WebgpuExportNames();
+const SLIM_REPLAY_FULL_EXPORTS = readNativeWebgpuExportNames();
 const SLIM_REPLAY_FORWARD_EXPORTS = SLIM_REPLAY_SLIM_EXPORTS
 	.filter( ( name ) => /^[A-Za-z_$][\w$]*$/.test( name ) )
 	.filter( ( name ) => ! SLIM_REPLAY_DIRECT_EXPORTS.has( name ) )
@@ -1047,27 +1069,6 @@ function rewriteReplayAddon( source ) {
 		return `import { ${ kept.join( ', ' ) } } from ${ quote }three/webgpu${ quote }`;
 	} );
 	return needsFullNodeMaterial ? `import { NodeMaterial } from '/build/three.webgpu.js';\n${ rewritten }` : rewritten;
-
-}
-
-function rewriteThreeCoreDeterministicObjectIds( source ) {
-
-	const text = String( source );
-	const needle = `Object.defineProperty( this, 'id', { value: _object3DId ++ } );`;
-	const replacement = `const __tslpObject3DId = typeof globalThis !== 'undefined' && typeof globalThis.__tslpStableObject3DId === 'function'
-\t\t\t\t? globalThis.__tslpStableObject3DId()
-\t\t\t\t: _object3DId ++;
-\t\t\tObject.defineProperty( this, 'id', { value: __tslpObject3DId } );`;
-	return text.includes( needle ) ? text.replace( needle, replacement ) : text;
-
-}
-
-function rewriteSlimDeterministicObjectIds( source ) {
-
-	return String( source ).replace(
-		/this\.isObject3D=!0,Object\.defineProperty\(this,"id",\{value:([A-Za-z_$][\w$]*)\+\+\}\)/,
-		( match, counter ) => `this.isObject3D=!0,Object.defineProperty(this,"id",{value:"undefined"!=typeof globalThis&&"function"==typeof globalThis.__tslpStableObject3DId?globalThis.__tslpStableObject3DId():${ counter }++})`
-	);
 
 }
 
@@ -1430,15 +1431,18 @@ import { collectEffectNodes as __collectRegisteredEffectNodes } from '/__tslp_ru
 import { installVelocityProjectionLifecycle as __installVelocityProjectionLifecycle } from '/__tslp_runtime/slim-support/velocity-projection-lifecycle.js';
 import { createRenderObjectContextSelector as __createRenderObjectContextSelector, projectRenderObjectContextSelector as __projectRenderObjectContextSelector } from '/__tslp_contract/render-selector.js';
 import { MATERIAL_TEXTURE_PROPS as __MATERIAL_TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __MATERIAL_NODE_TEXTURE_KEYS } from '/__tslp_contract/texture-props.js';
-import { createMaterialContextKey as __createMaterialContextKey, createObjectIdentityKeyer as __createObjectIdentityKeyer, createStockMaterialTopologyKey as __createStockMaterialTopologyKey, getMaterialContextMap as __getMaterialContextMap, getSceneTopologyMap as __getSceneTopologyMap } from '/__tslp_batch/material-context-cache.mjs';
+import { createMaterialContextKey as __createMaterialContextKey, createObjectIdentityKeyer as __createObjectIdentityKeyer, createStockMaterialTopologyKey as __createStockMaterialTopologyKey, getMaterialContextMap as __getMaterialContextMap, getSceneTopologyMap as __getSceneTopologyMap, promoteObservedTopologyCaptureCandidate as __promoteObservedTopologyCaptureCandidate, rememberTopologyCaptureCandidate as __rememberTopologyCaptureCandidate } from '/__tslp_batch/material-context-cache.mjs';
 import { createCubeCapturePrearmRegistry as __createCubeCapturePrearmRegistry, isVerifiedCubeRenderTarget as __isVerifiedCubeRenderTarget } from '/__tslp_batch/cube-capture-prearm.mjs';
 import { createLayeredCapturePrearmRegistry as __createLayeredCapturePrearmRegistry, isVerifiedLayeredRenderTarget as __isVerifiedLayeredRenderTarget } from '/__tslp_batch/layered-capture-prearm.mjs';
 import { synchronizeTemporalJitterNode as __sharedSynchronizeTemporalJitterNode } from '/__tslp_batch/temporal-jitter.mjs';
 
 const __classifyDirectNodeMaterialCapture = ${ classifyDirectNodeMaterialCapture.toString() };
+const __isRendererOwnedBackgroundMaterial = ${ isRendererOwnedBackgroundMaterial.toString() };
+const __isRendererOwnedVsmMaterial = ${ isRendererOwnedVsmMaterial.toString() };
 const __state = window.__TSLP_E2E || { example: 'unknown' };
 const __counts = Object.create( null );
 const __pending = [];
+const __observedMaterials = new WeakSet();
 const __seenMaterialContexts = new WeakMap();
 const __captureTopologyRepresentativesByScene = new WeakMap();
 const __captureTopologyIdentity = __createObjectIdentityKeyer();
@@ -1818,6 +1822,15 @@ function __mark( material, className, sourceObject = null, camera = null, render
 	if ( topologyRepresentative ) {
 
 		seenContexts.set( contextKey, topologyRepresentative );
+		__rememberTopologyCaptureCandidate( topologyRepresentative, {
+			material,
+			scene: captureScene,
+			camera: captureCamera,
+			object: captureObject,
+			renderer,
+			renderTarget,
+			mrt,
+		} );
 		window.__tslpCaptureTopologyAliases = ( window.__tslpCaptureTopologyAliases | 0 ) + 1;
 		__queueCubeCapturePrearm( topologyRepresentative, prearmQueue, {
 			renderer,
@@ -2135,11 +2148,20 @@ function __isRegisteredPostprocessFinalQuad( target, material ) {
 // capturePostProcessingLive() intentionally compiles an isolated final quad so
 // Three does not execute every updateBefore node on the caller's live graph.
 // Keep unrelated standalone mesh.render paths on the user-material path.
-function __markStandaloneRenderTargetMaterial( target, renderer = null ) {
+function __markStandaloneRenderTargetMaterial( target, renderer = null, camera = null ) {
 	if ( ! target || target.isScene === true || ! target.material ) return;
 	const materials = Array.isArray( target.material ) ? target.material : [ target.material ];
 	for ( const m of materials ) {
 		if ( ! m || m.visible === false ) continue;
+		if ( __isRendererOwnedVsmMaterial(
+			m,
+			target,
+			renderer,
+			camera,
+			Original.VSMShadowMap,
+			Original.RGFormat,
+			Original.HalfFloatType,
+		) ) continue;
 		if ( target.isQuadMesh === true && (
 			__isRegisteredPostprocessFinalQuad( target, m )
 			|| target.name !== 'Render Pipeline' && __isRegisteredPostprocessSubpassMaterial( m )
@@ -2200,6 +2222,7 @@ async function __flush( passNodes = [] ) {
 		pendingItems.push( item );
 	}
 	if ( pendingItems.length === 0 ) return;
+	for ( const item of pendingItems ) __promoteObservedTopologyCaptureCandidate( item, __observedMaterials );
 	const observedPipelineScenes = new Set( passNodes
 		.filter( ( passNode ) => passNode && passNode.scene )
 		.map( ( passNode ) => passNode.scene ) );
@@ -2256,7 +2279,7 @@ async function __flush( passNodes = [] ) {
 			item.material.needsUpdate = true;
 			item.material.precompile( item.name, {
 				__tslpAutoMark: true,
-				__tslpObserveNextRender: observedPipelineScenes.has( item.scene ),
+				__tslpObserveNextRender: observedPipelineScenes.has( item.scene ) && item.observedDirectRender !== true,
 				renderer: itemRenderer,
 				scene: item.scene || null,
 				camera: item.camera || null,
@@ -2275,6 +2298,22 @@ async function __flush( passNodes = [] ) {
 	// entries pending above, then let the runtime observer harvest the complete
 	// synchronous RenderObject family before extraction begins.
 	if ( hasObservedPipelineItems ) {
+		// RenderPipeline's NodeFrame may have already marked a PassNode updated
+		// for the frozen application frame. Calling pipeline.render() again then
+		// redraws only its cached final quad and never exposes the newly armed
+		// material markers to renderer.render(scene, camera). Invoke each exact
+		// discovered pass boundary once so Three restores its own target/MRT,
+		// override, layer, and render-object-function state around a real draw.
+		for ( const passNode of passNodes ) {
+			const pendingItem = pendingItems.find( ( item ) => item.scene === passNode.scene );
+			const passRenderer = pendingItem && ( pendingItem.renderer || __renderer );
+			if ( ! pendingItem || ! passRenderer || typeof passNode.updateBefore !== 'function' ) continue;
+			try {
+				passNode.updateBefore( { renderer: passRenderer } );
+			} catch ( err ) {
+				console.warn( '[tslp-e2e] observed pass capture render failed:', err && err.message || err );
+			}
+		}
 		const observedRenderers = new Set( pendingItems
 			.filter( ( item ) => observedPipelineScenes.has( item.scene ) )
 			.map( ( item ) => item.renderer || __renderer ) );
@@ -2710,6 +2749,20 @@ function __isSyntheticCaptureRender() {
 	return ( window.__tslpSyntheticRenderActive | 0 ) > 0;
 }
 
+function __renderObjectAndObserveMaterial( dispatch, material ) {
+	const renderResult = dispatch();
+	if ( material && ( typeof material === 'object' || typeof material === 'function' ) ) {
+		__observedMaterials.add( material );
+		const observedContexts = __getMaterialContextMap( __seenMaterialContexts, material );
+		if ( observedContexts ) {
+			for ( const pendingItem of new Set( observedContexts.values() ) ) {
+				__promoteObservedTopologyCaptureCandidate( pendingItem, __observedMaterials );
+			}
+		}
+	}
+	return renderResult;
+}
+
 export class WebGPURenderer extends Original.WebGPURenderer {
 	constructor( ...args ) {
 		const params = args[ 0 ];
@@ -2773,6 +2826,16 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 			offscreenRenderPass: isOffscreenRenderPass,
 			objectSceneRelation,
 		} );
+		const rendererOwnedDirectMaterial = __isRendererOwnedVsmMaterial(
+			material,
+			object,
+			this,
+			camera,
+			Original.VSMShadowMap,
+			Original.RGFormat,
+			Original.HalfFloatType,
+		)
+			|| __isRendererOwnedBackgroundMaterial( material, object );
 		if ( isRetroPassMaterial ) {
 			try {
 				Object.defineProperty( material, '__tslpRetroPassMaterial', {
@@ -2784,8 +2847,9 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 				material.__tslpRetroPassMaterial = true;
 			}
 		}
-		if ( material && ( material.isMeshToonOutlineMaterial === true || directNodeMaterialPolicy.claim || isRetroPassMaterial ) ) {
-			__mark(
+		let directPendingItem = null;
+		if ( ! rendererOwnedDirectMaterial && material && ( material.isMeshToonOutlineMaterial === true || directNodeMaterialPolicy.claim || isRetroPassMaterial ) ) {
+			directPendingItem = __mark(
 				material,
 				isRetroPassMaterial ? materialClassName : 'NodeMaterial',
 				object,
@@ -2796,7 +2860,12 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 				directNodeMaterialPolicy.sceneHint ? scene : null,
 			);
 		}
-		return super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId );
+		const renderResult = __renderObjectAndObserveMaterial(
+			() => super.renderObject( object, scene, camera, geometry, material, group, lightsNode, clippingContext, passId ),
+			material,
+		);
+		if ( directPendingItem ) directPendingItem.observedDirectRender = true;
+		return renderResult;
 	}
 	async init( ...args ) {
 		const result = await super.init( ...args );
@@ -2815,7 +2884,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__rememberBackgroundTargetContext( scene, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
-		__markStandaloneRenderTargetMaterial( scene, this );
+		__markStandaloneRenderTargetMaterial( scene, this, camera );
 		return typeof super.compile === 'function' ? super.compile( scene, camera, ...rest ) : undefined;
 	}
 	compileAsync( scene, camera, ...rest ) {
@@ -2826,7 +2895,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__rememberBackgroundTargetContext( scene, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
-		__markStandaloneRenderTargetMaterial( scene, this );
+		__markStandaloneRenderTargetMaterial( scene, this, camera );
 		if ( typeof super.compileAsync !== 'function' ) return Promise.resolve();
 		// Track this compile so the screenshot waits for it. MaterialX, GLTF, and
 		// other examples await renderer.compileAsync between asset loads to warm
@@ -2863,7 +2932,7 @@ export class WebGPURenderer extends Original.WebGPURenderer {
 		__rememberBackgroundTargetContext( scene, this );
 		__stampSceneMRT( scene, this );
 		__markSceneMaterials( scene, camera, this );
-		__markStandaloneRenderTargetMaterial( scene, this );
+		__markStandaloneRenderTargetMaterial( scene, this, camera );
 		const result = super.render( scene, camera );
 		// TileShadowNode re-enters renderer.render() with an ArrayCamera.
 		// Completion order restores this outer camera as the same Scene's owner.
@@ -3114,21 +3183,30 @@ export default Stats;
 
 }
 
-async function readBody( req ) {
-
-	const chunks = [];
-	for await ( const chunk of req ) chunks.push( chunk );
-	return Buffer.concat( chunks ).toString( 'utf8' );
-
-}
-
 async function handleCapture( req, res, url ) {
 
 	try {
 
 		const example = url.searchParams.get( 'example' ) || 'unknown';
-		const payload = JSON.parse( await readBody( req ) );
-		const bucket = captureBucket( example );
+		// HTML preparation owns this bucket. A late POST must never recreate a
+		// finished case's payloads or publish into the next capture generation.
+		const bucket = captures.get( example );
+		if ( ! bucket ) {
+
+			req.resume();
+			const error = new Error( `capture case ${ JSON.stringify( example ) } is no longer active` );
+			error.statusCode = 409;
+			throw error;
+
+		}
+		const payload = JSON.parse( await readCaptureBody( req ) );
+		if ( captures.get( example ) !== bucket ) {
+
+			const error = new Error( `capture case ${ JSON.stringify( example ) } changed while its body was read` );
+			error.statusCode = 409;
+			throw error;
+
+		}
 		applyBatchCapturePayload( bucket, payload, {
 			validateAuxiliaryFamilyPayload,
 		} );
@@ -3138,7 +3216,7 @@ async function handleCapture( req, res, url ) {
 
 	} catch ( err ) {
 
-		res.statusCode = 400;
+		res.statusCode = err.statusCode || 400;
 		res.setHeader( 'content-type', 'application/json' );
 		res.end( JSON.stringify( { error: err && err.message || String( err ) } ) );
 
@@ -3543,34 +3621,7 @@ async function dumpCanvases( page, name = '' ) {
 
 async function canvasBrightFractionInPage( page ) {
 
-	return await page.evaluate( () => {
-
-		const canvases = document.querySelectorAll( 'canvas' );
-		let bestBright = 0;
-		for ( const canvas of canvases ) {
-
-			if ( ! canvas.width || ! canvas.height ) continue;
-			try {
-
-				const off = new OffscreenCanvas( canvas.width, canvas.height );
-				const ctx = off.getContext( '2d' );
-				ctx.drawImage( canvas, 0, 0 );
-				const img = ctx.getImageData( 0, 0, canvas.width, canvas.height ).data;
-				let bright = 0;
-				for ( let i = 0; i < img.length; i += 4 ) {
-
-					if ( img[ i ] + img[ i + 1 ] + img[ i + 2 ] > 30 ) bright ++;
-
-				}
-				const frac = bright / ( img.length / 4 );
-				if ( frac > bestBright ) bestBright = frac;
-
-			} catch ( _ ) { /* ignore canvas read errors */ }
-
-		}
-		return bestBright;
-
-	} ).catch( () => 0 );
+	return await page.evaluate( readCanvasBrightFraction ).catch( () => 0 );
 
 }
 
@@ -4048,13 +4099,13 @@ const ASSET_SETTLE_STABLE_MS = parseIntAtLeast( getArg( '--asset-settle-stable-m
 // Bounded readiness wait: resolve as soon as capture/loader work has been quiet
 // for ASSET_SETTLE_STABLE_MS, otherwise spend exactly `budgetMs` — the same wall
 // time the unconditional sleep used to cost. Never waits longer than the budget.
-async function settleAssets( page, budgetMs ) {
+async function settleAssets( page, budgetMs, fatalPageErrors ) {
 
 	if ( budgetMs <= 0 ) return;
 	const startedAt = Date.now();
 	try {
 
-		await page.waitForFunction(
+		await fatalPageErrors.run( () => page.waitForFunction(
 			( stableMs ) => {
 
 				const w = window;
@@ -4085,22 +4136,27 @@ async function settleAssets( page, budgetMs ) {
 			},
 			ASSET_SETTLE_STABLE_MS,
 			{ timeout: budgetMs, polling: 25 },
-		);
+		) );
 		return;
 
-	} catch ( _ ) { /* never went quiet — honour the remaining fixed budget below */ }
+	} catch ( error ) {
+
+		if ( isE2EFatalPageError( error ) ) throw error;
+		// Never went quiet — honour the remaining fixed budget below.
+
+	}
 
 	const remaining = budgetMs - ( Date.now() - startedAt );
-	if ( remaining > 0 ) await new Promise( ( r ) => setTimeout( r, remaining ) );
+	if ( remaining > 0 ) await fatalPageErrors.run( () => new Promise( ( r ) => setTimeout( r, remaining ) ) );
 
 }
 
-async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MINIMUM_BRIGHT_FRACTION ) {
+async function waitForFrame( page, timeoutMs, minimumBrightFraction, fatalPageErrors, singleAnimationOwner ) {
 
 	try {
 
-		await page.waitForSelector( 'canvas', { state: 'attached', timeout: Math.min( timeoutMs, 5000 ) } );
-		await page.evaluate( () => new Promise( ( resolve ) => {
+		await fatalPageErrors.run( () => page.waitForSelector( 'canvas', { state: 'attached', timeout: Math.min( timeoutMs, 5000 ) } ) );
+		await fatalPageErrors.run( () => page.evaluate( () => new Promise( ( resolve ) => {
 
 			let done = false;
 			const finish = () => {
@@ -4113,9 +4169,14 @@ async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MI
 			setTimeout( finish, 250 );
 			requestAnimationFrame( () => requestAnimationFrame( finish ) );
 
-		} ) );
+		} ) ) );
 
-	} catch ( _ ) { /* keep the bright poll below as the fallback */ }
+	} catch ( error ) {
+
+		if ( isE2EFatalPageError( error ) ) throw error;
+		// Keep the bright poll below as the fallback.
+
+	}
 
 	// WebGPU canvases are often not readable through drawImage() until after
 	// compositor capture. The final screenshot brightness check below is the
@@ -4124,9 +4185,14 @@ async function waitForFrame( page, timeoutMs, minimumBrightFraction = DEFAULT_MI
 	let bright = 0;
 	while ( Date.now() < deadline ) {
 
-		bright = await canvasBrightFractionInPage( page );
+		bright = await fatalPageErrors.run( () => canvasBrightFractionInPage( page ) );
 		if ( bright > minimumBrightFraction ) break;
-		await new Promise( ( r ) => setTimeout( r, RENDER_POLL_MS ) );
+		// Frozen WebGPU canvases can remain unreadable through drawImage. Once
+		// their submitted work completes, another brightness poll cannot advance
+		// the frozen animation. Multi-owner and unknown states retain the budget.
+		if ( singleAnimationOwner && await fatalPageErrors.run( () => page.evaluate( waitForFrozenWebGPUFrame, deadline - Date.now() ) ) ) break;
+		if ( Date.now() >= deadline ) break;
+		await fatalPageErrors.run( () => new Promise( ( r ) => setTimeout( r, RENDER_POLL_MS ) ) );
 
 	}
 	return +bright.toFixed( 4 );
@@ -4159,33 +4225,51 @@ async function visitExample( browser, name, mode, waitMs, {
 		serviceWorkers: 'block',
 	} );
 	const networkBodyCache = new Map();
-	const networkCollector = networkFixture
-		? await installE2ENetworkFixtureReplayCollector( context, {
-			pageUrl,
-			fixture: networkFixture,
-			serviceWorkersBlocked: true,
-			loadBody( resource ) {
+	let networkCollector;
+	let page;
+	let browserFailures;
+	try {
 
-				const cached = networkBodyCache.get( resource.sha256 );
-				if ( cached ) return cached;
-				const verified = verifyEvidenceDescriptor(
-					networkFixtureRoot,
-					resource.evidence,
-					networkFixtureRunId,
-				);
-				networkBodyCache.set( resource.sha256, verified.bytes );
-				return verified.bytes;
+		networkCollector = networkFixture
+			? await installE2ENetworkFixtureReplayCollector( context, {
+				pageUrl,
+				fixture: networkFixture,
+				serviceWorkersBlocked: true,
+				loadBody( resource ) {
 
-			},
-		} )
-		: await installE2ENetworkCaptureCollector( context, {
-			pageUrl,
-			serviceWorkersBlocked: true,
-		} );
-	const page = await context.newPage();
-	const browserFailures = installBrowserFailureCollector( page, { pageUrl } );
+					const cached = networkBodyCache.get( resource.sha256 );
+					if ( cached ) return cached;
+					const verified = verifyEvidenceDescriptor(
+						networkFixtureRoot,
+						resource.evidence,
+						networkFixtureRunId,
+					);
+					networkBodyCache.set( resource.sha256, verified.bytes );
+					return verified.bytes;
+
+				},
+			} )
+			: await installE2ENetworkCaptureCollector( context, {
+				pageUrl,
+				serviceWorkersBlocked: true,
+			} );
+		page = await context.newPage();
+		browserFailures = installBrowserFailureCollector( page, { pageUrl } );
+
+	} catch ( error ) {
+
+		await context.close().catch( () => {} );
+		await networkCollector?.dispose().catch( () => {} );
+		networkBodyCache.clear();
+		throw error;
+
+	}
 	mark( 'contextMs', stepStartedAt );
 	trace( 'context-ready' );
+	const fatalPageErrors = installE2EFatalPageErrorGuard( page, {
+		pageUrl,
+		expectedPatterns: mode === 'replay' ? expectedReplayErrorPatternsForExample( name ) : expectedCaptureErrorPatternsForExample( name ),
+	} );
 	// Non-browser harness assertions remain separate from the shared browser
 	// failure policy, then join its fail-closed messages at the visit boundary.
 	const errors = [];
@@ -4281,6 +4365,7 @@ async function visitExample( browser, name, mode, waitMs, {
 	const cleanup = async () => {
 
 		try {
+			fatalPageErrors.dispose();
 			browserFailures.dispose();
 			if ( traceResponses ) page.off( 'response', onResponse );
 			page.off( 'console', onConsole );
@@ -4294,6 +4379,7 @@ async function visitExample( browser, name, mode, waitMs, {
 			recordNetworkError( error );
 		}
 		try { await networkCollector.dispose(); } catch ( _ ) {}
+		networkBodyCache.clear();
 
 	};
 
@@ -4358,6 +4444,7 @@ async function visitExample( browser, name, mode, waitMs, {
 			await page.addInitScript( installAnimationLoopSettleTransition );
 			await page.addInitScript( installRenderSelectorMismatchRecorder, { phase: mode } );
 			await page.addInitScript( installE2EGpuDiagnostics );
+			await page.addInitScript( installDeterministicObjectIds );
 			await page.addInitScript( ( { step, base, freezeAt, quiescentMs, settleFrames, minimumAnimationLoopOwners, waitForRenderableObjects, minRenderableObjects, holdAnimationUntilReady, requireSuccessfulPresentation, deterministicTimeoutPolicy, browserStabilizationPolicy } ) => {
 
 			// eslint-disable-next-line no-undef
@@ -4848,15 +4935,6 @@ async function visitExample( browser, name, mode, waitMs, {
 					if ( userLines.length > 0 ) return userLines.join( ' <= ' );
 					return fallbackLines.slice( 0, 2 ).join( ' <= ' ) || 'unknown';
 				};
-				const _objectIdCounts = new Map();
-				w.__tslpStableObject3DId = function () {
-					let stack = '';
-					try { stack = String( new Error().stack || '' ); } catch ( _ ) {}
-					const key = _randomKeyFromStack( stack );
-					const count = ( _objectIdCounts.get( key ) || 0 ) + 1;
-					_objectIdCounts.set( key, count );
-					return _mixRng( _hashString( 'object3d#' + key + '#' + count + '#42' ) );
-				};
 				w.Math.random = function () {
 
 					let stack = '';
@@ -4878,7 +4956,7 @@ async function visitExample( browser, name, mode, waitMs, {
 
 		stepStartedAt = Date.now();
 			trace( 'navigation-start' );
-			await page.goto( pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
+			await fatalPageErrors.run( () => page.goto( pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } ) );
 		mark( 'gotoMs', stepStartedAt );
 		trace( 'navigation-complete' );
 
@@ -4897,7 +4975,7 @@ async function visitExample( browser, name, mode, waitMs, {
 			if ( ! readinessInstalled ) errors.push( '[tslp-e2e] Audio analyser readiness hook could not be installed' );
 
 		}
-		await maybeClickStart( page );
+		await fatalPageErrors.run( () => maybeClickStart( page ) );
 
 		// Wait for the canvas to paint a non-empty frame under real
 		// wall-clock time. This lets async loaders, `renderer.init()`,
@@ -4905,7 +4983,7 @@ async function visitExample( browser, name, mode, waitMs, {
 		// uninterrupted. Without this window, captures with async
 		// setup (HDR / KTX2 / GLTF) would be incomplete.
 		stepStartedAt = Date.now();
-		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : Math.max( waitMs, RENDER_TIMEOUT_MS ), minimumBrightFraction );
+		const bright = await waitForFrame( page, mode === 'capture' ? RENDER_TIMEOUT_MS : Math.max( waitMs, RENDER_TIMEOUT_MS ), minimumBrightFraction, fatalPageErrors, minimumAnimationLoopOwners === 1 );
 		mark( 'initialFrameMs', stepStartedAt );
 		trace( 'initial-frame-complete' );
 
@@ -4918,24 +4996,24 @@ async function visitExample( browser, name, mode, waitMs, {
 		// harness module never installed them, we spend exactly the old budget.
 		// This can only shorten a visit, never lengthen one.
 		stepStartedAt = Date.now();
-		await settleAssets( page, ASSET_SETTLE_MS );
+		await settleAssets( page, ASSET_SETTLE_MS, fatalPageErrors );
 		mark( 'assetSettleMs', stepStartedAt );
 		trace( 'asset-settle-complete' );
 
 		if ( deterministicTimeoutPolicy ) {
 			stepStartedAt = Date.now();
-			await page.waitForFunction(
+			await fatalPageErrors.run( () => page.waitForFunction(
 				() => ( window.__tslpPrecompilePending | 0 ) === 0
 					&& ( window.__tslpAuxCapturePending | 0 ) === 0
 					&& ( window.__tslpCompilePending | 0 ) === 0,
 				null,
 				{ timeout: LOADER_TIMEOUT_MS, polling: 25 },
-			);
-			await page.waitForFunction(
+			) );
+			await fatalPageErrors.run( () => page.waitForFunction(
 				() => Array.isArray( window.__tslpDeterministicTimeoutQueue ) && window.__tslpDeterministicTimeoutQueue.some( ( record ) => record && record.cancelled !== true ),
 				null,
 				{ timeout: RENDER_TIMEOUT_MS, polling: 25 },
-			);
+			) );
 			const drained = await page.evaluate( async ( steps ) => window.__tslpRunDeterministicTimeouts( steps ), deterministicTimeoutPolicy.steps );
 			timings.deterministicTimeoutSteps = drained | 0;
 			timings.deterministicTimeoutTrace = await page.evaluate( () => window.__tslpDeterministicTimeoutTrace.slice() );
@@ -4949,7 +5027,7 @@ async function visitExample( browser, name, mode, waitMs, {
 		try {
 
 			stepStartedAt = Date.now();
-			await page.waitForFunction(
+			await fatalPageErrors.run( () => page.waitForFunction(
 				// Also wait for async PMREM generations, compute dispatches,
 				// shadow-map renders, three.js loader items (HDR/GLTF/MaterialX/
 				// Texture/...), and renderer.compileAsync() promises — so the
@@ -4970,17 +5048,18 @@ async function visitExample( browser, name, mode, waitMs, {
 					},
 					LOADER_QUIESCENT_MS,
 					{ timeout: LOADER_TIMEOUT_MS, polling: 50 },
-				);
+				) );
 			mark( 'freezeWaitMs', stepStartedAt );
 
 			// Brief settle so the GPU presents the frozen frame.
 			stepStartedAt = Date.now();
-			await new Promise( ( r ) => setTimeout( r, PRESENT_SETTLE_MS ) );
+			await fatalPageErrors.run( () => new Promise( ( r ) => setTimeout( r, PRESENT_SETTLE_MS ) ) );
 			mark( 'presentSettleMs', stepStartedAt );
 			timings.freezeCompleted = true;
 			trace( 'freeze-complete' );
 
-			} catch ( _ ) {
+			} catch ( error ) {
+				if ( isE2EFatalPageError( error ) ) throw error;
 				mark( 'freezeWaitMs', stepStartedAt );
 				timings.freezeTimedOut = true;
 				timings.freezeCompleted = false;
@@ -5051,9 +5130,9 @@ async function visitExample( browser, name, mode, waitMs, {
 			}
 			if ( mode === 'capture' ) {
 				stepStartedAt = Date.now();
-				await page.evaluate( async () => {
+				await fatalPageErrors.run( () => page.evaluate( async () => {
 					if ( typeof window.__tslpFlushCaptureArtifacts === 'function' ) await window.__tslpFlushCaptureArtifacts();
-			} );
+			} ) );
 			mark( 'flushCaptureMs', stepStartedAt );
 			trace( 'capture-flush-complete' );
 		}
@@ -5105,20 +5184,31 @@ async function visitExample( browser, name, mode, waitMs, {
 			} ).catch( () => null );
 			if ( diagnostics && frameTextureSnapshot ) diagnostics.frameTextureSnapshot = frameTextureSnapshot;
 			timings.totalMs = Date.now() - startedAt;
+			await browserFailures.settle();
 			const visitErrors = [ ...browserFailures.messages(), ...errors ];
 			visitResult = { bright: finalBright, shot, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, networkEvidence, context, page, timings, cleanup, frameClock };
 			return visitResult;
 
 	} catch ( err ) {
 
+		const fatalPageError = isE2EFatalPageError( err );
+		if ( fatalPageError ) {
+
+			timings.fatalPageError = true;
+			timings.fatalPageErrorMs = Date.now() - startedAt;
+			timings.freezeCompleted = false;
+			timings.freezeTimedOut = false;
+
+		}
 		try {
 			await page.evaluate( drainE2EGpuDiagnostics );
 		} catch ( _ ) {}
 		await finalizeNetworkEvidence();
 		const diagnostics = await page.evaluate( () => window.__tslpHarnessDiagnostics || null ).catch( () => null );
 		timings.totalMs = Date.now() - startedAt;
-		const visitErrors = [ ...browserFailures.messages(), ...errors, err && err.message || String( err ) ];
-		visitResult = { bright: 0, shot: null, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, networkEvidence, navigationError: true, context, page, timings, cleanup };
+		await browserFailures.settle();
+		const visitErrors = [ ...browserFailures.messages(), ...errors, ...( fatalPageError ? [] : [ err && err.message || String( err ) ] ) ];
+		visitResult = { bright: 0, shot: null, errors: visitErrors, errorCount: visitErrors.length, warnings: warnings.slice( 0, 5 ), warningCount: warnings.length, canvasBackends, diagnostics, networkEvidence, navigationError: ! fatalPageError, context, page, timings, cleanup };
 		return visitResult;
 
 	}
@@ -5207,12 +5297,17 @@ function combineOperationRegistries( ...registries ) {
 
 async function runOne( browser, name ) {
 
-	captures.delete( name );
+	return withE2ECaseResources( captures, name, ( ownVisit ) => runCase( browser, name, ownVisit ) );
+
+}
+
+async function runCase( browser, name, ownVisit ) {
+
 	const overrideWaitMs = HAS_EXPLICIT_CAPTURE_WAIT ? 0 : captureWaitOverrideForExample( name );
 	const effectiveCaptureWait = overrideWaitMs > captureWaitMs ? overrideWaitMs : captureWaitMs;
-	const capture = reuseReferenceShot
+	const capture = ownVisit( reuseReferenceShot
 		? loadSavedReferenceShot( name )
-		: await visitExample( browser, name, 'stock', effectiveCaptureWait );
+		: await visitExample( browser, name, 'stock', effectiveCaptureWait ) );
 	// Wedge 4: remember the stock pass's nodeFrame.time so the replay pass can
 	// pin its clock to the SAME value the comparison-reference screenshot saw.
 	// injectHtml in replay mode reads this from the bucket below.
@@ -5238,13 +5333,13 @@ async function runOne( browser, name ) {
 	const networkFixtureRoot = capture.networkFixtureRoot || OUT;
 	const networkFixtureRunId = capture.networkFixtureRunId || RUN_ID;
 
-	const artifactCapture = replayOnly
+	const artifactCapture = ownVisit( replayOnly
 		? emptyVisitResult()
 		: await visitExample( browser, name, 'capture', effectiveCaptureWait, {
 			networkFixture: stockNetworkFixture,
 			networkFixtureRoot,
 			networkFixtureRunId,
-		} );
+		} ) );
 	if ( artifactCapture.cleanup ) await artifactCapture.cleanup();
 	artifactCapture.cleanup = null;
 	artifactCapture.context = null;
@@ -5301,11 +5396,11 @@ async function runOne( browser, name ) {
 
 	}
 
-	const replay = await visitExample( browser, name, 'replay', replayWaitMs, {
+	const replay = ownVisit( await visitExample( browser, name, 'replay', replayWaitMs, {
 		networkFixture: stockNetworkFixture,
 		networkFixtureRoot,
 		networkFixtureRunId,
-	} );
+	} ) );
 	const passTimings = {
 		stock: capture.timings || null,
 		capture: artifactCapture.timings || null,
@@ -5455,17 +5550,6 @@ async function runOne( browser, name ) {
 		rendererBackendEvidence.pass &&
 		pixelGateOk;
 
-	// Release everything that won't make it into the report: TSL artifact
-	// buckets (many MB on heavy scenes) and the capture/replay screenshot
-	// Buffers (~1.5 MB each at 640×480). Without this the worker accumulates
-	// these per-example across its whole slice and the OS sees steady RSS
-	// growth — on Apple Silicon's unified memory that compounds with the
-	// Chromium GPU process and eventually freezes the whole machine.
-	captures.delete( name );
-	capture.shot = null;
-	artifactCapture.shot = null;
-	replay.shot = null;
-
 	return {
 		name,
 		status: pass ? 'pass' : 'fail',
@@ -5505,7 +5589,9 @@ async function runOne( browser, name ) {
 		timings: passTimings,
 		artifactSummaries,
 		auxSummaries,
-		error: pass ? null : summarizeFailure( { artifactCoverageOk, userCount, auxCount, blockingCaptureErrors, replayBright: replay.bright, minimumBrightFraction, blockingReplayErrors, evidenceGate, backendArtifactGate, rendererBackendEvidence, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
+		error: pass ? null : firstFatalPageErrorMessage( [
+			{ phase: 'stock', visit: capture }, { phase: 'capture', visit: artifactCapture }, { phase: 'replay', visit: replay },
+		] ) || summarizeFailure( { artifactCoverageOk, userCount, auxCount, blockingCaptureErrors, replayBright: replay.bright, minimumBrightFraction, blockingReplayErrors, evidenceGate, backendArtifactGate, rendererBackendEvidence, pixelGate, pixelGateEnabled: examplePixelGateEnabled } ),
 	};
 
 }
@@ -5754,7 +5840,7 @@ function printFailureSummary( details, max = 20 ) {
 
 async function launchBrowser() {
 
-	return await launchEvidenceBrowser( chromium, {
+	return await launchOwnedEvidenceBrowser( chromium, {
 		headless: true,
 		args: BROWSER_ARGS,
 	} );
@@ -5763,7 +5849,7 @@ async function launchBrowser() {
 
 async function recycleBrowser( current, expectedEnvironment ) {
 
-	try { await current?.close(); } catch ( _ ) {}
+	await closeOwnedEvidenceBrowser( current );
 	// Give the OS a beat to reclaim Chromium's GPU process before we spawn a
 	// fresh one — without this delay the new browser's GPU process overlaps
 	// with the dying one and unified-memory pressure spikes on Apple Silicon.
@@ -5786,7 +5872,12 @@ async function recycleBrowser( current, expectedEnvironment ) {
 
 	} catch ( error ) {
 
-		await launched.browser.close().catch( () => {} );
+		try { await closeOwnedEvidenceBrowser( launched.browser ); }
+		catch ( cleanupError ) {
+
+			throw new AggregateError( [ error, cleanupError ], 'Recycled browser environment probe and cleanup failed.' );
+
+		}
 		throw error;
 
 	}
@@ -5808,8 +5899,20 @@ try {
 
 } catch ( error ) {
 
-	await initialBrowser?.browser?.close().catch( () => {} );
-	await new Promise( ( resolveClose ) => server.close( resolveClose ) );
+	try {
+
+		try { await closeOwnedEvidenceBrowser( initialBrowser?.browser ); }
+		catch ( cleanupError ) {
+
+			throw new AggregateError( [ error, cleanupError ], 'Initial browser environment probe and cleanup failed.' );
+
+		}
+
+	} finally {
+
+		await new Promise( ( resolveClose ) => server.close( resolveClose ) );
+
+	}
 	throw error;
 
 }
@@ -5827,6 +5930,7 @@ const configuration = {
 	psnrThreshold,
 	saveShots,
 	captureWaitMs,
+	caseTimeoutMs,
 	replayWaitMs,
 	targetTick,
 	settleFrames: SETTLE_FRAMES,
@@ -5926,25 +6030,26 @@ function writeReport() {
 
 }
 
-writeReport();
-
+const lifecycleErrors = [];
 try {
 
+	writeReport();
 	for ( let i = 0; i < candidates.length; i ++ ) {
 
 		const name = candidates[ i ];
 		const label = `[${ i + 1 }/${ candidates.length }] ${ name }`;
 
+		// Cleanup failure is fatal: never launch another Chrome over a live owner.
+		if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
+
+			browser = await recycleBrowser( browser, evidenceEnvironment );
+			runsSinceRestart = 0;
+
+		}
+
 		try {
 
-			if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
-
-				browser = await recycleBrowser( browser, evidenceEnvironment );
-				runsSinceRestart = 0;
-
-			}
-
-			const result = await runOne( browser, name );
+			const result = await runE2ECaseWithWatchdog( name, caseTimeoutMs, () => runOne( browser, name ) );
 			runsSinceRestart ++;
 			if ( result.status === 'pass' ) report.pass ++; else report.fail ++;
 			report.details.push( result );
@@ -5960,6 +6065,14 @@ try {
 
 			if ( err?.code === 'TSLP_EVIDENCE_ENVIRONMENT_DRIFT' ) throw err;
 			const errorMessage = err && err.message || String( err );
+			const timeoutMetadata = isE2ECaseTimeoutError( err )
+				? {
+					code: err.code,
+					caseName: err.caseName,
+					timeoutMs: err.timeoutMs,
+					completedAt: new Date().toISOString(),
+				}
+				: null;
 			report.fail ++;
 			report.details.push( {
 				name,
@@ -5976,12 +6089,25 @@ try {
 				rendererBackendEvidence: null,
 				evidenceGate: createE2EEvidenceGate( {
 					blocking: [ {
-						code: 'harness-error',
+						code: timeoutMetadata ? 'case-timeout' : 'harness-error',
 						message: errorMessage,
 					} ],
 				} ),
+				...( timeoutMetadata ? { timeout: timeoutMetadata } : {} ),
 				error: errorMessage,
 			} );
+			if ( timeoutMetadata ) {
+
+				report.status = 'failed';
+				report.completedAt = timeoutMetadata.completedAt;
+				report.timeout = timeoutMetadata;
+				writeReport();
+				console.error( `${ label } — FAIL case-timeout "${ errorMessage }"` );
+				// runOne() cannot be cancelled. Immediate termination closes the
+				// DevTools pipe so the losing promise cannot mutate later cases.
+				process.exit( 1 );
+
+			}
 			writeReport();
 			console.log( `${ label } — FAIL harness-error "${ errorMessage }"` );
 
@@ -5999,12 +6125,21 @@ try {
 
 	}
 
+} catch ( error ) {
+
+	lifecycleErrors.push( error );
+
 } finally {
 
-	await browser.close().catch( () => {} );
-	await new Promise( ( resolveClose ) => server.close( resolveClose ) );
+	try { await closeOwnedEvidenceBrowser( browser ); } catch ( error ) { lifecycleErrors.push( error ); }
+	try {
+
+		if ( server.listening ) await new Promise( ( resolveClose, rejectClose ) => server.close( error => error ? rejectClose( error ) : resolveClose() ) );
+
+	} catch ( error ) { lifecycleErrors.push( error ); }
 
 }
+if ( lifecycleErrors.length ) throw new AggregateError( lifecycleErrors, 'E2E run or owned browser/server cleanup failed.' );
 
 if ( officialThreeSourcesRequired ) {
 
@@ -6020,7 +6155,7 @@ if ( officialThreeSourcesRequired ) {
 	}
 	try {
 
-		assertOfficialThreeR185Checkout( threeRepo, 'batch-e2e post-run canonical evidence' );
+		assertPinnedThreeCheckout( threeRepo, SLIM_RELEASE_PROFILE, 'batch-e2e post-run canonical evidence' );
 		const finalGitIdentity = readThreeGitIdentity( threeRepo );
 		for ( const key of Object.keys( threeGitIdentity ) ) delete threeGitIdentity[ key ];
 		Object.assign( threeGitIdentity, finalGitIdentity );

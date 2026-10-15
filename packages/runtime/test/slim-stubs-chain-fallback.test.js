@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { FloatType } from 'three/src/constants.js';
 
 import {
 	Node,
@@ -14,13 +15,45 @@ import {
 	diffuseColor,
 	directionToColor,
 	emissive,
+	mx_noise_float,
 	TSL,
+	cameraNear,
+	cameraFar,
+	materialColor,
+	perspectiveDepthToViewZ,
+	PMREMNode,
+	pmremTexture,
+	__getPmremStubSource,
 } from '../src/slim-stubs.js';
 import { getLiveNodeDependencies } from '../src/slim-support/node-dependencies.js';
 
+test( 'PMREM carriers preserve instanceof and replacement probe texture identity', () => {
+
+	const first = { isTexture: true };
+	const second = { isTexture: true };
+	const node = pmremTexture( first );
+	assert.ok( node instanceof PMREMNode );
+	assert.equal( __getPmremStubSource( node ), first );
+	node.value = second;
+	assert.equal( __getPmremStubSource( node ), second );
+	assert.equal( node._value, second );
+	assert.equal( node.mul( 0.5 ).isNode, true );
+
+} );
+
+test( 'material-color and camera-depth composition retain inert dependency carriers', () => {
+
+	assert.equal( materialColor.rgb.mul( 0.5 ).isNode, true );
+	const depth = uniform( 0.5 );
+	const viewZ = perspectiveDepthToViewZ( depth, cameraNear, cameraFar );
+	assert.equal( viewZ.isNode, true );
+	assert.equal( viewZ.negate().isNode, true );
+
+} );
+
 test( 'slim Node returns inert stub for unknown property access (chain fallback)', () => {
 
-	const n = new Node();
+const n = new Node();
 	const result = n.someMethodWeDontStub();
 	assert.equal( result.isNode, true, 'unknown method returns an isNode-tagged value' );
 	// Chain stays alive — addons can keep composing.
@@ -119,6 +152,43 @@ test( 'slim MRT semantic nodes remain inert after their shaders are precompiled'
 	assert.equal( diffuseColor.isNode, true );
 	assert.equal( emissive.isNode, true );
 	assert.equal( directionToColor( diffuseColor ).isNode, true );
+
+} );
+
+test( 'slim PassNode configures attachments before rendering without a builder setup call', () => {
+
+	for ( const samples of [ undefined, 0, 4 ] ) {
+
+		const pass = new PassNode( PassNode.COLOR, {}, {}, { samples } );
+		let bound = false;
+		const renderer = {
+			samples: 4, reversedDepthBuffer: true,
+			getOutputBufferType: () => FloatType,
+			setRenderTarget( target ) {
+
+				if ( target !== pass.renderTarget ) return;
+				bound = true;
+				assert.equal( target.samples, samples ?? 4 );
+				assert.equal( target.texture.type, FloatType );
+				assert.equal( target.depthTexture.type, FloatType );
+
+			},
+		};
+		pass.updateBefore( { renderer } );
+		assert.equal( bound, true );
+
+	}
+
+} );
+
+test( 'captured MaterialX noise retains live inputs through authored helper chains', () => {
+
+	const offset = uniform( 0.5 );
+	const result = mx_noise_float( offset ).mul( 2 ).add( 1 );
+	const visited = new Set();
+	result.traverse( node => visited.add( node ) );
+	assert.equal( result.isNode, true );
+	assert.equal( visited.has( offset ), true );
 
 } );
 

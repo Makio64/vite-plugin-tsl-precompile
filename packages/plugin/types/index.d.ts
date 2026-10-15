@@ -31,6 +31,8 @@ export interface TslPrecompileOptions {
 	 * Default: `false`.
 	 */
 	slim?: boolean | 'source';
+	/** Remove WebGL fallback from production. Requires `slim: 'source'`; dev still captures with full Three. */
+	webgpuOnly?: boolean;
 	/** Override the auto-detected exact three.js package version used in rewrite hashes. Must match the installed package (for example `0.185.1`). Pass `null` to force auto-detect. */
 	threeVersion?: string | null;
 	/**

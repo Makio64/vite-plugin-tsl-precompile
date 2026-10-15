@@ -8,6 +8,7 @@
  */
 
 import DataMap from 'three/src/renderers/common/DataMap.js';
+import { RenderObjectRefreshType } from 'three/src/constants.js';
 import {
 	createRenderObjectContextSelector,
 	RENDER_BINDING_OWNER_KINDS,
@@ -21,6 +22,8 @@ import { getSlimRenderFallback } from './slim-support/render-fallback-registry.j
 import { normalizeSlimRenderFallbackState } from './slim-support/render-fallback-state.js';
 import { createRendererRenderTargetTextureRegistry } from './slim-support/render-target-texture-registry.js';
 import { createReplaySceneNodeCompatibility } from './slim-replay-scene-nodes.js';
+import { createReplayPMREMResolver } from './slim-support/renderer-pmrem.js';
+import { createRendererShadowScheduler } from './slim-support/renderer-shadows.js';
 
 class ReplayNodeManager extends DataMap {
 
@@ -37,6 +40,8 @@ class ReplayNodeManager extends DataMap {
 		this._outputLayerIndexNode = { value: 0 };
 		if ( renderer && typeof renderer.setRenderTarget === 'function' ) createRendererRenderTargetTextureRegistry( renderer );
 		this._sceneNodes = createReplaySceneNodeCompatibility( this );
+		this._resolvePMREMTexture = createReplayPMREMResolver( renderer );
+		this._shadowScheduler = createRendererShadowScheduler( renderer );
 		this.cacheLib = this._sceneNodes.cacheLib;
 
 	}
@@ -75,10 +80,13 @@ class ReplayNodeManager extends DataMap {
 
 	}
 
-	getForRender( renderObject ) {
+	getForRender( renderObject, yieldFn = null ) {
 
 		const renderObjectData = this.get( renderObject );
 		if ( renderObjectData.nodeBuilderState !== undefined ) return renderObjectData.nodeBuilderState;
+		// r187 supplies the renderer's preparation scheduler. Replay has no
+		// asynchronous node builder, but must honor that barrier on a cold state.
+		if ( typeof yieldFn === 'function' ) return Promise.resolve().then( yieldFn ).then( () => this.getForRender( renderObject ) );
 
 		const material = renderObject.material;
 		if ( ! material || material.isPrecompiledMaterial !== true ) {
@@ -127,9 +135,9 @@ class ReplayNodeManager extends DataMap {
 
 	}
 
-	async getForRenderAsync( renderObject ) {
+	async getForRenderAsync( renderObject, yieldFn = null ) {
 
-		return this.getForRender( renderObject );
+		return this.getForRender( renderObject, yieldFn );
 
 	}
 
@@ -197,16 +205,33 @@ class ReplayNodeManager extends DataMap {
 
 	}
 
+	async getForComputeAsync( computeNode ) {
+
+		return this.getForCompute( computeNode );
+
+	}
+
 	_createReplaySelection( renderObject ) {
 
 		const bindingOwner = resolveRenderObjectBindingOwner( renderObject );
-		const selector = createRenderObjectContextSelector( renderObject, renderObject.renderer || this.renderer );
 		const artifact = renderObject.material && renderObject.material.precompiledArtifact;
 		const auxShape = artifact && ( artifact.__tslpAuxShape || artifact.materialShape );
 		const selectorProfile = auxShape === 'background' || auxShape === 'shadow-depth' || auxShape === 'post-process' || auxShape === 'render-output' || auxShape === 'cube-render-target' || auxShape === 'mesh-basic'
 			? auxShape
 			: null;
 		const selectorAdapter = artifact && artifact[ GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR ];
+		const renderer = renderObject.renderer || this.renderer;
+		let selector;
+		if ( selectorAdapter && typeof selectorAdapter.create === 'function' ) {
+
+			selector = selectorAdapter.create( renderObject, renderer, selectorProfile );
+
+		} else {
+
+			selector = createRenderObjectContextSelector( renderObject, renderer );
+			if ( selectorAdapter && typeof selectorAdapter.project === 'function' ) selector = selectorAdapter.project( selector, selectorProfile );
+
+		}
 		return {
 			cacheKey: this.getForRenderCacheKey( renderObject ),
 			bindingMaterial: bindingOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER ? bindingOwner.material : null,
@@ -217,11 +242,10 @@ class ReplayNodeManager extends DataMap {
 			// and mip levels share one fixed conversion shader; retaining their raw
 			// values here would hydrate six equivalent states before the selector
 			// layer projects them away.
-			renderContextSelector: selectorAdapter && typeof selectorAdapter.project === 'function'
-				? selectorAdapter.project( selector, selectorProfile )
-				: selector,
+			renderContextSelector: selector,
 			renderContextSelectorProfile: selectorProfile,
 			outputLayerIndexNode: selectorProfile === 'render-output' ? this._outputLayerIndexNode : null,
+			resolvePMREMTexture: this._resolvePMREMTexture,
 		};
 
 	}
@@ -256,13 +280,28 @@ class ReplayNodeManager extends DataMap {
 	updateFog( scene ) { return this._sceneNodes.updateFog( scene ); }
 	updateEnvironment( scene ) { return this._sceneNodes.updateEnvironment( scene ); }
 
+	getCustomProgramCacheKey( material, scene ) {
+
+		// Overrides can change their node properties within one material version.
+		if ( material === scene.overrideMaterial ) return material.customProgramCacheKey();
+		const data = this.get( material );
+		if ( data.cacheKey === undefined || data.cacheKeyVersion !== material.version ) {
+
+			data.cacheKey = material.customProgramCacheKey();
+			data.cacheKeyVersion = material.version;
+
+		}
+		return data.cacheKey;
+
+	}
+
 	get isToneMappingState() {
 
 		return this.renderer.getRenderTarget() ? false : true;
 
 	}
 
-	getNodeFrame( renderer = this.renderer, scene = null, object = null, camera = null, material = null ) {
+	getNodeFrame( renderer = this.renderer, scene = null, object = null, camera = null, material = null, compute = null ) {
 
 		const nodeFrame = this.nodeFrame;
 		nodeFrame.renderer = renderer;
@@ -270,6 +309,7 @@ class ReplayNodeManager extends DataMap {
 		nodeFrame.object = object;
 		nodeFrame.camera = camera;
 		nodeFrame.material = material;
+		nodeFrame.compute = compute;
 		nodeFrame.lightsNode = null;
 		nodeFrame.renderObject = null;
 		return nodeFrame;
@@ -282,6 +322,15 @@ class ReplayNodeManager extends DataMap {
 		nodeFrame.lightsNode = renderObject.lightsNode || null;
 		nodeFrame.renderObject = renderObject;
 		return nodeFrame;
+
+	}
+
+	getNodeFrameForCompute( computeNode ) {
+
+		const owner = computeNode && computeNode.__tslpMaterialComputeFrame;
+		return owner
+			? this.getNodeFrame( owner.renderer || this.renderer, owner.scene || null, owner.object || null, owner.camera || null, owner.material || computeNode.__tslpMaterialComputeOwner || null, computeNode )
+			: this.getNodeFrame( this.renderer, null, null, null, null, computeNode );
 
 	}
 
@@ -314,18 +363,23 @@ class ReplayNodeManager extends DataMap {
 
 	updateForCompute( computeNode ) {
 
-		const ownerFrame = computeNode && computeNode.__tslpMaterialComputeFrame || null;
-		const nodeFrame = ownerFrame
-			? this.getNodeFrame(
-				ownerFrame.renderer || this.renderer,
-				ownerFrame.scene || null,
-				ownerFrame.object || null,
-				ownerFrame.camera || null,
-				ownerFrame.material || computeNode.__tslpMaterialComputeOwner || null,
-			)
-			: this.getNodeFrame();
+		const nodeFrame = this.getNodeFrameForCompute( computeNode );
 		const state = this.getForCompute( computeNode );
 		for ( const node of state.updateNodes || [] ) nodeFrame.updateNode( node );
+
+	}
+
+	updateBeforeForCompute( computeNode ) {
+
+		const state = this.getForCompute( computeNode );
+		for ( const node of state.updateBeforeNodes || [] ) this.getNodeFrameForCompute( computeNode ).updateBeforeNode( node );
+
+	}
+
+	updateAfterForCompute( computeNode ) {
+
+		const state = this.getForCompute( computeNode );
+		for ( const node of state.updateAfterNodes || [] ) this.getNodeFrameForCompute( computeNode ).updateAfterNode( node );
 
 	}
 
@@ -339,12 +393,29 @@ class ReplayNodeManager extends DataMap {
 
 	needsRefresh( renderObject ) {
 
-		return renderObject.getMonitor().needsRefresh( renderObject, this.getNodeFrameForRender( renderObject ) );
+		const refresh = renderObject.getMonitor().needsRefresh( renderObject, this.getNodeFrameForRender( renderObject ) );
+		// Replay and legacy fallback observers use a boolean. Native r186/r187
+		// Renderer compares numeric FULL/SHARED values rather than truthiness.
+		return refresh === true ? RenderObjectRefreshType.FULL : refresh === false ? RenderObjectRefreshType.NONE : refresh;
+
+	}
+
+	renderShadows( scene, camera ) {
+
+		this._shadowScheduler.render( scene, camera );
+
+	}
+
+	disposeRendererResources() {
+
+		this._resolvePMREMTexture.dispose();
+		this._shadowScheduler.dispose();
 
 	}
 
 	dispose() {
 
+		this.disposeRendererResources();
 		super.dispose();
 		this.nodeFrame = new ReplayNodeFrame();
 		this.nodeBuilderCache = new Map();

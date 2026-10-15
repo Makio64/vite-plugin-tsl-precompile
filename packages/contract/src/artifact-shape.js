@@ -172,7 +172,7 @@ export function fingerprintArtifactShape( input ) {
 				`${ bindingIndex }:${ binding && binding.name || '<anon>' }`,
 				binding && binding.kind,
 				binding,
-				[ 'visibility', 'textureType', 'byteLength', 'access', 'comparison', 'store', 'mipLevel' ],
+				[ 'visibility', 'textureType', 'byteLength', 'runtimeSized', 'access', 'comparison', 'store', 'mipLevel' ],
 			);
 
 		}
@@ -221,7 +221,7 @@ export function fingerprintArtifactShape( input ) {
 				storage && storage.name,
 				storage && storage.source && storage.source.kind,
 				storage,
-				[ 'bindingKind', 'access', 'visibility', 'byteLength', 'count', 'itemSize', 'arrayType' ],
+				[ 'bindingKind', 'access', 'visibility', 'byteLength', 'count', 'runtimeSized', 'itemSize', 'arrayType' ],
 			);
 
 		}
@@ -236,7 +236,7 @@ export function fingerprintArtifactShape( input ) {
 				`${ bindingIndex }:${ binding && binding.name || '<anon>' }`,
 				binding && ( binding.type || binding.bindingKind || binding.kind ),
 				binding,
-				[ 'byteLength', 'visibility', 'textureType', 'access', 'comparison', 'store', 'mipLevel' ],
+				[ 'byteLength', 'runtimeSized', 'visibility', 'textureType', 'access', 'comparison', 'store', 'mipLevel' ],
 			);
 
 		}

@@ -27,6 +27,8 @@
 import { createHash } from 'node:crypto';
 import {
 	createMaterialSourceHashPayload,
+	createNodeGraphHashPayload,
+	createPlainConfigHashPayload,
 	normalizeMaterialGraph,
 	normalizeNode,
 } from '@tsl-precompile/contract/graph-normalize';
@@ -65,8 +67,9 @@ function assertVersion( fn, threeVersion, pluginVersion ) {
  * @param {string} opts.pluginVersion
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function computeArtifactContentHash( artifact, { shape, threeVersion, pluginVersion } ) {
+export function computeArtifactContentHash( artifact, options ) {
 
+	const { shape, threeVersion, pluginVersion } = options;
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
 		throw new TypeError( 'computeArtifactContentHash: "shape" must be a non-empty string' );
@@ -75,6 +78,7 @@ export function computeArtifactContentHash( artifact, { shape, threeVersion, plu
 	assertVersion( 'computeArtifactContentHash', threeVersion, pluginVersion );
 
 	const payload = createArtifactContentHashPayload( artifact, {
+		...options,
 		shape,
 		threeVersion,
 		toolchainVersion: pluginVersion,
@@ -127,8 +131,9 @@ export const computeSourceGraphHash = computeArtifactHash;
  * @param {string} opts.pluginVersion
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function computeNodeGraphHash( node, { shape, threeVersion, pluginVersion } ) {
+export function computeNodeGraphHash( node, options ) {
 
+	const { shape, threeVersion, pluginVersion } = options;
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
 		throw new TypeError( 'computeNodeGraphHash: "shape" must be a non-empty string' );
@@ -136,8 +141,7 @@ export function computeNodeGraphHash( node, { shape, threeVersion, pluginVersion
 	}
 	assertVersion( 'computeNodeGraphHash', threeVersion, pluginVersion );
 
-	const normalized = normalizeNode( node, new Set(), 0 );
-	const payload = [ 'node-v1', shape, threeVersion, pluginVersion, normalized ].join( '\n' );
+	const payload = createNodeGraphHashPayload( node, options );
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
 
 }
@@ -154,30 +158,16 @@ export { normalizeMaterialGraph, normalizeNode };
  * @param {{ shape: string, threeVersion: string, pluginVersion: string }} opts
  * @return {string} hex-encoded sha256, 64 chars
  */
-export function computePlainConfigHash( config, { shape, threeVersion, pluginVersion } ) {
+export function computePlainConfigHash( config, options ) {
 
+	const { shape, threeVersion, pluginVersion } = options;
 	if ( typeof shape !== 'string' || shape.length === 0 ) {
 
 		throw new TypeError( 'computePlainConfigHash: "shape" must be a non-empty string' );
 
 	}
 	assertVersion( 'computePlainConfigHash', threeVersion, pluginVersion );
-	const payload = [
-		'plain-v1',
-		shape,
-		threeVersion,
-		pluginVersion,
-		stableStringify( config ),
-	].join( '\n' );
+	const payload = createPlainConfigHashPayload( config, options );
 	return createHash( 'sha256' ).update( payload ).digest( 'hex' );
-
-}
-
-function stableStringify( v ) {
-
-	if ( v === null || typeof v !== 'object' ) return JSON.stringify( v );
-	if ( Array.isArray( v ) ) return '[' + v.map( stableStringify ).join( ',' ) + ']';
-	const keys = Object.keys( v ).sort();
-	return '{' + keys.map( ( k ) => JSON.stringify( k ) + ':' + stableStringify( v[ k ] ) ).join( ',' ) + '}';
 
 }

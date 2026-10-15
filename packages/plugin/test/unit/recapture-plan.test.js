@@ -3,11 +3,26 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { createPMREMCubeLayoutConfig } from '@tsl-precompile/contract/pmrem-config';
 
 import { selectRecaptureExamples } from '../../src/cli/recapture-all-support.js';
 import { createRecapturePlan } from '../../src/cli/recapture-plan.js';
 
 const REPO = resolve( import.meta.dirname, '../../../..' );
+
+test( 'recapture PMREM obligations follow the validated target layout', () => {
+
+	const cube = createRecapturePlan( REPO, { pmremLayout: createPMREMCubeLayoutConfig( 256 ) } );
+	assert.deepEqual(
+		cube.find( example => example.name === 'pmrem-debug' ).requiredAuxiliaryShapes,
+		[ 'pmrem-cubemap', 'pmrem-equirect', 'pmrem-blur', 'pmrem-ggx', 'pmrem-integration' ],
+	);
+	assert.throws(
+		() => createRecapturePlan( REPO, { pmremLayout: { schema: 'future-layout@1' } } ),
+		/Invalid recapture PMREM layout/,
+	);
+
+} );
 
 test( 'recapture-all covers every artifact-producing example route', () => {
 

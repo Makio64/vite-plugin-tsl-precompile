@@ -58,6 +58,17 @@ test( 'render selector canonicalizes process-local analytic light ordering', () 
 	ambient.castShadow = true;
 	assert.notEqual( createRenderObjectContextSelector( replay ), canonical, 'per-light shader topology remains signed' );
 
+	directional.id = 10;
+	ambient.id = 20;
+	const ordered = createRenderObjectContextSelector( capture );
+	assert.equal( ordered, createRenderObjectContextSelector( replay ), 'traversal order does not change Three shader order' );
+	directional.id = 30;
+	assert.notEqual( ordered, createRenderObjectContextSelector( replay ), 'changing the semantic sequence of light functions changes shader bindings' );
+	directional.id = 300;
+	ambient.id = 200;
+	const sameOrder = createRenderObjectContextSelector( capture );
+	assert.equal( sameOrder, createRenderObjectContextSelector( replay ), 'process-local id values are absent from persisted topology' );
+
 } );
 
 test( 'render selector is graph-free and ignores axes absent from Three shader reuse', () => {

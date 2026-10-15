@@ -163,3 +163,99 @@ void main() { fragColor = texture( plainTex, vec2( 0.5 ) ); }
 	);
 
 } );
+
+test( 'binding descriptions invalidate when any shader stage changes or is removed', () => {
+
+	const artifact = {};
+	for ( const stage of [ 'vertexShader', 'fragmentShader', 'computeShader' ] ) {
+
+		assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), false );
+		artifact[ stage ] = 'var tex: texture_depth_cube;';
+		assert.equal( inferTextureTypeFromShader( artifact, 'tex' ), 'cube' );
+		assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), true );
+		assert.equal( textureMatchesShaderBinding( artifact, 'tex', { isTexture: true } ), false );
+		artifact[ stage ] = 'var tex: texture_3d<f32>;';
+		assert.equal( inferTextureTypeFromShader( artifact, 'tex' ), '3d' );
+		assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), false );
+		delete artifact[ stage ];
+		assert.equal( inferTextureTypeFromShader( artifact, 'tex' ), null );
+
+	}
+
+} );
+
+test( 'binding descriptions keep sampler comparison separate from paired texture shape', () => {
+
+	const artifact = Object.freeze( {
+		vertexShader: 'var tex: texture_depth_2d;',
+		fragmentShader: 'var tex: texture_depth_2d; var tex_sampler: sampler_comparison; var tex_extra: texture_cube<f32>;',
+	} );
+	assert.equal( shaderDeclaresComparisonSampler( artifact, 'tex' ), false );
+	assert.equal( shaderDeclaresComparisonSampler( artifact, 'tex_sampler' ), true );
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'tex_sampler' ), true );
+	assert.equal( shaderDeclaresCubeTexture( artifact, 'tex' ), false );
+	assert.equal( shaderDeclaresCubeTexture( artifact, 'tex_extra' ), true );
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'constructor' ), false );
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'toString' ), false );
+	assert.equal( shaderDeclaresDepthTexture( { fragmentShader: 'var tex: texture_2d<f32>;' }, 'tex' ), false );
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), true );
+
+} );
+
+test( 'binding descriptions combine stage declarations and preserve WGSL inference precedence over GLSL', () => {
+
+	const artifact = {
+		vertexShader: 'var tex: texture_depth_2d;',
+		fragmentShader: 'var tex: texture_2d_array<f32>; uniform samplerCube tex;',
+		computeShader: 'var literal.$[1]: texture_3d<f32>;',
+	};
+	assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), true );
+	assert.equal( shaderDeclaresArrayTexture( artifact, 'tex' ), true );
+	assert.equal( shaderDeclaresCubeTexture( artifact, 'tex' ), true );
+	assert.equal( inferTextureTypeFromShader( artifact, 'tex' ), '2d-array' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'literal.$[1]' ), '3d' );
+	assert.equal( inferTextureTypeFromShader( artifact, 'literalX1' ), null );
+
+} );
+
+test( 'all binding probes share cached analysis and shader replacement re-runs it', () => {
+
+	const artifact = { fragmentShader: 'var tex: texture_depth_2d_array;' };
+	const OriginalRegExp = globalThis.RegExp;
+	let constructions = 0;
+	globalThis.RegExp = new Proxy( OriginalRegExp, {
+		construct( target, args ) {
+
+			constructions ++;
+			return Reflect.construct( target, args );
+
+		},
+	} );
+	try {
+
+		assert.equal( shaderDeclaresDepthTexture( artifact, 'tex' ), true );
+		const initial = constructions;
+		assert.ok( initial > 0 );
+		for ( let i = 0; i < 10; i ++ ) {
+
+			shaderDeclaresArrayTexture( artifact, 'tex' );
+			shaderDeclaresComparisonSampler( artifact, 'tex' );
+			shaderDeclaresCubeTexture( artifact, 'tex' );
+			shaderDeclaresMultisampledTexture( artifact, 'tex' );
+			inferTextureTypeFromShader( artifact, 'tex' );
+			textureMatchesShaderBinding( artifact, 'tex', { isTexture: true, isDepthTexture: true } );
+			selectFallbackTextureForBinding( artifact, 'tex', {} );
+
+		}
+		assert.equal( constructions, initial );
+		artifact.fragmentShader = 'var tex: texture_3d<f32>;';
+		assert.equal( inferTextureTypeFromShader( artifact, 'tex' ), '3d' );
+		assert.ok( constructions > initial );
+
+	} finally {
+
+		globalThis.RegExp = OriginalRegExp;
+
+	}
+
+} );

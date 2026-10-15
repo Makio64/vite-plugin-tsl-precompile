@@ -1,5 +1,72 @@
 import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
 
+const writeStates = new WeakMap();
+const uploadStates = new WeakMap();
+
+export class ReplayUniformBuffer extends UniformBuffer {
+
+	needsWrite( frame ) {
+
+		const group = this.groupNode;
+		if ( ! group?.shared || ( group.updateType !== 'render' && group.updateType !== 'frame' ) || frame.frameId === undefined ) return true;
+		const previous = writeStates.get( this );
+		return ! previous || previous.frameId !== frame.frameId ||
+			( group.updateType === 'render' && ( frame.renderId === undefined || previous.renderId !== frame.renderId ) ) ||
+			previous.renderer !== frame.renderer || previous.scene !== frame.scene ||
+			previous.camera !== frame.camera || previous.lightsNode !== frame.lightsNode || previous.buffer !== this.buffer;
+
+	}
+
+	didWrite( frame ) {
+
+		this.groupNode.version ++;
+		if ( this.groupNode.shared ) writeStates.set( this, {
+			frameId: frame.frameId, renderId: frame.renderId, renderer: frame.renderer,
+			scene: frame.scene, camera: frame.camera, lightsNode: frame.lightsNode, buffer: this.buffer,
+		} );
+
+	}
+
+	update() {
+
+		const buffer = this.buffer;
+		if ( ! buffer ) return false;
+		let state = uploadStates.get( this );
+		if ( ! state || state.buffer !== buffer ) {
+
+			const words = new Uint32Array( buffer.buffer, buffer.byteOffset, buffer.byteLength / 4 );
+			state = { buffer, words, uploaded: new Uint32Array( words ) };
+			uploadStates.set( this, state );
+			return true;
+
+		}
+		// Compare bytes rather than floats: integer slots, NaN payloads and
+		// signed zero must preserve their exact shader-visible representation.
+		// Four-word chunks reduce loop branches; XOR/OR cannot hide a changed bit.
+		const { words, uploaded } = state;
+		const length = words.length;
+		let i = 0;
+		for ( ; i + 3 < length; i += 4 ) {
+
+			if ( ( ( words[ i ] ^ uploaded[ i ] ) | ( words[ i + 1 ] ^ uploaded[ i + 1 ] ) |
+				( words[ i + 2 ] ^ uploaded[ i + 2 ] ) | ( words[ i + 3 ] ^ uploaded[ i + 3 ] ) ) === 0 ) continue;
+			uploaded.set( words );
+			return true;
+
+		}
+		for ( ; i < length; i ++ ) {
+
+			if ( words[ i ] === uploaded[ i ] ) continue;
+			uploaded.set( words );
+			return true;
+
+		}
+		return false;
+
+	}
+
+}
+
 export function createUniformBufferBinding( {
 	artifact,
 	group,
@@ -51,7 +118,7 @@ export function createUniformBufferBinding( {
 
 	}
 
-	const uniformBuffer = new UniformBuffer( name, buffer );
+	const uniformBuffer = new ReplayUniformBuffer( name, buffer );
 	uniformBuffer.visibility = descriptor.visibility | 0;
 	uniformBuffer.groupNode = groupNode;
 	const liveArrayResolver = createLiveUniformArrayResolver( name, buffer.byteLength, material, artifact, group && group.name || groupName );

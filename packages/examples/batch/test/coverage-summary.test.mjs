@@ -34,6 +34,7 @@ import {
 	pixelGateDisabledReasonForExample,
 	psnrThresholdForExample,
 } from '../psnr.mjs';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { fingerprintThreeSourceVerificationRecords } from '../_three-version.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
@@ -45,8 +46,9 @@ const CATALOGUE_PATH = resolve( BATCH_ROOT, 'example-catalogue.json' );
 const CATALOGUE = readEvidenceCatalogue( CATALOGUE_PATH );
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const CAMPAIGN_ID = 'campaign-fixture';
-const OFFICIAL_COMMIT = '2431a09f46f34c560bc8e44b33be0e567723d5b9';
-const OFFICIAL_TREE = 'db4af93e35bd10c43f957137f7fb44c138e52ea0';
+const CURRENT_RELEASE = THREE_RELEASE_PROFILES.stable;
+const OFFICIAL_COMMIT = CURRENT_RELEASE.gitCommit;
+const OFFICIAL_TREE = CURRENT_RELEASE.gitTree;
 const OFFICIAL_THREE_PROOF_FILES = [ {
 	path: 'build/three.webgpu.js',
 	bytes: 42,
@@ -76,6 +78,9 @@ const OFFICIAL_SOURCE_VERIFICATION = {
 	files: OFFICIAL_THREE_PROOF_FILES,
 };
 const REQUIRED_REPOSITORY_SOURCES = resolveE2EHarnessSourceFiles( REPO );
+
+// Fixture reports keep the full campaign and fresh byte hashes. Compact JSON
+// avoids repeatedly writing/parsing indentation; each test still owns its files.
 
 function fixtureEnvironment() {
 
@@ -330,8 +335,8 @@ function createEvidenceFixture( root, {
 		caseIdsSha256: CATALOGUE.caseIdsSha256,
 	};
 	const threeCheckout = {
-		revision: '185',
-		packageVersion: '0.185.1',
+		revision: CURRENT_RELEASE.revision,
+		packageVersion: CURRENT_RELEASE.packageVersion,
 		git: { available: true, head: OFFICIAL_COMMIT, clean: true },
 		sourceVerification: OFFICIAL_SOURCE_VERIFICATION,
 		sourceFingerprint: OFFICIAL_THREE_SOURCES.sha256,
@@ -438,7 +443,7 @@ function createEvidenceFixture( root, {
 
 	}
 	const reportPath = join( root, 'e2e-report.json' );
-	const reportBytes = Buffer.from( JSON.stringify( report, null, 2 ) );
+	const reportBytes = Buffer.from( JSON.stringify( report ) );
 	writeFileSync( reportPath, reportBytes );
 	const reportDescriptor = describeEvidenceBytes( { outputRoot: root, file: reportPath, bytes: reportBytes, runId: RUN_ID } );
 	const manifest = {
@@ -474,7 +479,7 @@ function createEvidenceFixture( root, {
 			artifactMetrics: detail.artifactMetrics,
 		} ) ),
 	};
-	writeFileSync( join( root, 'evidence-manifest.json' ), JSON.stringify( manifest, null, 2 ) );
+	writeFileSync( join( root, 'evidence-manifest.json' ), JSON.stringify( manifest ) );
 	return { capturePath, reportPath };
 
 }
@@ -508,8 +513,8 @@ function createLocalCohortFixture( aggregateRoot, project, index, campaignId = C
 		discoveredCaseNames: localProvenance.discovery.cases.map( ( entry ) => entry.name ),
 	};
 	const threeCheckout = {
-		revision: '185',
-		packageVersion: '0.185.1',
+		revision: CURRENT_RELEASE.revision,
+		packageVersion: CURRENT_RELEASE.packageVersion,
 		git: { available: true, head: OFFICIAL_COMMIT, clean: true },
 		sourceVerification: OFFICIAL_SOURCE_VERIFICATION,
 		sourceFingerprint: OFFICIAL_THREE_SOURCES.sha256,
@@ -585,7 +590,7 @@ function createLocalCohortFixture( aggregateRoot, project, index, campaignId = C
 		details,
 	};
 	const reportPath = join( root, `${ project }-e2e-report.json` );
-	const reportBytes = Buffer.from( JSON.stringify( report, null, 2 ) );
+	const reportBytes = Buffer.from( JSON.stringify( report ) );
 	writeFileSync( reportPath, reportBytes );
 	const reportDescriptor = describeEvidenceBytes( { outputRoot: root, file: reportPath, bytes: reportBytes, runId } );
 	const manifest = {
@@ -617,7 +622,7 @@ function createLocalCohortFixture( aggregateRoot, project, index, campaignId = C
 			artifactMetrics: detail.artifactMetrics,
 		} ) ),
 	};
-	writeFileSync( join( root, 'evidence-manifest.json' ), JSON.stringify( manifest, null, 2 ) );
+	writeFileSync( join( root, 'evidence-manifest.json' ), JSON.stringify( manifest ) );
 
 }
 
@@ -631,7 +636,7 @@ function rewriteLocalCohortThreeCheckout( aggregateRoot, project, mutate ) {
 	mutate( report.evidence.threeCheckout, report.evidence.sources );
 	manifest.threeCheckout = structuredClone( report.evidence.threeCheckout );
 	manifest.sources = structuredClone( report.evidence.sources );
-	const reportBytes = Buffer.from( JSON.stringify( report, null, 2 ) );
+	const reportBytes = Buffer.from( JSON.stringify( report ) );
 	writeFileSync( reportPath, reportBytes );
 	manifest.report = describeEvidenceBytes( {
 		outputRoot: root,
@@ -639,7 +644,7 @@ function rewriteLocalCohortThreeCheckout( aggregateRoot, project, mutate ) {
 		bytes: reportBytes,
 		runId: report.runId,
 	} );
-	writeFileSync( manifestPath, JSON.stringify( manifest, null, 2 ) );
+	writeFileSync( manifestPath, JSON.stringify( manifest ) );
 
 }
 
@@ -654,7 +659,7 @@ function rewritePrimaryEvidence( root, mutate ) {
 	report.configuration.fingerprint = fingerprintJson( report.configuration );
 	report.evidence.configurationFingerprint = report.configuration.fingerprint;
 	manifest.configuration.fingerprint = report.configuration.fingerprint;
-	const reportBytes = Buffer.from( JSON.stringify( report, null, 2 ) );
+	const reportBytes = Buffer.from( JSON.stringify( report ) );
 	writeFileSync( reportPath, reportBytes );
 	manifest.report = describeEvidenceBytes( {
 		outputRoot: root,
@@ -662,7 +667,7 @@ function rewritePrimaryEvidence( root, mutate ) {
 		bytes: reportBytes,
 		runId: report.runId,
 	} );
-	writeFileSync( manifestPath, JSON.stringify( manifest, null, 2 ) );
+	writeFileSync( manifestPath, JSON.stringify( manifest ) );
 
 }
 
@@ -987,7 +992,7 @@ test( 'canonical aggregate coverage requires official source verification for ev
 			assert.notEqual( result.status, 0 );
 			assert.match(
 				result.stderr,
-				/Local cohort .* did not verify served sources against the official Three r185 Git tree/,
+				/Local cohort .* did not verify served sources against the official Three r186 Git tree/,
 			);
 
 		} );
@@ -1006,7 +1011,7 @@ test( 'canonical aggregate coverage rejects a missing local cohort', ( t ) => {
 		encoding: 'utf8',
 	} );
 	assert.notEqual( result.status, 0 );
-	assert.match( result.stderr, /requires the exact 254-case campaign/ );
+	assert.match( result.stderr, new RegExp( `requires the exact ${ CATALOGUE.caseCount }-case campaign` ) );
 
 } );
 

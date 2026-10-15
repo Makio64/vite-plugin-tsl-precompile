@@ -7,6 +7,25 @@ import {
 	createSignedAuxiliaryPayload,
 } from '../src/aux-marker.js';
 import { hashArtifactContentSync } from '../src/graph-hash.js';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-releases';
+
+test( 'auxiliary signing persists exact dev emitter axes without changing stable metadata', () => {
+
+	const release = THREE_RELEASE_PROFILES.development;
+	const provenance = { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit, pluginVersion: '0.1.0' };
+	const payload = { materialShape: 'background', configHash: 'a'.repeat( 64 ), artifact: { vertexShader: 'vertex', fragmentShader: 'fragment', uniformPlan: [] } };
+	const signed = createSignedAuxiliaryPayload( payload, 'background', provenance );
+	assert.equal( signed.threeRevision, release.revision );
+	assert.equal( signed.threeCommit, release.gitCommit );
+	assert.equal( signed.artifact.sourceThreeRevision, release.revision );
+	assert.equal( signed.artifact.sourceThreeCommit, release.gitCommit );
+	assert.equal( signed.hash, hashArtifactContentSync( signed.artifact, { shape: 'background', ...provenance } ) );
+	assert.equal( payload.artifact.sourceThreeCommit, undefined );
+	const stable = createSignedAuxiliaryPayload( payload, 'background', { threeVersion: '0.186.1', pluginVersion: '0.1.0' } );
+	assert.equal( Object.hasOwn( stable.artifact, 'sourceThreeRevision' ), false );
+	assert.equal( Object.hasOwn( stable, 'threeRevision' ), false );
+
+} );
 
 test( 'auxiliary POST payloads are JSON-sanitized and content-signed', () => {
 

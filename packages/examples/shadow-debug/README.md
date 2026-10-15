@@ -80,3 +80,14 @@ Pages:
 
 The directional, spot, and point pages accept `?shadow=basic`, `?shadow=pcf`,
 `?shadow=pcf-soft`, or `?shadow=vsm`.
+
+Three r186 removes `PCFSoftShadowMap` and replaces it with `PCFShadowMap` during
+renderer compilation and drawing. The `pcf-soft` routes remain in the matrix
+and select PCF directly in capture and production. The shared replay shadow
+scheduler also applies the native alias for applications still using the old
+constant. The r185 → r186 recapture therefore reduces
+the shadow-depth inventory from 11 identities to 9: directional and spot PCF
+Soft each become the existing PCF identity; point PCF Soft already shared PCF.
+The reviewed migration used `--allow-prune` only for this example, retaining
+all 16 configured capture routes and both strict VSM production previews.
+Ordinary recaptures keep the inventory guard enabled.

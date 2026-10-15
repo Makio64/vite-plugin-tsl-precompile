@@ -1,7 +1,7 @@
 # batch (example harness)
 
-Runs the plugin and slim runtime against the checked 254-case catalogue:
-209 official Three r185 WebGPU examples plus 45 local routes in six projects.
+Runs the plugin and slim runtime against the checked 272-case catalogue:
+224 official Three r186 WebGPU examples plus 48 local routes in eight projects.
 
 ## Target
 
@@ -23,7 +23,7 @@ separately from visual correctness.
 
 Canonical pixel-gate exceptions live in `coverage-config.json` and retain every
 non-pixel gate. There is exactly one: the `volatileCompute` entry
-`webgpu_storage_buffer.html`. In three.js r185 it dispatches 32 invocations in a
+`webgpu_storage_buffer.html`. In three.js r186 it dispatches 32 invocations in a
 default 64-thread workgroup, reads the reversed index before bounds protection,
 and orders storage writes with only `workgroupBarrier()`. Its image comparison
 is therefore diagnostic rather than a product-correctness signal. Every other
@@ -74,7 +74,7 @@ repository paths. Aggregation and publication rediscover that catalogue from
 the current checkout and reject a stale or incomplete local snapshot.
 
 Canonical runs also record a self-contained proof for every served Three file:
-path, bytes, SHA-256, Git blob, mode, object format, and the official r185
+path, bytes, SHA-256, Git blob, mode, object format, and the official r186
 commit/tree. The proof count is nonzero and exact, and its aggregate digest is
 recomputed from the per-file records. In visual evidence, that list must match
 `manifest.sources.three` exactly, including its `fileCount`, JSON fingerprint,
@@ -90,7 +90,7 @@ size and SHA-256 are verified before bounded gzip decompression, strict UTF-8
 decoding, and schema validation. The descriptor must also agree on
 `contentEncoding: "gzip"` and the exact uncompressed byte count. This repository
 has changed its fingerprinted v2 harness sources; do not claim a final
-254-route result until a fresh exact campaign completes and its manifest,
+272-route result until a fresh exact campaign completes and its manifest,
 report, artifacts, and screenshots pass these checks together.
 
 For runtime-only diagnostics, pass both roots explicitly. `--input-root` selects
@@ -142,6 +142,13 @@ Selector failures in the JSON report include the replay-active selector hash/top
 
 The runner recycles Chromium every two examples by default to avoid long WebGPU process lifetimes. Override with `--max-runs-per-browser=<n>` / `TSLP_E2E_MAX_RUNS_PER_BROWSER` and `TSLP_E2E_BROWSER_RESPAWN_DELAY_MS` only when investigating harness performance or browser behavior; those overrides force diagnostic/noncanonical evidence and are rejected by canonical and official-source runs. Pass `--verbose` or set `TSLP_E2E_VERBOSE=1` to forward page warnings/logs while debugging harness internals.
 
+Stock, E2E, slim-load and ocean smoke runs bound shutdown of their own temporary Chrome on macOS/Linux
+after every context has closed. They allow 250 ms for normal shutdown, then stop
+only a verified live child process group and await process and profile cleanup
+before restarting. Unknown ownership and unsupported platforms retain normal
+shutdown. Cleanup failures stop the run. Browser selection, recycling frequency,
+rendering waits and evidence gates keep their existing policies.
+
 The E2E server automatically falls forward to the next free port when the requested port is occupied. Use `--port=<n>` to choose the first port and `--port-retries=<n>` to cap the retry window.
 
 Animated examples compare the first fully loaded settled frame by default (`--target-tick=0`) so async asset timing does not masquerade as a shader regression. Use `--target-tick=<n>` when intentionally auditing a later animation phase.
@@ -158,7 +165,7 @@ node packages/examples/batch/run-hard-scene.mjs --plan
 node packages/examples/batch/run-hard-scene.mjs \
   --plan \
   --case=webgpu_postprocessing_ssr_denoise.html \
-  --three-repo=/path/to/clean-three-r185
+  --three-repo=/path/to/clean-three-r186
 ```
 
 Execute a case with the exact `.html` filename from the plan:
@@ -166,7 +173,7 @@ Execute a case with the exact `.html` filename from the plan:
 ```sh
 pnpm test:e2e:hard-scene -- \
   --case=webgpu_pmrem_cubemap.html \
-  --three-repo=/path/to/clean-three-r185
+  --three-repo=/path/to/clean-three-r186
 ```
 
 The runner delegates to the existing capture/replay harness, keeps the 30 dB
@@ -232,7 +239,7 @@ Source examples aren't written with `.precompile()` calls. The harness injects `
 ## Commands
 
 Canonical public evidence has two independent browser inputs. The exact visual
-campaign writes the 209 upstream plus 45 local capture/replay cohorts, but it
+campaign writes the 224 upstream plus 48 local capture/replay cohorts, but it
 does not create the stock smoke report consumed by the site. Use fresh external
 output roots for both runs, then pass both paths to the site data generator.
 `pnpm coverage:site` only revalidates existing default inputs; it does not run
@@ -242,14 +249,14 @@ either browser campaign.
 pnpm test:batch
 pnpm test:slim
 node packages/examples/batch/run.mjs \
-  --three-repo=/path/to/clean-three-r185 \
-  --output-root=/tmp/tslp-stock-209 \
+  --three-repo=/path/to/clean-three-r186 \
+  --output-root=/tmp/tslp-stock-224 \
   --canonical-evidence
 pnpm --filter examples-batch run:evidence-campaign -- \
-  --three-repo=/path/to/clean-three-r185 \
-  --output-root=/tmp/tslp-evidence-254
-TSLP_E2E_OUT=/tmp/tslp-evidence-254 \
-TSLP_STOCK_REPORT=/tmp/tslp-stock-209/report.json \
+  --three-repo=/path/to/clean-three-r186 \
+  --output-root=/tmp/tslp-evidence-272
+TSLP_E2E_OUT=/tmp/tslp-evidence-272 \
+TSLP_STOCK_REPORT=/tmp/tslp-stock-224/report.json \
 pnpm --filter @tsl-precompile/site data
 pnpm test:e2e -- --filter=webgpu_lights_custom --output-root=/tmp/tslp-lights-custom
 pnpm test:e2e -- --limit=12 --output-root=/tmp/tslp-first-12
@@ -264,7 +271,7 @@ node packages/examples/batch/run-e2e.mjs --filter=webgpu_backdrop --output-root=
 node packages/examples/batch/run-e2e.mjs --local-examples-root=/path/to/local/pages --filter=directional --output-root=/tmp/tslp-local-directional
 ```
 
-`/tmp/tslp-evidence-254` must be new or empty; the campaign runner rejects a
+`/tmp/tslp-evidence-272` must be new or empty; the campaign runner rejects a
 non-empty or symbolic-link output root rather than mixing evidence generations.
 
-By default the scripts look for a sibling `../three.js` checkout from the repo root. Use `--local-examples-root=/path/to/pages` with an isolated `--output-root` when you want the E2E harness to serve a small local `.html` corpus instead of upstream three.js examples. External roots remain byte-snapshotted diagnostic evidence; canonical coverage and site publication accept only the checked repository cohorts.
+Upstream and tier runs look for a sibling `../three.js` checkout from the repo root. Use `--local-examples-root=/path/to/pages` with an isolated `--output-root` to serve a small local `.html` corpus. Local E2E diagnostics default to the installed Three package, avoiding a separate checkout; its version must still match the signed slim bundle. `--three-repo` and `TSLP_THREE_REPO` retain precedence, and canonical or official-source runs still require the corpus checkout. External roots remain byte-snapshotted diagnostic evidence; canonical coverage and site publication accept only the checked repository cohorts.

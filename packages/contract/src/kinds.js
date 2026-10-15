@@ -1,6 +1,7 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import {
 	collectArtifactDynamicBindings,
+	MATERIAL_UNIFORM_TYPES,
 	dynamicBindingDescriptor,
 	validateDynamicBindingSource,
 	validateStorageBufferSnapshot,
@@ -14,6 +15,8 @@ import { validateArtifactLightIdentities } from './light-identities.js';
 import { validateComputeBindingsDescriptor } from './compute-bindings.js';
 import { validateMaterialComputeDescriptor } from './material-compute.js';
 import { validateInternalPassDescriptor } from './internal-pass.js';
+import { PMREM_UNIFORM_SLOT_KINDS } from './pmrem-config.js';
+import { validatePMREMTextureRelations } from './pmrem-uniform-relations.js';
 import { RENDER_BINDING_OWNER_KINDS, isRenderBindingOwnerKind } from './render-selector.js';
 import {
 	SHADER_LANGUAGES,
@@ -46,7 +49,6 @@ export const RUNTIME_BINDING_KINDS = Object.freeze( [
 ] );
 
 const RUNTIME_BINDING_KIND_SET = new Set( RUNTIME_BINDING_KINDS );
-
 export const BLOCKED_KINDS = Object.freeze( {
 	'builtin.dfgLUT': 'IBL DFG LUT — resolved by the hydrator (getDFGLUT()). Not a UBO slot kind.',
 	'builtin.ltcTexture': 'Area-light LTC texture — resolved by the hydrator from artifact.ltcTextures. Not a UBO slot kind.',
@@ -120,9 +122,7 @@ const CODEGEN_SLOT_KINDS = [
 	'renderer.toneMappingExposure',
 	'environment.intensity',
 	'environment.rotation',
-	'pmrem.maxMip',
-	'pmrem.texelWidth',
-	'pmrem.texelHeight',
+	...PMREM_UNIFORM_SLOT_KINDS,
 	'texture.uvFlipY',
 	'scene.fog.color',
 	'scene.fog.near',
@@ -144,59 +144,6 @@ const LEGACY_ALIASES = Object.freeze( {
 	frameId: 'frame.frameId',
 } );
 
-const MATERIAL_COLOR_KINDS = [
-	'material.color',
-	'material.emissive',
-	'material.specular',
-	'material.specularColor',
-	'material.sheenColor',
-	'material.attenuationColor',
-];
-
-const MATERIAL_SCALAR_KINDS = [
-	'material.scalar',
-	'material.opacity',
-	'material.alphaTest',
-	'material.roughness',
-	'material.metalness',
-	'material.ior',
-	'material.emissiveIntensity',
-	'material.aoMapIntensity',
-	'material.lightMapIntensity',
-	'material.envMapIntensity',
-	'material.specularIntensity',
-	'material.shininess',
-	'material.size',
-	'material.rotation',
-	'material.clearcoat',
-	'material.clearcoatRoughness',
-	'material.sheen',
-	'material.sheenRoughness',
-	'material.transmission',
-	'material.thickness',
-	'material.attenuationDistance',
-	'material.iridescence',
-	'material.iridescenceIOR',
-	'material.anisotropy',
-	'material.anisotropyRotation',
-	'material.dispersion',
-	'material.reflectivity',
-	'material.refractionRatio',
-	'material.bumpScale',
-	'material.displacementScale',
-	'material.displacementBias',
-	'material.linewidth',
-	'material.scale',
-	'material.dashSize',
-	'material.gapSize',
-	'material.dashOffset',
-];
-
-const MATERIAL_VECTOR_KINDS = [
-	'material.normalScale',
-	'material.clearcoatNormalScale',
-];
-
 function defineKinds( out, kinds, status, meta = {} ) {
 
 	for ( const kind of kinds ) {
@@ -209,9 +156,11 @@ function defineKinds( out, kinds, status, meta = {} ) {
 
 const kinds = {};
 defineKinds( kinds, CODEGEN_SLOT_KINDS, KIND_STATUS.CODEGEN, { codegen: 'emit-updater' } );
-defineKinds( kinds, MATERIAL_COLOR_KINDS, KIND_STATUS.CODEGEN, { codegen: 'emit-updater', value: 'color' } );
-defineKinds( kinds, MATERIAL_SCALAR_KINDS, KIND_STATUS.CODEGEN, { codegen: 'emit-updater', value: 'f32' } );
-defineKinds( kinds, MATERIAL_VECTOR_KINDS, KIND_STATUS.CODEGEN, { codegen: 'emit-updater', value: 'vec2' } );
+for ( const [ kind, value ] of Object.entries( MATERIAL_UNIFORM_TYPES ) ) {
+
+	kinds[ kind ] = Object.freeze( { kind, status: KIND_STATUS.CODEGEN, codegen: 'emit-updater', value } );
+
+}
 for ( const [ kind, target ] of Object.entries( LEGACY_ALIASES ) ) {
 
 	kinds[ kind ] = Object.freeze( { kind, status: KIND_STATUS.ALIAS, target, codegen: 'emit-updater' } );
@@ -540,58 +489,13 @@ function validateArtifactShaderIdentity( artifact, label, errors ) {
 
 	}
 	if ( ! declaredLanguageValid || artifact.cacheKey === undefined || artifact.cacheKey === null ) return;
-	const canonicalKey = createBackendAwareVariantKey( artifact.cacheKey, declaredLanguage );
-	if ( artifact.variantKey !== canonicalKey ) errors.push( validationError(
+	const legacyKey = createBackendAwareVariantKey( artifact.cacheKey, declaredLanguage );
+	const canonicalKey = createBackendAwareVariantKey( artifact.cacheKey, declaredLanguage, artifact );
+	if ( artifact.variantKey !== canonicalKey && artifact.variantKey !== legacyKey ) errors.push( validationError(
 		'artifact.variantKey.canonical',
 		`${ label }: variantKey must be ${ JSON.stringify( canonicalKey ) } for this cacheKey and shaderLanguage`,
 		'variantKey',
 	) );
-
-}
-
-const PMREM_SLOT_KINDS = new Set( [ 'pmrem.maxMip', 'pmrem.texelWidth', 'pmrem.texelHeight' ] );
-const PMREM_CUBE_UV_MAPPING = 306;
-
-function validatePMREMTextureRelations( artifact, label, errors ) {
-
-	// Structural validation reports a malformed uniformPlan separately. Keep
-	// relation checks total over hostile/untrusted artifact input so callers
-	// receive the contract error instead of an incidental iterator exception.
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const textureUuids = new Set();
-	for ( const group of plan ) {
-
-		for ( const entry of group && Array.isArray( group.textures ) ? group.textures : [] ) {
-
-			const source = entry && entry.source;
-			if (
-				source && source.kind === 'artifact.texture'
-				&& typeof source.textureUuid === 'string'
-				&& source.textureUuid.length > 0
-				&& ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' )
-			) textureUuids.add( source.textureUuid );
-
-		}
-
-	}
-	for ( let groupIndex = 0; groupIndex < plan.length; groupIndex ++ ) {
-
-		const group = plan[ groupIndex ];
-		for ( let slotIndex = 0; slotIndex < ( group && Array.isArray( group.slots ) ? group.slots : [] ).length; slotIndex ++ ) {
-
-			const source = group.slots[ slotIndex ] && group.slots[ slotIndex ].source;
-			if ( ! source || ! PMREM_SLOT_KINDS.has( source.kind ) || typeof source.textureUuid !== 'string' ) continue;
-			if ( textureUuids.has( source.textureUuid ) ) continue;
-			const path = `uniformPlan[${ groupIndex }].slots[${ slotIndex }].source.textureUuid`;
-			errors.push( validationError(
-				'pmrem.uniform.texture-reference',
-				`${ label}: ${ path } must reference a PMREM artifact.texture source in the same artifact variant`,
-				path,
-			) );
-
-		}
-
-	}
 
 }
 

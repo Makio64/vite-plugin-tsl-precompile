@@ -25,11 +25,11 @@ const NUMERIC_ARRAY_TYPES = Object.freeze( {
 } );
 
 /**
- * Compact WGSL without renaming identifiers or changing expression structure.
+ * Compact WGSL without changing shader interfaces or expression structure.
  *
- * This intentionally avoids identifier mangling. The transform removes
- * comments, collapses whitespace, and trims whitespace around punctuation
- * where WGSL's tokenization does not need it.
+ * Only generated private nodeVar temporaries may be renamed, to an identifier
+ * unused anywhere in the shader. Binding/struct/entrypoint names stay intact.
+ * Comments and unnecessary whitespace are removed as before.
  *
  * @param {string} source
  * @return {string}
@@ -44,11 +44,49 @@ export function minifyWgslSource( source ) {
 	// compaction and cross-artifact string pooling.
 	if ( looksLikeGlslSource( source ) ) return source;
 
-	return stripWgslComments( source )
+	return compactWgslTemporaryNames( stripWgslComments( source ) )
 		.replace( /\s+/g, ' ' )
 		.replace( /\s*([{}()[\],;:.])\s*/g, '$1' )
 		.replace( /\s*([=<>!]=?|&&|\|\|)\s*/g, '$1' )
 		.trim();
+
+}
+
+function compactWgslTemporaryNames( source ) {
+
+	// Private variables have no host binding. Rename whole Unicode identifiers,
+	// including local shadows, only when the destination is globally unused.
+	// Struct members, member accesses and function signatures remain an ABI.
+	if ( ! /nodeVar\d/.test( source ) ) return source;
+	const tokens = Array.from( source.matchAll( /[_\p{XID_Start}][_\p{XID_Continue}]*|[^\s]/gu ), match => match[ 0 ] );
+	const used = new Set( tokens );
+	const protectedNames = new Set();
+	const candidates = new Set();
+	let inStruct = false;
+	let inSignature = false;
+	for ( let i = 0; i < tokens.length; i ++ ) {
+
+		const token = tokens[ i ];
+		if ( token === 'struct' ) inStruct = true;
+		if ( token === 'fn' ) inSignature = true;
+		if ( inStruct || inSignature || tokens[ i - 1 ] === '.' ) protectedNames.add( token );
+		if ( token === '}' ) inStruct = false;
+		if ( token === '{' ) inSignature = false;
+		if ( token === 'var' && tokens[ i + 1 ] === '<' && tokens[ i + 2 ] === 'private' && tokens[ i + 3 ] === '>' && /^nodeVar\d+$/.test( tokens[ i + 4 ] ) ) {
+
+			candidates.add( tokens[ i + 4 ] );
+
+		}
+
+	}
+	const names = new Map();
+	for ( const name of candidates ) {
+
+		const short = `v${ name.slice( 7 ) }`;
+		if ( ! protectedNames.has( name ) && ! used.has( short ) ) names.set( name, short );
+
+	}
+	return names.size ? source.replace( /[_\p{XID_Start}][_\p{XID_Continue}]*/gu, name => names.get( name ) || name ) : source;
 
 }
 
@@ -132,7 +170,9 @@ export function emitOptimizedJsonExpression( value, opts = {} ) {
 }
 
 /**
- * Build a cross-module WGSL string pool from many artifact values.
+ * Build a cross-module string pool for shaders and render-context selectors.
+ * Selector fragments preserve exact JSON text; no matching rules are projected
+ * away. Both kinds use the existing virtual string module and dedupe opt-out.
  *
  * @param {Array<*>} values
  * @param {Object} [opts]
@@ -140,7 +180,7 @@ export function emitOptimizedJsonExpression( value, opts = {} ) {
  * @param {boolean} [opts.dedupeWgsl=true]
  * @param {string} [opts.refPrefix='__tslp_wgslPool']
  * @param {number} [opts.minDedupeBytes=64]
- * @return {{ strings: string[], refs: Map<string, string> }}
+ * @return {{ strings: string[], expressions: string[], refs: Map<string, string> }}
  */
 export function createWgslStringPool( values, opts = {} ) {
 
@@ -151,27 +191,108 @@ export function createWgslStringPool( values, opts = {} ) {
 		minDedupeBytes: opts.minDedupeBytes || DEFAULT_MIN_DEDUPE_BYTES,
 	};
 	const counts = new Map();
+	const selectorParts = new Map();
 
-	if ( ! options.dedupeWgsl ) return { strings: [], refs: new Map() };
+	if ( ! options.dedupeWgsl ) return { strings: [], expressions: [], refs: new Map() };
 
+	// Pooling only reads shader/selector strings. Avoid cloning numeric snapshots
+	// and minifying repeated shaders again; this cache lives for one pool build.
+	const minifiedShaders = new Map();
+	const minifyShader = options.minifyWgsl ? ( shader ) => {
+
+		if ( ! minifiedShaders.has( shader ) ) minifiedShaders.set( shader, minifyWgslSource( shader ) );
+		return minifiedShaders.get( shader );
+
+	} : null;
 	for ( const value of values ) {
 
-		const optimised = optimiseValue( value, options );
-		collectDedupeCandidates( optimised, counts );
+		collectDedupeCandidates( value, counts, '', null, selectorParts, minifyShader, new WeakSet() );
 
 	}
 
-	const strings = [];
+	// Factor exact function/structure text and selector fields before pooling
+	// whole strings. Concatenation preserves every shader and selector byte.
+	const pieces = new Map(), pieceCounts = new Map();
+	const selectorPieces = new Set();
+	for ( const string of counts.keys() ) {
+
+		if ( looksLikeGlslSource( string ) ) continue;
+		const parts = selectorParts.get( string ) || string.split( /(?=\b(?:fn|struct)\s)/ );
+		if ( parts.length < 2 ) continue;
+		pieces.set( string, parts );
+		if ( selectorParts.has( string ) ) for ( const part of parts ) selectorPieces.add( part );
+		for ( const part of parts ) pieceCounts.set( part, ( pieceCounts.get( part ) || 0 ) + 1 );
+
+	}
+	const strings = [], expressions = [];
+	const pieceRefs = new Map();
+	const add = ( string, expression = JSON.stringify( string ) ) => {
+
+		const ref = `${ options.refPrefix }${ strings.length }`;
+		strings.push( string ); expressions.push( expression );
+		return ref;
+
+	};
+	for ( const [ string, count ] of pieceCounts ) {
+
+		const minimumBytes = selectorPieces.has( string ) ? options.minDedupeBytes : Math.max( 128, options.minDedupeBytes );
+		if ( count > 1 && byteLength( string ) >= minimumBytes ) pieceRefs.set( string, add( string ) );
+
+	}
 	const refs = new Map();
 	for ( const [ string, count ] of counts ) {
 
-		if ( count < 2 ) continue;
-		if ( byteLength( string ) < options.minDedupeBytes ) continue;
-		refs.set( string, `${ options.refPrefix }${ strings.length }` );
-		strings.push( string );
+		const literal = JSON.stringify( string );
+		const expression = pooledStringExpression( pieces.get( string ), pieceRefs ) || literal;
+		if ( count > 1 && byteLength( string ) >= options.minDedupeBytes ) {
+
+			refs.set( string, add( string, expression.length < literal.length ? expression : literal ) );
+
+		} else if ( expression.length < literal.length ) refs.set( string, expression );
 
 	}
-	return { strings, refs };
+	return { strings, expressions, refs };
+
+}
+
+function collectRenderSelectorCandidates( selectors, counts, pieces ) {
+
+	// Pool only exact JSON round trips. Storage boundaries may change, but
+	// selector bytes (including ordering and escaping) remain authoritative.
+	for ( const selector of selectors ) {
+
+		if ( typeof selector !== 'string' ) continue;
+		let descriptor;
+		try { descriptor = JSON.parse( selector ); } catch { continue; }
+		if ( ! descriptor || Array.isArray( descriptor ) || typeof descriptor !== 'object'
+			|| JSON.stringify( descriptor ) !== selector ) continue;
+		const parts = Object.entries( descriptor ).map( ( [ key, entry ], index ) => (
+			`${ index ? ',' : '{' }${ JSON.stringify( key ) }:${ JSON.stringify( entry ) }`
+		) );
+		parts.push( parts.length ? '}' : '{}' );
+		pieces.set( selector, parts );
+		counts.set( selector, ( counts.get( selector ) || 0 ) + 1 );
+
+	}
+
+}
+
+function pooledStringExpression( parts, refs ) {
+
+	if ( ! parts ) return null;
+	const expressions = [];
+	let literal = '';
+	for ( const part of parts ) {
+
+		const ref = refs.get( part );
+		if ( ! ref ) { literal += part; continue; }
+		if ( literal ) expressions.push( JSON.stringify( literal ) );
+		literal = '';
+		expressions.push( ref );
+
+	}
+	if ( literal ) expressions.push( JSON.stringify( literal ) );
+	return expressions.join( '+' );
 
 }
 
@@ -245,28 +366,46 @@ function optimiseValue( value, options, key = '', seen = new WeakMap(), active =
 
 }
 
-function collectDedupeCandidates( value, counts, key = '', externalRefs = null ) {
+function collectDedupeCandidates( value, counts, key = '', externalRefs = null, selectorParts = null, minifyShader = null, active = null ) {
 
 	if ( typeof value === 'string' ) {
 
-		if ( SHADER_KEYS.has( key ) && value.length > 0 && ! ( externalRefs && externalRefs.has( value ) ) ) {
+		if ( SHADER_KEYS.has( key ) ) {
 
-			counts.set( value, ( counts.get( value ) || 0 ) + 1 );
+			if ( minifyShader ) value = minifyShader( value );
+			if ( value.length > 0 && ! ( externalRefs && externalRefs.has( value ) ) ) counts.set( value, ( counts.get( value ) || 0 ) + 1 );
 
 		}
 		return;
 
 	}
 	if ( ! value || typeof value !== 'object' ) return;
-	if ( Array.isArray( value ) ) {
+	if ( active?.has( value ) ) throw new TypeError( 'Converting circular structure to JSON' );
+	active?.add( value );
+	try {
 
-		for ( const item of value ) collectDedupeCandidates( item, counts, '', externalRefs );
-		return;
+		if ( Array.isArray( value ) ) {
 
-	}
-	for ( const [ childKey, childValue ] of Object.entries( value ) ) {
+			if ( selectorParts && key === 'renderContextSelectors' ) collectRenderSelectorCandidates( value, counts, selectorParts );
+			for ( const item of value ) {
 
-		collectDedupeCandidates( childValue, counts, childKey, externalRefs );
+				// Array scalars have no shader property name; selectors were handled
+				// above. Numeric snapshots need no recursive candidate calls.
+				if ( item && typeof item === 'object' ) collectDedupeCandidates( item, counts, '', externalRefs, selectorParts, minifyShader, active );
+
+			}
+			return;
+
+		}
+		for ( const [ childKey, childValue ] of Object.entries( value ) ) {
+
+			collectDedupeCandidates( childValue, counts, childKey, externalRefs, selectorParts, minifyShader, active );
+
+		}
+
+	} finally {
+
+		active?.delete( value );
 
 	}
 
@@ -282,12 +421,24 @@ function valueToExpression( value, names, externalRefs = null, objectNames = nul
 	}
 	if ( value === null ) return 'null';
 	if ( typeof value === 'number' || typeof value === 'boolean' ) return JSON.stringify( value );
-	if ( binaryNames && binaryNames.has( value ) ) return binaryNames.get( value );
+	if ( binaryNames && binaryNames.has( value ) ) {
+
+		const { ident, lazy } = binaryNames.get( value );
+		return lazy ? `${ ident }()` : ident;
+
+	}
 	if ( objectNames && objectNames.has( value ) ) return objectNames.get( value );
 	if ( Array.isArray( value ) ) return `[${ value.map( ( item ) => valueToExpression( item, names, externalRefs, objectNames, binaryNames ) ).join( ',' ) }]`;
 	if ( value && typeof value === 'object' ) {
 
-		return `{${ Object.entries( value ).map( ( [ key, childValue ] ) => `${ JSON.stringify( key ) }:${ valueToExpression( childValue, names, externalRefs, objectNames, binaryNames ) }` ).join( ',' ) }}`;
+		return `{${ Object.entries( value ).map( ( [ key, childValue ] ) => {
+
+			const name = JSON.stringify( key );
+			const packed = binaryNames && binaryNames.get( childValue );
+			if ( packed && packed.lazy ) return `get ${ name }(){return ${ packed.ident }()},set ${ name }(value){Object.defineProperty(this,${ name },{value,writable:true,enumerable:true,configurable:true})}`;
+			return `${ name }:${ valueToExpression( childValue, names, externalRefs, objectNames, binaryNames ) }`;
+
+		} ).join( ',' ) }}`;
 
 	}
 	return 'null';
@@ -308,7 +459,7 @@ function restoreUniformPlanAliasesDeep( value ) {
 		if ( ! item || typeof item !== 'object' || seen.has( item ) ) return;
 		seen.add( item );
 		if ( ! Array.isArray( item ) && Array.isArray( item.uniformPlan ) ) restoreUniformPlanAliases( item.uniformPlan );
-		for ( const child of Object.values( item ) ) visit( child );
+		for ( const child of Array.isArray( item ) ? item : Object.values( item ) ) visit( child );
 
 	};
 	visit( value );
@@ -395,9 +546,9 @@ function deepJsonEqual( left, right, seen = new Map() ) {
 }
 
 /**
- * Pack only schema-proven typed-array snapshots. Raw base64 removes thousands
- * of numeric AST nodes without compression; the generated decoder materializes
- * ordinary Arrays so existing Array.isArray contracts remain unchanged.
+ * Pack only schema-proven typed-array snapshots. Repeated blocks and small exact
+ * texture palettes are used only when they save bytes including decoder cost.
+ * All paths materialize ordinary Arrays and preserve existing artifact contracts.
  */
 function createBinaryArrayDeclarations( value, options, binaryNames ) {
 
@@ -408,29 +559,32 @@ function createBinaryArrayDeclarations( value, options, binaryNames ) {
 		const arrayType = usage.types.values().next().value;
 		const logicalInfo = NUMERIC_ARRAY_TYPES[ arrayType ];
 		if ( ! logicalInfo || array.length * logicalInfo.bytes < options.minBinaryArrayBytes ) continue;
-		const encoded = encodeExactNumericArray( array, logicalInfo );
+		const encoded = encodeExactNumericArray( array, logicalInfo, usage.textureDataOnly ? usage.textureItemSize : 0 );
 		if ( encoded === null ) continue;
-		const { info, base64 } = encoded;
-		const key = `${ info.getter }:${ info.bytes }:${ base64 }`;
+		const { info, base64, stride, inlineBytes, paletteItemSize = 0, paletteBytes = 0 } = encoded;
+		const key = `${ info.getter }:${ info.bytes }:${ stride }:${ paletteItemSize }:${ paletteBytes }:${ array.length }:${ base64 }`;
 		let pool = pools.get( key );
 		if ( ! pool ) {
 
-			pool = { info, base64, entries: [] };
+			pool = { info, base64, stride, paletteItemSize, paletteBytes, entries: [] };
 			pools.set( key, pool );
 
 		}
 		pool.entries.push( {
 			array,
+			lazy: usage.textureDataOnly && array.length >= 16384,
 			references: usage.references,
 			// Shared-array aliases may already be emitted once by the object
 			// hoister. Count one literal per identity so the size gate remains
 			// conservative even when the snapshot has several references.
-			inlineBytes: jsonArrayExpressionLength( array ),
+			inlineBytes,
 		} );
 
 	}
 
-	const decoder = binaryArrayDecoderDeclaration( options.binaryDecoderName );
+	const decoder = binaryArrayDecoderDeclaration( options.binaryDecoderName,
+		[ ...pools.values() ].some( pool => pool.stride > 0 ),
+		[ ...pools.values() ].some( pool => pool.paletteItemSize > 0 ) );
 	const selectedPools = [];
 	let inlineBytes = 0;
 	let packedBytes = decoder.length + 1;
@@ -445,7 +599,11 @@ function createBinaryArrayDeclarations( value, options, binaryNames ) {
 		const entries = pool.entries.map( ( entry ) => {
 
 			const ident = `${ options.binaryConstPrefix }${ binaryIndex ++ }`;
-			const declaration = `const ${ ident }=${ options.binaryDecoderName }(${ JSON.stringify( pool.info.getter ) },${ pool.info.bytes },${ blobExpression });`;
+			const runArgs = pool.paletteItemSize
+				? `,${ pool.stride },${ entry.array.length },${ pool.paletteItemSize },${ pool.paletteBytes }`
+				: pool.stride ? `,${ pool.stride },${ entry.array.length }` : '';
+			const defer = entry.lazy ? `()=>${ ident }.v??=` : '';
+			const declaration = `const ${ ident }=${ defer }${ options.binaryDecoderName }(${ JSON.stringify( pool.info.getter ) },${ pool.info.bytes },${ blobExpression }${ runArgs });`;
 			return { ...entry, ident, declaration };
 
 		} );
@@ -455,7 +613,7 @@ function createBinaryArrayDeclarations( value, options, binaryNames ) {
 		for ( const entry of entries ) {
 
 			inlineBytes += entry.inlineBytes;
-			packedBytes += entry.declaration.length + entry.references * entry.ident.length + 1;
+			packedBytes += entry.declaration.length + entry.references * ( entry.ident.length + ( entry.lazy ? 160 : 0 ) ) + 1;
 
 		}
 
@@ -469,7 +627,7 @@ function createBinaryArrayDeclarations( value, options, binaryNames ) {
 		if ( pool.blobDeclaration ) declarations.push( pool.blobDeclaration );
 		for ( const entry of pool.entries ) {
 
-			binaryNames.set( entry.array, entry.ident );
+			binaryNames.set( entry.array, { ident: entry.ident, lazy: entry.lazy } );
 			declarations.push( entry.declaration );
 
 		}
@@ -491,11 +649,17 @@ function collectNumericArrayUsages( value ) {
 			let usage = usages.get( item );
 			if ( ! usage ) {
 
-				usage = { types: new Set(), references: 0, ineligible: false };
+				usage = { types: new Set(), references: 0, ineligible: false, textureDataOnly: true };
 				usages.set( item, usage );
 
 			}
 			const arrayType = schemaNumericArrayType( parent, key );
+			// Large fallback texture pixels are commonly never read: a live texture
+			// wins resolution first. Defer their allocation without changing JSON
+			// serialization, array identity, assignment or frozen-object reads.
+			usage.textureDataOnly = usage.textureDataOnly && key === 'data' && Number.isInteger( parent?.width ) && parent.width > 0 && Number.isInteger( parent?.height ) && parent.height > 0;
+			const itemSize = usage.textureDataOnly ? item.length / ( parent.width * parent.height ) : 0;
+			usage.textureItemSize = usage.references === 0 || usage.textureItemSize === itemSize ? itemSize : 0;
 			if ( arrayType ) {
 
 				usage.types.add( arrayType );
@@ -529,13 +693,14 @@ function schemaNumericArrayType( parent, key ) {
 
 }
 
-function encodeExactNumericArray( array, logicalInfo ) {
+function encodeExactNumericArray( array, logicalInfo, textureItemSize = 0 ) {
 
 	const logicalView = new DataView( new ArrayBuffer( logicalInfo.bytes ) );
 	let min = Infinity;
 	let max = -Infinity;
 	let allIntegers = true;
 	let allFloat32 = true;
+	let inlineBytes = 2 + Math.max( 0, array.length - 1 );
 	for ( let index = 0; index < array.length; index ++ ) {
 
 		const value = array[ index ];
@@ -545,6 +710,9 @@ function encodeExactNumericArray( array, logicalInfo ) {
 		if ( typeof value !== 'number' || ! Number.isFinite( value ) || Object.is( value, -0 ) ) return null;
 		logicalView[ logicalInfo.setter ]( 0, value, true );
 		if ( ! Object.is( logicalView[ logicalInfo.getter ]( 0, true ), value ) ) return null;
+		// JSON serializes finite Numbers with ToString. Count their exact text
+		// here instead of traversing the array again with JSON.stringify.
+		inlineBytes += String( value ).length;
 		min = Math.min( min, value );
 		max = Math.max( max, value );
 		allIntegers = allIntegers && Number.isInteger( value );
@@ -565,7 +733,89 @@ function encodeExactNumericArray( array, logicalInfo ) {
 		if ( ! Object.is( view[ info.getter ]( offset, true ), array[ index ] ) ) return null;
 
 	}
-	return { info, base64: Buffer.from( buffer ).toString( 'base64' ) };
+	const raw = Buffer.from( buffer );
+	let packed = raw;
+	let stride = 0;
+	// Scalar, vector, matrix and small texture blocks. Do not add a decoder or
+	// exchange one large literal for many run records without a net byte saving.
+	const decoderCost = binaryArrayDecoderDeclaration( 'd', true ).length - binaryArrayDecoderDeclaration( 'd', false ).length + 32;
+	for ( const width of [ 1, 2, 3, 4, 8, 16, 32 ] ) {
+
+		if ( array.length % width !== 0 ) continue;
+		const candidate = encodeRepeatedNumericBlocks( raw, info.bytes * width, packed.length - decoderCost );
+		if ( ! candidate ) continue;
+		packed = candidate;
+		stride = width;
+
+	}
+	const encoded = { info, base64: packed.toString( 'base64' ), stride, inlineBytes };
+	if ( Number.isInteger( textureItemSize ) && textureItemSize >= 2 && textureItemSize <= 4 ) {
+
+		const palette = encodeNumericPalette( raw, info, textureItemSize );
+		const paletteCost = binaryArrayDecoderDeclaration( 'd', true, true ).length - binaryArrayDecoderDeclaration( 'd', stride > 0 ).length + 32;
+		if ( palette && palette.base64.length + paletteCost < encoded.base64.length ) return { ...palette, inlineBytes };
+
+	}
+	return encoded;
+
+}
+
+function encodeNumericPalette( raw, info, itemSize ) {
+
+	// Exact byte tuples, with a bounded 8-bit index. Photographic/high-entropy
+	// data exits after 257 colors; the original scalar/run encoding stays intact.
+	const entries = new Map(), blocks = [];
+	const blockBytes = itemSize * info.bytes;
+	const indices = new Uint8Array( raw.length / blockBytes );
+	for ( let start = 0; start < raw.length; start += blockBytes ) {
+
+		const key = blockBytes <= 6 ? raw.readUIntLE( start, blockBytes ) : raw.toString( 'base64', start, start + blockBytes );
+		let index = entries.get( key );
+		if ( index === undefined ) {
+
+			if ( entries.size === 256 ) return null;
+			index = entries.size;
+			entries.set( key, index );
+			blocks.push( raw.subarray( start, start + blockBytes ) );
+
+		}
+		indices[ start / blockBytes ] = index;
+
+	}
+	const encoded = encodeExactNumericArray( indices, NUMERIC_ARRAY_TYPES.Uint8Array );
+	const palette = Buffer.concat( blocks );
+	return {
+		info,
+		base64: Buffer.concat( [ palette, Buffer.from( encoded.base64, 'base64' ) ] ).toString( 'base64' ),
+		stride: encoded.stride,
+		paletteItemSize: itemSize,
+		paletteBytes: palette.length,
+	};
+
+}
+
+function encodeRepeatedNumericBlocks( raw, blockBytes, limit ) {
+
+	if ( limit < 4 + blockBytes ) return null;
+	const output = Buffer.allocUnsafe( Math.min( raw.length, limit ) );
+	let written = 0;
+	for ( let start = 0; start < raw.length; ) {
+
+		let end = start + blockBytes;
+		blocks: while ( end < raw.length ) {
+
+			for ( let byte = 0; byte < blockBytes; byte ++ ) if ( raw[ start + byte ] !== raw[ end + byte ] ) break blocks;
+			end += blockBytes;
+
+		}
+		if ( written + 4 + blockBytes > output.length ) return null;
+		output.writeUInt32LE( ( end - start ) / blockBytes, written );
+		raw.copy( output, written + 4, start, start + blockBytes );
+		written += 4 + blockBytes;
+		start = end;
+
+	}
+	return output.subarray( 0, written );
 
 }
 
@@ -593,17 +843,13 @@ function smallestExactNumericEncoding( min, max, allIntegers, allFloat32 ) {
 
 }
 
-function jsonArrayExpressionLength( array ) {
+function binaryArrayDecoderDeclaration( name, runs = false, palette = false ) {
 
-	let length = 2 + Math.max( 0, array.length - 1 );
-	for ( const value of array ) length += JSON.stringify( value ).length;
-	return length;
-
-}
-
-function binaryArrayDecoderDeclaration( name ) {
-
-	return `const ${ name }=(g,n,s)=>{const x=atob(s),b=new Uint8Array(x.length);for(let i=0;i<x.length;i++)b[i]=x.charCodeAt(i);const a=new Array(b.length/n);if(n===1){if(g==="getInt8")for(let i=0;i<a.length;i++)a[i]=b[i]>127?b[i]-256:b[i];else for(let i=0;i<a.length;i++)a[i]=b[i];return a}const v=new DataView(b.buffer);for(let i=0;i<a.length;i++)a[i]=v[g](i*n,true);return a;};`;
+	// Write palette values directly into the final Array, including repeated
+	// index blocks. No intermediate pixel-index or decoded palette arrays survive.
+	const expandPalette = palette ? 'if(p){const v=new DataView(b.buffer),w=r||1;for(let i=c,o=0;i<b.length;){const e=o+(r?v.getUint32(i,true):1)*w*p;if(r)i+=4;for(let j=0;j<w;j++)for(let h=0;h<p;h++){const t=v[g]((b[i+j]*p+h)*n,true);for(let k=o+j*p+h;k<e;k+=w*p)a[k]=t}o=e;i+=w}return a}' : '';
+	const expand = runs ? 'if(r){const v=new DataView(b.buffer);for(let i=0,o=0;i<b.length;){const e=o+v.getUint32(i,true)*r;i+=4;for(let j=0;j<r;j++){const t=v[g](i+j*n,true);for(let k=o+j;k<e;k+=r)a[k]=t}o=e;i+=r*n}return a}' : '';
+	return `const ${ name }=(g,n,s${ runs || palette ? ',r=0,l=0' : '' }${ palette ? ',p=0,c=0' : '' })=>{const x=atob(s),b=new Uint8Array(x.length);for(let i=0;i<x.length;i++)b[i]=x.charCodeAt(i);const a=new Array(${ palette ? 'p||r?l:' : runs ? 'r?l:' : '' }b.length/n);${ expandPalette }${ expand }if(n===1){if(g==="getInt8")for(let i=0;i<a.length;i++)a[i]=b[i]>127?b[i]-256:b[i];else for(let i=0;i<a.length;i++)a[i]=b[i];return a}const v=new DataView(b.buffer);for(let i=0;i<a.length;i++)a[i]=v[g](i*n,true);return a;};`;
 
 }
 
@@ -614,6 +860,7 @@ function createSharedReferenceDeclarations( value, stringNames, externalRefs, pr
 	const externalRefMemo = new WeakMap();
 	for ( const item of postorder ) {
 
+		if ( binaryNames && binaryNames.has( item ) ) continue;
 		const count = counts.get( item ) || 0;
 		if ( count < 2 ) continue;
 		// Callers discover pool imports by scanning the returned root expression.
@@ -642,7 +889,7 @@ function containsExternalReference( value, externalRefs, memo ) {
 	// The artifact graph is checked for cycles by collectReferenceGraph before
 	// this runs. Seed the memo so shared descendants are still cheap to inspect.
 	memo.set( value, false );
-	for ( const child of Object.values( value ) ) {
+	for ( const child of Array.isArray( value ) ? value : Object.values( value ) ) {
 
 		if ( containsExternalReference( child, externalRefs, memo ) ) {
 
@@ -669,7 +916,7 @@ function collectReferenceGraph( value ) {
 		if ( active.has( item ) ) throw new TypeError( 'Converting circular structure to JSON' );
 		if ( visited.has( item ) ) return;
 		active.add( item );
-		for ( const child of Object.values( item ) ) visit( child );
+		for ( const child of Array.isArray( item ) ? item : Object.values( item ) ) visit( child );
 		active.delete( item );
 		visited.add( item );
 		postorder.push( item );

@@ -122,7 +122,10 @@ export function comparePngBuffers( captureBuffer, replayBuffer, opts = {} ) {
 	try {
 
 		const a = decodePngBuffer( captureBuffer );
-		const b = decodePngBuffer( replayBuffer );
+		// Still decode identical inputs once: byte equality alone cannot prove
+		// that the screenshots are valid PNGs.
+		const identical = Buffer.isBuffer( captureBuffer ) && Buffer.isBuffer( replayBuffer ) && captureBuffer.equals( replayBuffer );
+		const b = identical ? a : decodePngBuffer( replayBuffer );
 		if ( a.width !== b.width || a.height !== b.height ) {
 
 			return { error: `dim mismatch capture=${ a.width }x${ a.height } replay=${ b.width }x${ b.height }`, width: a.width, height: a.height };
@@ -153,12 +156,12 @@ export function comparePngBuffers( captureBuffer, replayBuffer, opts = {} ) {
 		) );
 
 		let sumSq = 0;
-		let comparedPixels = 0;
-		for ( let i = 0, pxIndex = 0; i < a.data.length; i += 4, pxIndex ++ ) {
+		const totalPixels = a.width * a.height;
+		const comparisonBytes = identical && ignoreRegions.length === 0 ? 0 : a.data.length;
+		let comparedPixels = comparisonBytes === 0 ? totalPixels : 0;
+		for ( let i = 0, pxIndex = 0; i < comparisonBytes; i += 4, pxIndex ++ ) {
 
-			const x = pxIndex % a.width;
-			const y = Math.floor( pxIndex / a.width );
-			if ( isIgnored( x, y ) ) continue;
+			if ( ignoreRegions.length > 0 && isIgnored( pxIndex % a.width, Math.floor( pxIndex / a.width ) ) ) continue;
 
 			const dr = a.data[ i ] - b.data[ i ];
 			const dg = a.data[ i + 1 ] - b.data[ i + 1 ];
@@ -168,7 +171,6 @@ export function comparePngBuffers( captureBuffer, replayBuffer, opts = {} ) {
 
 		}
 
-		const totalPixels = a.width * a.height;
 		const comparedFraction = totalPixels > 0 ? comparedPixels / totalPixels : 0;
 		if ( comparedFraction < 0.5 ) {
 

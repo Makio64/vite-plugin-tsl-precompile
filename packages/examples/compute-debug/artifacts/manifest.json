@@ -1,43 +1,43 @@
 {
   "compute-debug-particles-init": {
-    "file": "compute-debug-particles-init.095a2db155f3.json",
-    "hash": "095a2db155f34fb3e703776a673ac6c1ebf3619eafa1c1009affae0877769a02",
-    "capturedAt": "2026-07-30T11:10:53.708Z"
+    "file": "compute-debug-particles-init.af31ecc41a03.json",
+    "hash": "af31ecc41a0311746b1142af7ea9feebcdc663a70c64c8632daca580d22f45c2",
+    "capturedAt": "2026-10-13T10:43:18.086Z"
   },
   "compute-debug-particles-update": {
-    "file": "compute-debug-particles-update.dcc49851de7b.json",
-    "hash": "dcc49851de7bb2e2987d3d94514671d919e331121a948c72b05ab5025f24de34",
-    "capturedAt": "2026-07-30T11:10:53.709Z"
+    "file": "compute-debug-particles-update.6124e571abeb.json",
+    "hash": "6124e571abeb9b76fa8a60ed68659129ccaa8b844c5a3cac17d6cb2130f4e715",
+    "capturedAt": "2026-10-13T10:43:18.087Z"
   },
   "__aux": {
-    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
-      "file": "aux-render-output-3f1fa57642fc.json",
+    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
+      "file": "aux-render-output-f9eeeab16476.json",
       "shape": "render-output",
-      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-      "hash": "fbf62cafa11eb05af50b39147230903e70cc61c098904c8b802aef1743a4856b",
-      "threeVersion": "0.185.1",
+      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
+      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:11:01.968Z"
+      "capturedAt": "2026-10-13T10:43:18.137Z"
     },
-    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
-      "file": "aux-lights-3247ab5f57af.json",
+    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
+      "file": "aux-lights-499bfad6a893.json",
       "shape": "lights",
-      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
-      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
-      "threeVersion": "0.185.1",
+      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
+      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T11:10:55.127Z"
+      "capturedAt": "2026-10-13T10:43:19.499Z"
     }
   },
   "compute-debug-particles": {
-    "file": "compute-debug-particles.8ca30a891df2.json",
-    "hash": "8ca30a891df2985657384b6db44ddc25a872d7f546f129bbd6907a710ed5f99e",
+    "file": "compute-debug-particles.133a29195277.json",
+    "hash": "133a2919527756b25cdd137fad68d0437a868fe854e38da7cbcd4ebd84a9bd20",
     "sourceIdentity": "0b932b8d540c415d5ea2a85c2f784c58fd3b31703b5dfd308ba09200aeb8ac7e",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/particles.js:precompile:0",
-        "revision": "11046fd267d8730a9b28b72e265df7655c2b55eec3e7275d60534aac43851a11",
+        "revision": "0aba39607bb4011daf577558c382f19d6d8c7986661581d1cf36b87d4fad54ea",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -49,27 +49,27 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:53.739Z"
+    "capturedAt": "2026-10-13T10:43:18.172Z"
   },
   "compute-debug-instanced-init": {
-    "file": "compute-debug-instanced-init.fad8b82e8a24.json",
-    "hash": "fad8b82e8a24b7f4aa49616954012650a6e0a4b7b4b91a3bfbe09991b4b5edbf",
-    "capturedAt": "2026-07-30T11:10:55.121Z"
+    "file": "compute-debug-instanced-init.88ef9a23411f.json",
+    "hash": "88ef9a23411f8a60129a0cd8a4c3a534c45554af298d974ebffddba6bc133fe3",
+    "capturedAt": "2026-10-13T10:43:19.494Z"
   },
   "compute-debug-instanced-update": {
-    "file": "compute-debug-instanced-update.b23da641c361.json",
-    "hash": "b23da641c36192c028667511f0de8afbd9fb03c8c5de33e7aee886267e436bb4",
-    "capturedAt": "2026-07-30T11:10:55.123Z"
+    "file": "compute-debug-instanced-update.cff92ae26415.json",
+    "hash": "cff92ae264159af27f230364b325c7a5004bb54d5e029e26deb595c757d084bc",
+    "capturedAt": "2026-10-13T10:43:19.495Z"
   },
   "compute-debug-instanced": {
-    "file": "compute-debug-instanced.750a34eb0d77.json",
-    "hash": "750a34eb0d772e8d33184cbad4e62d1e5620a38efe134b199611ed56bd7e6b6d",
+    "file": "compute-debug-instanced.c7a375d9d95f.json",
+    "hash": "c7a375d9d95f2a0b403799268fafb0eba509c6d510eb41654407dd4762a39c86",
     "sourceIdentity": "9ace728eac6406706bc9376aa7403206fef4c8fc7ea1b33695a790e5d65abfdd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/instanced.js:precompile:0",
-        "revision": "4e000378a77e44d954d3f39ab66093e6c68450bc893cfd8faf11b34fb5674367",
+        "revision": "80bb29134150aafb705b1244e800a67cb2104724b19793f9c903e1290270044d",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -81,22 +81,22 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:55.499Z"
+    "capturedAt": "2026-10-13T10:43:19.927Z"
   },
   "compute-debug-texture-update": {
-    "file": "compute-debug-texture-update.8f3ec41acf09.json",
-    "hash": "8f3ec41acf09ebc46d01964003d3a25af4ca9d11d7db3991487f9d62145c936c",
-    "capturedAt": "2026-07-30T11:10:56.631Z"
+    "file": "compute-debug-texture-update.5c36a4deb48a.json",
+    "hash": "5c36a4deb48ad2e5a2c9ed39b92e0d311fa3d7ab3c37aa2bcac097c52c26196e",
+    "capturedAt": "2026-10-13T10:43:21.011Z"
   },
   "compute-debug-texture": {
-    "file": "compute-debug-texture.7ae1fbaca315.json",
-    "hash": "7ae1fbaca31589c27123b1fa481ba1f1080b465177772b0a824e9b499c23bf0f",
+    "file": "compute-debug-texture.c9a1e62df465.json",
+    "hash": "c9a1e62df465b2ecc9ab5965be4fafd39fbcdd7fd4106ceac5a908d01171c4fa",
     "sourceIdentity": "31e689753aae67c8fca594ecd3484ff7c55542ba9c04d3f313d33ad54ffb05ca",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/texture.js:precompile:0",
-        "revision": "ecb23f73d1f9ccbcf814f2c7e19a3b41ad5ac885415ad23d99ecb3e65b707fed",
+        "revision": "9cfa1cfe19cae904942b456ee2989c161c65b1414043bd2f233b7f064957ceba",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -108,22 +108,22 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:56.663Z"
+    "capturedAt": "2026-10-13T10:43:21.070Z"
   },
   "compute-debug-dispatch2d-update": {
-    "file": "compute-debug-dispatch2d-update.6437bc064675.json",
-    "hash": "6437bc064675b10f6b8e2870df622dff560b3f6f40ea387301e48d93e7abf844",
-    "capturedAt": "2026-07-30T11:10:57.951Z"
+    "file": "compute-debug-dispatch2d-update.f2199bd52fc6.json",
+    "hash": "f2199bd52fc65b7181265e5cd3c46000b449dd3e4c6bcd0cf07627ca33183879",
+    "capturedAt": "2026-10-13T10:43:22.332Z"
   },
   "compute-debug-dispatch2d": {
-    "file": "compute-debug-dispatch2d.651ee1ffe1e5.json",
-    "hash": "651ee1ffe1e5d7e9a0c58155d5ef26fc06951c74726f551dfe09b9194fe8cdf5",
+    "file": "compute-debug-dispatch2d.c05d067e5429.json",
+    "hash": "c05d067e54295d4448f33d7b19fb2554389b36a047f86ea4e78802f37b7c1684",
     "sourceIdentity": "7ed598aecd4ecd149068378380fbc54f521158b317c7522e83720a36befe889f",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/dispatch2d.js:precompile:0",
-        "revision": "caac9f147bfb15a8d28c9bdfc21c55e261233090546e31cc49c0bbb363952eb9",
+        "revision": "57a2b0b4cc8b0740376aa375edc7436d398b79c345e6c45f0cc18be7d9ea9c8b",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -135,22 +135,22 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:57.988Z"
+    "capturedAt": "2026-10-13T10:43:22.390Z"
   },
   "compute-debug-uniform-update": {
-    "file": "compute-debug-uniform-update.11259e231caf.json",
-    "hash": "11259e231cafc9cf7b6d78cc7a9b04450bbe3738790cba04085dd827b42c50bf",
-    "capturedAt": "2026-07-30T11:10:59.276Z"
+    "file": "compute-debug-uniform-update.3899003548d6.json",
+    "hash": "3899003548d623df44a0585e5c3848749188191c69529b1350401f8ae05fb0d7",
+    "capturedAt": "2026-10-13T10:43:23.670Z"
   },
   "compute-debug-uniform": {
-    "file": "compute-debug-uniform.c406dbb6fbe8.json",
-    "hash": "c406dbb6fbe87efadd794931691d5067ec69fb1583b1d6389c3ea23a8741f0a3",
+    "file": "compute-debug-uniform.c538594c7399.json",
+    "hash": "c538594c7399773921671897b94f151a9eacd5f07035396d24a15d0bebbf0712",
     "sourceIdentity": "8624d7ed12c34c79b08b79c7a22579544df92b4850f57762cdf5f8921c1b0d57",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/uniform.js:precompile:0",
-        "revision": "31a80e0430db704cf5c8da2739d49c2ccdbb02e5ff6a7ac4ce313bbe6295b732",
+        "revision": "02ed8c4db22162fee081ee2941aa5693ffb2c881775d2b7b463a7051b99345a0",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -162,27 +162,27 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:10:59.312Z"
+    "capturedAt": "2026-10-13T10:43:23.727Z"
   },
   "compute-debug-pipeline-source": {
-    "file": "compute-debug-pipeline-source.aa870075d731.json",
-    "hash": "aa870075d731bbeb9b3c89587fb66e5ed641d3166486ec25d4f84f4ebddfce9c",
-    "capturedAt": "2026-07-30T11:11:00.605Z"
+    "file": "compute-debug-pipeline-source.70c70803d7f8.json",
+    "hash": "70c70803d7f874d807403a1e85c667eff67eae77350796f4cd5d67fbf0e29d1c",
+    "capturedAt": "2026-10-13T10:43:25.005Z"
   },
   "compute-debug-pipeline-display": {
-    "file": "compute-debug-pipeline-display.2d148a29bc8b.json",
-    "hash": "2d148a29bc8b44d169be832de64b768f7d686bd10780023d1b66812d095e0533",
-    "capturedAt": "2026-07-30T11:11:00.607Z"
+    "file": "compute-debug-pipeline-display.b0bf63058743.json",
+    "hash": "b0bf63058743443ea2e342e6e17e8507f57b832a2f8d64a582f5f7c24b099272",
+    "capturedAt": "2026-10-13T10:43:25.006Z"
   },
   "compute-debug-pipeline": {
-    "file": "compute-debug-pipeline.62879bc116f6.json",
-    "hash": "62879bc116f6ee8c2bb42dc2242276c7c5bd9a82ef31f28b31d9ec29495916f8",
+    "file": "compute-debug-pipeline.7b7d980953ad.json",
+    "hash": "7b7d980953adcca8c5f2b1359624a336fd4d9007f6a637dd0667b40909851279",
     "sourceIdentity": "cf30a176329dd5e7bfcbd6b1e214a0ce31960141da4a0b930fa320951e9f08d5",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/pipeline.js:precompile:0",
-        "revision": "992e35ad6c955ac680cb67bd2de9535dc565099ed78f8e18af6011b0eb45129c",
+        "revision": "dc3aa2a45bffc5263efa60301d8f066c6ce2039aa88dd46017924eb35d715bb0",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -194,27 +194,27 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:11:00.636Z"
+    "capturedAt": "2026-10-13T10:43:25.060Z"
   },
   "compute-debug-reduce-fill": {
-    "file": "compute-debug-reduce-fill.147735c57ca6.json",
-    "hash": "147735c57ca68e09fad1ba30dfdfc12445c2c95b9d35055fafcb85622e1ab214",
-    "capturedAt": "2026-07-30T11:11:01.952Z"
+    "file": "compute-debug-reduce-fill.2b2694b14040.json",
+    "hash": "2b2694b140409402fc41eaa65d95ad64c0b57611e80044c412d8275d36b6c07e",
+    "capturedAt": "2026-10-13T10:43:26.390Z"
   },
   "compute-debug-reduce-reduce": {
-    "file": "compute-debug-reduce-reduce.1a73f7179395.json",
-    "hash": "1a73f717939526d7359dcf856c8be717b4f68a442cf8845d1fb9aa3c213051bc",
-    "capturedAt": "2026-07-30T11:11:01.954Z"
+    "file": "compute-debug-reduce-reduce.09608dc7de88.json",
+    "hash": "09608dc7de889f7b44f44397c30b6873779e9f2a25bf07c9e8779439599a9828",
+    "capturedAt": "2026-10-13T10:43:26.391Z"
   },
   "compute-debug-reduce": {
-    "file": "compute-debug-reduce.a54fc0790c7f.json",
-    "hash": "a54fc0790c7f08458981ea7f0a14a0e89b70126598825c677c685f57bc784c1e",
+    "file": "compute-debug-reduce.5ff58b4c2a69.json",
+    "hash": "5ff58b4c2a69bb6dc5adcb0df3e0a467db69ac697f6b676623cb530bd6eebdf3",
     "sourceIdentity": "45410b71c8a34957f9bef85fc242584e397406f046149034ad5bcc0b24a0c70f",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/reduce.js:precompile:0",
-        "revision": "8afcbcf287276072cf7df420f968cd7c37a3ab5fe4ae2a7b81ad5151e92ed7eb",
+        "revision": "9b74cc19b61ed2a563e117003f9075c69fe4000f48941fad22ff495f0a9100f5",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -226,6 +226,6 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T11:11:01.994Z"
+    "capturedAt": "2026-10-13T10:43:26.470Z"
   }
 }

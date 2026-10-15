@@ -3,6 +3,15 @@ import {
 	type DevCaptureStatus,
 	type WaitForCaptureSettledOptions,
 } from '@tsl-precompile/runtime/setup';
+import type { AuxCaptureOptions, HashVersionOptions, MaterialHashOptions } from '@tsl-precompile/runtime';
+import type { PrecompileComputesOptions } from '@tsl-precompile/runtime/compute-capture';
+
+const devEmitter = { threeVersion: '0.186.0', threeRevision: '187dev', threeCommit: '3995acf2a9e79ebd2b02c0e9e7f820fa2a4838fb' };
+const auxCaptureOptions: AuxCaptureOptions = devEmitter;
+const graphHashOptions: HashVersionOptions = { ...devEmitter, shape: 'background', pluginVersion: '0.1.0' };
+const materialHashOptions: MaterialHashOptions = { ...devEmitter, name: 'dev-material' };
+const computeCaptureOptions: PrecompileComputesOptions = { ...devEmitter, scene: {}, camera: {} };
+void [ auxCaptureOptions, graphHashOptions, materialHashOptions, computeCaptureOptions ];
 import {
 	Line2NodeMaterial,
 	LineBasicNodeMaterial,

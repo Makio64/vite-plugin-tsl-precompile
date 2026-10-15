@@ -11,6 +11,53 @@ code is present.
 
 ## Current vendored files
 
+Local r185 MRT identity assumption: Three's private context IDs can repeat in
+independent page loads with different attachment layouts. `compileTSL` stamps
+backend-aware family keys after extracting MRT names/count/blend modes so the
+shared contract can disambiguate these layouts. Legacy keys remain readable;
+render-selector collisions still reject conflicting shader/binding payloads.
+
+Three r185 clears its WebGPU sampler cache in `backend.dispose()` before it
+disposes NodeManager. Replay-owned PMREM targets must be released before that
+cache is cleared. The Renderer rewrite inserts `disposeRendererResources()`
+at this exact boundary; NodeManager's later disposal is idempotent.
+
+Renderer.render() schedules renderer-owned captured shadow maps immediately
+before its one `_renderScene(scene, camera)` call. The initialized-backend check
+stays first. The scheduler guards nested shadow draws and currently handles
+ordinary 2D directional/spot Basic, PCF, PCFSoft, and VSM targets. Generated aux
+tables supply this capability only when shadow-depth artifacts are present.
+
+Three's standalone `UniformBuffer_<id>` labels are allocation-local metadata;
+PMREM blur shaders use their binding positions instead. Both PMREM extractors
+give these labels a stable group/binding address before constructing the shared
+internal-pass descriptor or signing the artifact. Shader bytes and buffer values
+remain untouched, and every represented variant retains matching descriptors.
+
+Local r185 storage assumption: `StorageBufferNode.bufferCount === 0` emits a
+WGSL array with no compile-time length. Capture carries `runtimeSized: true`
+on that binding and its uniform-plan record; public compute descriptors retain
+the same flag. Allocation count/bytes may vary at replay, while element type,
+access, and exact resource ownership remain checked. Fixed arrays retain their
+captured count/byte checks. This flag does not make a fixed shader array dynamic.
+
+Standalone compute capture uses `computeOnly` to read already-dispatched
+kernel states without compiling or traversing the host scene. Uncached explicit
+kernels retain the compute dispatch fallback. Material markers pass their
+exact owner in `materials`, so unrelated auxiliary programs accumulated in the
+renderer cache cannot invalidate an otherwise valid material capture. Ordinary
+scene/auxiliary extraction retains the full family checks. Auxiliary callers
+can narrow extraction with `materials` or `materialShapes`. Shadow capture
+requests flat depth candidates with `deferShadowFamilyMerge`, then performs
+the existing exact-selector cache-key disambiguation and strict family merge
+over the complete caster batch before writing any artifact.
+
+Authored marker names are carried through the contract's
+`MATERIAL_SHADER_FAMILY` sidecar into shadow-caster selectors. This distinguishes
+different custom shadow graphs with identical node-presence flags without
+retaining live graph structure in compiler-free replay. The dev marker and both
+production apply paths must preserve the same identity.
+
 | File | Upstream | Version tag | Reason to vendor |
 |---|---|---|---|
 | `compileTSL.js` | `src/nodes/precompile/compileTSL.js` | tsl-precompile @ dc09e30 | Extractor core — walks `renderer._nodes.nodeBuilderCache` and emits JSON artifacts. |
@@ -21,6 +68,18 @@ It is the single owner of the private `renderer._nodes.getForRender` build tap
 and `renderer._objects.get` cached-request tap used by extraction. Keep new
 live-capture subscribers on that adapter so HMR and duplicate plugin copies
 cannot stack independent wrappers.
+
+`capture-render-object-lifecycle.js` subscribes through that same cached-request
+tap for scenes explicitly marked `__tslpSyntheticCaptureScene`. It releases only
+RenderObjects whose scene and mesh identities belong to the throwaway capture,
+after all artifact extraction and before the renderer compile lock is released.
+Three r185's RenderObject registers material/geometry disposal listeners which
+retain its scene; Renderer.dispose() does not remove those material listeners.
+RenderObject.dispose() removes its own listeners and calls RenderObjects' owning
+cleanup callback, preserving NodeManager's reference counts for shared shader
+states. Caller materials/geometries, real-scene RenderObjects and borrowed harvest
+families remain live. Keep these identity and reference-count assumptions covered
+when upgrading Three.
 
 The adapter also owns the direct-harvest compatibility seam. The installed
 Three revision reuses each `RenderContext` and mutates its `renderTarget`,
@@ -49,6 +108,13 @@ The same module temporarily suppresses backend framebuffer copies during
 finishes the prior frame's already-submitted encoder. Keep the renderer-level
 copy method live for texture allocation/wiring, restore the backend method on
 every settlement path, and apply both adapters together in capture and replay.
+
+The slim Renderer rewrite shape-checks the complete queued compilation loop.
+Replay hydration is synchronous, so it calls `getForRender` directly and replaces
+the unconditional per-object scheduler/RAF yield with a four millisecond budget.
+The legacy r185 fixture retains its original pipeline/callback barriers. Verified
+r186/r187 source can overlap independent replay pipelines as described below.
+Keep executed loop, callback-barrier, bounded-batch and drift tests with this gate.
 
 Three r185's `NodeFrame` deduplicates a viewport node's `updateBefore()` by the
 live texture returned from `updateReference()`, not by the viewport node or its
@@ -374,6 +440,12 @@ The r185.1 compatibility wedge includes these coupled changes:
   `updateSampler(binding)`. The rewrite recognizes only the exact old/new
   ownership shapes and initializes replay samplers through the installed
   signature; any third shape fails closed.
+  The draw cache stores the native `GPUBindGroup`, since replacing a texture or
+  buffer can replace that resource while retaining the CPU `BindGroup.id`.
+  Unchanged groups remain cached across draws; Three resets the cache for each
+  new render pass or bundle. ArrayCamera's manual `indexesGPU[i]` binding uses
+  the same native identity cache, with a one-draw override keyed by the camera
+  binding id. Both cache writes and the old/new lookup placement are gated.
 - r185 `NodeBuilderState` carries `hardwareClipping`, and `RenderObject`
   consults it when exposing hardware clipping planes. Replay hydration carries
   the field, `ReplayNodeManager.updateGroup()` always updates
@@ -416,3 +488,246 @@ We considered publishing a forked three as an npm package and depending on it. R
   Three package; the plugin advances its exact supported revision deliberately.
 
 Trade-off: a three.js internal API change (e.g. `renderer._nodes.nodeBuilderCache` renamed) silently breaks the plugin until we re-vendor. Mitigation: CI runs the Node harness against three.js's current `latest` tag nightly; regressions are caught before users hit them.
+
+## Compatibility diagnostics
+
+### Verified r186 and pinned r187dev source seams
+
+Stable source is Three `0.186.1`, revision `186`, commit
+`9b4a2ac29c63ccb43fd51c5661f2f873ac2c39b8`. Development source is revision
+`187dev`, nominal package `0.186.0`, commit
+`3995acf2a9e79ebd2b02c0e9e7f820fa2a4838fb`. The shared
+`THREE_RELEASE_PROFILES` records the complete source fingerprints, Git trees and
+exact identities. A package version alone does not identify development source.
+Current-source tests import `src/Three.WebGPU.js` directly, so an older generated
+development bundle cannot substitute for the pinned source.
+
+`three-rewrite-compilation-loop.js` pins the complete semantic work-loop AST for
+each supported source shape. Stable r186 brackets synchronous binding updates
+with `_isPreCompiling` and calls `updateAfter` after native pipeline completion.
+The pinned development source uses `_beginPreCompile`/`_finishPreCompile`, passes
+a yield callback into async graph construction, and calls `updateAfter` before
+the pipeline wait. Replay replaces graph construction with synchronous hydration
+and retains each source's callback and native pipeline barriers for dependent
+objects. Proven precompiled WebGPU objects with empty `updateBeforeNodes` and
+`updateAfterNodes` submit batches of at most 16 asynchronous pipelines. Each batch
+finishes before dependent preparation or method completion; ordered progress
+events report completed objects. WebGL and unproven states retain the native
+ordered path. Precompilation state is cleared before every await, including setup
+failures. The four millisecond yield budget remains. Unknown work-loop changes
+reject the rewrite.
+
+Development hydration uses one native begin/finish bracket which closes before
+the batch gate. Independent preparation owns its own brackets; dependent work
+begins again only after earlier pipelines finish. This preserves `_callDepth`
+balance and prevents framebuffer/precompilation state from leaking across an
+await. Regression tests execute the pinned native begin/finish method bodies,
+including mixed independent/dependent objects and rejected hydration.
+
+`three-rewrite-pipeline-async-scope.js` validates native render and compute async
+submission shapes. It pops each WebGPU validation scope immediately after API
+submission, before waiting for that pipeline, so reverse completion order cannot
+assign another request's scope to the wrong pipeline. Native error reports,
+shader diagnostics and completion handling remain in place.
+
+`three-rewrite-webgpu-only.js` specializes the exact native backend-selection AST
+only for explicit `webgpuOnly: true` source builds. It drops the WebGL import,
+rejects `forceWebGL` before resource allocation and disables fallback. Default
+builds preserve native automatic and explicit WebGL selection. Both helpers are
+fingerprinted and tested against the stable and pinned development constructors.
+
+The private rewrite implementation is split by semantic owner:
+`three-rewrite-ast.js` owns complete AST guards, `three-rewrite-node-primitives.js`
+owns graph-free core/quad bridges, `three-rewrite-webgpu-bindings.js` owns native
+GPU group preparation, and `three-rewrite-renderer-lifecycle.js` owns disposal
+ordering. Each source file is included in the shared slim fingerprint so a
+helper edit cannot leave a checked prebuilt apparently current.
+
+Native r186/r187 ScreenNode no longer stores its generated `_output` uniform.
+`capture-screen-uniform.js` calls only its known size/viewport update seam with
+a stub renderer whose getters return the passed vector untouched and whose
+pixel ratio is one. This reveals Three's exact module-owned Vector2/Vector4
+without changing its values or real renderer state. Extraction seeds the
+existing value-identity map; equal snapshots on unrelated authored uniforms
+remain anonymous, and conflicting provenance still fails the ambiguity guard.
+This restores renderer.size/viewport ownership for resized output passes and
+shadow arrays without widening variant-family equality.
+Numeric renderer callbacks are classified by three independent logical-height
+and DPR probes. `getSize` returns detached dimensions, leaving private size
+targets untouched; the captured scalar is restored even after an update throws.
+This recognizes precreated native screenDPR and PointsNodeMaterial scale despite
+private bound-callback ownership. Exact renderer.dpr/halfHeight behavior replaces
+the former points-only relabeling of every anonymous number uniform. Constants
+and unrelated numeric updates remain anonymous.
+The pinned development Renderer also keys `_quadCache` by RenderTarget, whereas
+r186 keys it by the target's color Texture. Output capture checks these exact
+active identities and rejects distinct conflicting entries; it never selects
+an unrelated cached quad. Both native source profiles exercise resize capture
+and shader/binding family merge through this seam.
+
+The complete graph-free `nodes/core/constants.js` export surface is forwarded,
+including `vectorComponents`: new SplitNode source reads that array at module
+initialization before tree shaking. Replay values and mutable array ownership
+match the native source; forwarding these constants retains no TSL graph.
+
+NodeUtils gained texture-type and parameter helpers without changing the retained
+hash functions. Its exact compact AST SHA-256 for both new sources is
+`1d61ad5f6ea78d6e941a094c0a98bf1de66bc025dfcf9a3237dcdbc8f178e33c`.
+Its omitted compiler helpers retain syntax-only named throwing placeholders so
+Rollup can link native graph imports before proving them dead. They implement no
+graph behavior, and the zero-node/compiler-residue gates must still pass.
+RenderPipeline now creates a context graph on its sentinel material immediately
+before replay replaces that whole material. The rewrite checks this exact
+adjacent ownership and removes the discarded assignment; plain `_contextData`
+and its native callback arrays remain available to the replay adapter.
+QuadMesh also gained a singleton vertexIndex-based graph and temporarily sets
+it on every material during render. Native capture already bakes this triangle
+vertex program. The `quad-mesh` target pins the complete module at compact AST
+SHA-256 `fcc507b5d483fae86aa34c3e7746a7991f27e631e2b8fe29b465eafbae97cabe`,
+removes only this live graph and restores the plain renderer draw. Native
+geometry, UV attributes, camera and asynchronous draw path stay intact. The
+historical graph-free r185 module is an exact-hash no-op; unknown geometry or
+vertex-program changes reject before a checked slim build can be published.
+Shadow material ownership moved from ShadowFilterNode to ShadowBaseNode; the
+filter-only ShadowFilterNode is accepted unchanged only at compact AST SHA-256
+`b51a991d948491b8b2012891351cfc8910aca73c71f7bd8de6396d92e165dd3a`.
+The compiler-residue gate still prevents these TSL graphs from surviving a slim
+bundle. Historical r185 whole-module hashes remain guarded for test fixtures.
+
+The new WebGPU `_draw` loop already compares native bind-group identities and
+skips `cameraIndexSlot`; its ArrayCamera caller binds the native per-camera group.
+The rewrite validates those complete loop/guard shapes and adds only lazy replay
+resource preparation before reading a GPU group. It does not duplicate the old
+CPU-id cache patch. Executed tests cover repeated groups, replaced GPU resources,
+released groups and per-camera slot ownership.
+
+Renderer disposal is asynchronous in both new sources. They tear down NodeManager
+before awaiting the backend, so replay targets are released immediately before
+that earlier node teardown. The Node harness awaits backend disposal. Native
+RenderObject now also listens to object disposal; its own `dispose()` removes
+object, geometry and material listeners while retaining the native shader-state
+reference-count lifecycle used by synthetic capture cleanup.
+The `bindings` rewrite target pins the complete `Bindings.deleteForRender`
+method body: native `RenderObject._bindings === null` means no binding array was
+created. Deletion in that state removes only the binding-manager cache entry;
+it never calls `getBindings()` to create shader state solely for disposal. This
+lets rejected cold compiles release their RenderObjects and resource listeners.
+Every non-null array retains native destruction and reference-count behavior.
+Executed tests cover both source profiles, failed cold compilation, cache and
+listener release, and allocated uniform-buffer/group destruction. Unknown
+deletion shapes fail closed before a slim build can be stamped.
+
+The Node GPU mock provides GPURenderBundleEncoder for the new native `instanceof`
+check, without replacing an existing host constructor. Test-only r185 source
+copies, their MIT license and byte fingerprints live in
+`test/fixtures/three-r185`; generated capture JSON remains unchanged.
+
+Native r186 QuadMesh.render() installs its fullscreen vertex node and passes
+the quad itself to Renderer.render(). That renderer path sets fullscreenPass,
+making default-screen output single-sampled even when the renderer uses MSAA.
+compileAsync(Scene) does not set this flag. Isolated final-pipeline capture uses
+the exact native QuadMesh draw under suppressed isolated material update phases;
+it does not run the owning RenderPipeline or its live effect graph. Capture tests
+compare native shader bytes and selectors, retain explicit offscreen target MSAA,
+and prove cleanup on draw failure. Direct quad cleanup owns only that exact
+isolated object/material pair and never marks Three's shared dummy scene.
+Repeated captures retain no object/material disposal listeners. Strict
+sample-count selection is unchanged.
+The isolated native draw derives its framebuffer after the captured tone/color
+state override. It must not borrow the host's earlier MSAA output-intermediate
+warm-up target; explicitly supplied offscreen targets still preserve their MSAA.
+
+Pinned r187 development PMREM changed from a CubeUV atlas to CubeRenderTarget
+mipmaps and adds `PMREM_integration` alongside the equirect/cubemap and GGX
+stages. Its GGX uniforms use roughness/lodBias; integration uses
+roughness/sourceSize/sourceLod, and PMREMNode uses `_maxLod`/`_size` instead of
+the atlas scalar fields. The additive `pmrem-cube-layout@1` layout separates
+cube families from unchanged `pmrem-layout@1` atlases inside `pmrem-support@1`.
+It fixes a power-of-two face size of at least 256, a final 8-pixel face mip,
+256 GGX samples, and three integration levels with 16-pixel source integration.
+Cube scene blur uses the native two-pass 20-sample spherical kernel. Shared
+generator checks require the verified 187dev revision and actual private
+cube-camera/box/integration ownership before draws; output validation checks
+every allocated mip extent. An atlas-only call still rejects cube output.
+Required stages and uniform roles depend on the explicit layout schema:
+cube GGX addresses roughness/lod-bias, integration addresses roughness,
+source-size (an actual int UBO field), and source-lod. The native PMREM private
+UniformNodes retain exact sampled-texture identity as `pmrem.maxLod` and
+`pmrem.size`; generated modules call the shared live PMREM writer for both.
+Actual generated textures carry `isPMREMTexture: true` on `artifact.texture`,
+so renaming preserves ownership. Scalar validation requires matching atlas or
+cube texture topology in the same variant. Cube pass inputs are owned by their
+declared internal-pass texture roles: capture removes a generic producer target
+selector only at those exact texture/sampler addresses, preserving real texture
+references, all shader bytes and unrelated bindings. This prevents the source
+cube target from preempting the PMREM binder. Actual source capture tests exercise
+fromEquirectangular, fromCubemap and fromScene on both pinned source profiles;
+the development tests resolve every Three import to its real src graph.
+
+The development package's nominal `0.186.0` version is insufficient emitter
+identity. Verified source configuration supplies the pinned `187dev` revision
+and commit to capture and all material/config/content hashes, then stamps
+`sourceThreeRevision` and `sourceThreeCommit` on the artifact. Auxiliary envelopes
+and registrations carry the corresponding `threeRevision`/`threeCommit` pair.
+Development capture and build reject older version-only records and request a
+real recapture. Stable `0.186.1` adds no fields or hash bytes. Canonical release
+data lives in the inert shared release module so browser hashing does not retain
+build-time rewrite policy tables.
+
+The runtime's `slim-support/reflector.js` derives its camera math, target
+allocation, clipping and render lifecycle from r185 `ReflectorNode.js`
+(Three.js authors, MIT). It replaces compiler nodes with graph-free live
+texture carriers, preserves color/depth sharing and restores renderer state
+when nested rendering throws. The existing reflector hydrator owns bindings;
+the adapter does not build shaders. Recheck upstream lifecycle changes when
+advancing the pinned Three revision.
+
+Development observation spans an application's `compileAsync()` and its nested
+reflector renders as one epoch. Synthetic extractor compiles raise the existing
+synthetic-render guard across their await so they cannot start another capture.
+This relies on r185 `compileAsync()` issuing RenderObject requests through the
+same renderer managers as real draws.
+
+Addon Object3D uniforms also exposed through exact, own material `*Node` aliases
+use material-relative live provenance in both real and synthetic mesh captures.
+Object-only uniforms retain `object3d.nodeUniform`; matching values alone never
+establish an alias.
+
+Three r185 sorts analytic lights by creation id before emitting shader functions.
+Capture clones preserve that relative creation order, and selectors persist the
+ordered semantic light descriptors without persisting process-local ids.
+Shadow-pass families retain the private override as their program owner; caster
+materials are borrowed binding owners and must not collide with beauty families
+when merging a supplied real-render harvest with newly captured shadow draws.
+
+An explicit `materials` extraction filter selects program owners. A material
+borrowed by Three's shared shadow override is not the owner of that auxiliary
+program. Shadow capture performs its own selection and family merge; a beauty
+marker must not merge cached shadow states that still reference a previous
+caster after a material replacement.
+
+`pnpm vendor:probe` reads the actual Three imports of every local vendor module,
+checks their named/default exports, imports each module, and exercises every target
+in the shared slim rewrite policy. Failures include the installed and supported
+versions, source location, and missing export or changed rewrite assumption.
+`--json` on `scripts/probe-vendor.mjs` emits the same complete report for tooling.
+There is no separate hand-maintained export allowlist. The locked/latest CI lanes
+continue collecting rewrite and build diagnostics after a probe failure; a failed
+probe still fails the job. Latest remains an upgrade warning, not supported input.
+Vendored provenance is unchanged by this diagnostic consolidation.
+
+### Capture attachment pipeline identity (Three r185)
+
+`compileTSL` temporarily extends WebGPU backend pipeline keys with all color
+attachment formats while holding its renderer lock. Upstream r185
+`WebGPUBackend.getRenderCacheKey()` includes only attachment zero, which can
+collide when a synthetic RGBA8 MRT and the real mixed-format MRT emit the same
+fragment interface. The adapter uses `utils.getCurrentColorFormats()` and
+restores the original method after success or failure. It changes capture
+scheduling only; generated shaders and production backend methods are intact.
+
+Shadow-only auxiliary extraction requests a synchronous private frame stamp
+for its warm-up draw. Three r185 `ShadowNode.updateBefore()` suppresses a second
+draw with the same frame ID even when `shadow.needsUpdate` is true. The scoped
+negative stamp makes repeated capture deterministic and restores the original
+frame ID before returning; it never advances the application's clock.

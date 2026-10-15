@@ -51,6 +51,7 @@ export {
 	attachTextureRefsWhere,
 	attachArtifactTextureRefsWhere,
 	attachExactMaterialGraphDepthTextureRefs,
+	attachCollectedPostprocessTextures,
 	rewritePassDepthTextureSources,
 } from './artifact-texture-wiring.js';
 
@@ -100,7 +101,7 @@ export { attachLiveNodeDependency, getLiveNodeDependencies } from './node-depend
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from '../hydrate/live-texture-registry.js';
 export { collectSceneLights, updateRendererLightingForSlim, wireStorageAttributesToSceneArtifacts, wireTiledLightingTextureToScene } from './renderer-lighting.js';
 export { setSlimRenderFallback, getSlimRenderFallback } from './render-fallback-registry.js';
-export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures } from './pass-render-fallback.js';
+export { renderOffscreenOverrideWithFullRenderer, renderPassWithFullRenderer, sharePassRenderTargetTextures, shareRenderTargetTextures, withMappedSceneMaterials } from './pass-render-fallback.js';
 export { disposeShadowMapsWithFullRenderer, populateShadowMapsWithFullRenderer } from './shadow-fallback.js';
 
 export {

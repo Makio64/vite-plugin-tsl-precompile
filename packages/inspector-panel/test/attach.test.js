@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import './browser-storage-fixture.js';
 import { attachToInspector, PrecompilePanel } from '../src/index.js';
 
 // Fake DOM so Tab's constructor (document.createElement) survives import.

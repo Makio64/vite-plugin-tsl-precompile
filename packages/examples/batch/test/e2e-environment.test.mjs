@@ -390,7 +390,7 @@ test( 'the runner fingerprints the probed environment before writing case eviden
 	const configurationIndex = source.indexOf( 'const configuration = {' );
 	const fingerprintIndex = source.indexOf( 'configuration.fingerprint = fingerprintJson( configuration );' );
 	const initialReportIndex = source.indexOf( '\nwriteReport();', fingerprintIndex );
-	const caseRunIndex = source.indexOf( 'const result = await runOne( browser, name );', initialReportIndex );
+	const caseRunIndex = source.indexOf( 'const result = await runE2ECaseWithWatchdog(', initialReportIndex );
 	assert.ok( collectIndex >= 0, 'expected an actual browser environment probe' );
 	assert.ok( collectIndex < configurationIndex, 'the actual environment must exist before configuration construction' );
 	assert.ok( configurationIndex < fingerprintIndex, 'environment-bearing configuration must be fingerprinted' );

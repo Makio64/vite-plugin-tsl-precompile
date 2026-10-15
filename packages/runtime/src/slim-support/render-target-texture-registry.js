@@ -175,15 +175,21 @@ function resolveAgainstTargets(
 ) {
 
 	const activeTarget = currentRenderTarget( state );
-	const safeMatches = [];
-	const hazardMatches = [];
+	let match = null;
+	let matchCount = 0;
+	let hazardCount = 0;
 	let candidateCount = 0;
 	for ( const target of targets ) {
 
 		const attachments = rendererRenderTargetTextureAttachments( target );
 		candidateCount += attachments.length;
+		const addressed = attachments.find( ( attachment ) => attachment.role === selector.attachment.role && attachment.index === selector.attachment.index );
+		if ( ! addressed ) continue;
 		for ( const attachment of attachments ) {
 
+			// Texture-based selector creation always chooses its first address.
+			// Keep aliases eligible so duplicate attachments retain ambiguity.
+			if ( attachment.texture !== addressed.texture ) continue;
 			let candidateSelector;
 			try {
 
@@ -205,35 +211,35 @@ function resolveAgainstTargets(
 				// targets without weakening global, stale, or replacement discovery.
 				matchHints: ! isExactPreferredAttachment,
 			} ) ) continue;
-			if ( target === activeTarget ) hazardMatches.push( attachment );
-			else safeMatches.push( attachment );
+			if ( target === activeTarget ) hazardCount ++;
+			else { match = attachment; matchCount ++; }
 
 		}
 
 	}
 
-	if ( hazardMatches.length > 0 ) return resolutionFailure(
+	if ( hazardCount > 0 ) return resolutionFailure(
 		RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.HAZARD,
 		'active-write-attachment',
 		{
 			observedTargetCount: state.targets.size,
 			candidateCount,
-			hazardCount: hazardMatches.length,
-			safeMatchCount: safeMatches.length,
+			hazardCount,
+			safeMatchCount: matchCount,
 			...details,
 		},
 	);
-	if ( safeMatches.length > 1 ) return resolutionFailure(
+	if ( matchCount > 1 ) return resolutionFailure(
 		RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.AMBIGUOUS,
 		'multiple-exact-matches',
 		{
 			observedTargetCount: state.targets.size,
 			candidateCount,
-			matchCount: safeMatches.length,
+			matchCount,
 			...details,
 		},
 	);
-	if ( safeMatches.length === 0 ) return resolutionFailure(
+	if ( matchCount === 0 ) return resolutionFailure(
 		candidateCount === 0
 			? RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.PENDING
 			: RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.MISSING,
@@ -245,7 +251,6 @@ function resolveAgainstTargets(
 		},
 	);
 
-	const match = safeMatches[ 0 ];
 	return {
 		status: RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.RESOLVED,
 		reason: null,

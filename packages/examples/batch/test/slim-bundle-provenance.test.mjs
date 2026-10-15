@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { formatSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
-import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from '../slim-bundle-provenance.mjs';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
+import { loadSlimBundle, slimBundleHashOptions, slimBundleReleaseProfile, slimBundleReportProvenance } from '../slim-bundle-provenance.mjs';
 
 function fixture() {
 
@@ -125,5 +126,34 @@ test( 'replay imports and forwarded exports share one cache-busted slim module i
 	assert.match( source, /export \{ \$\{ SLIM_REPLAY_FORWARD_EXPORTS\.join\( ', ' \) \} \} from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );
 	assert.match( source, /import \* as Slim from \$\{ JSON\.stringify\( SLIM_BUNDLE_BROWSER_MODULE \) \}/ );
 	assert.doesNotMatch( source, /from '\/__tslp__\/three\.webgpu\.slim\.js';/ );
+
+} );
+
+test( 'active bundle release selection distinguishes pinned development from its old nominal package version', () => {
+
+	const bundleFor = ( profile, developmentAxes = false ) => ( {
+		bytes: Buffer.from( formatSlimBundleStamp( {
+			sourceFingerprint: 'a'.repeat( 64 ),
+			versions: {
+				three: profile.packageVersion,
+				policy: 'slim-three-policy@13',
+				artifactToolchain: '0.1.0',
+				buildToolchain: 'tslp-slim-rollup@2',
+				...( developmentAxes ? { threeRevision: profile.revision, threeCommit: profile.gitCommit } : {} ),
+			},
+		} ) ),
+	} );
+	const stable = bundleFor( THREE_RELEASE_PROFILES.stable );
+	assert.equal( slimBundleReleaseProfile( stable ), THREE_RELEASE_PROFILES.stable );
+	assert.deepEqual( slimBundleHashOptions( stable ), { threeVersion: THREE_RELEASE_PROFILES.stable.packageVersion, pluginVersion: '0.1.0' } );
+	const development = bundleFor( THREE_RELEASE_PROFILES.development, true );
+	assert.equal( slimBundleReleaseProfile( development ), THREE_RELEASE_PROFILES.development );
+	assert.deepEqual( slimBundleHashOptions( development ), {
+		threeVersion: THREE_RELEASE_PROFILES.development.packageVersion,
+		pluginVersion: '0.1.0',
+		threeRevision: THREE_RELEASE_PROFILES.development.revision,
+		threeCommit: THREE_RELEASE_PROFILES.development.gitCommit,
+	} );
+	assert.throws( () => slimBundleReleaseProfile( bundleFor( THREE_RELEASE_PROFILES.development ) ), /exact pinned development release/ );
 
 } );

@@ -1,7 +1,7 @@
 /**
  * Replay-owned replacements for the final Three Node-core primitives retained
  * by the compiler-free bundle. Keep these values in exact parity with Three
- * r185; focused tests compare every exported primitive with the installed
+ * r186/r187; focused tests compare every exported primitive with the installed
  * implementation so a Three upgrade fails before the slim rewrite can drift.
  */
 
@@ -58,3 +58,25 @@ export const NodeUpdateType = {
 	RENDER: 'render',
 	OBJECT: 'object',
 };
+
+export const NodeShaderStage = {
+	VERTEX: 'vertex',
+	FRAGMENT: 'fragment',
+};
+
+export const NodeType = {
+	BOOLEAN: 'bool',
+	INTEGER: 'int',
+	FLOAT: 'float',
+	VECTOR2: 'vec2',
+	VECTOR3: 'vec3',
+	VECTOR4: 'vec4',
+	MATRIX2: 'mat2',
+	MATRIX3: 'mat3',
+	MATRIX4: 'mat4',
+};
+
+export const defaultShaderStages = [ 'fragment', 'vertex' ];
+export const defaultBuildStages = [ 'setup', 'analyze', 'generate' ];
+export const shaderStages = [ ...defaultShaderStages, 'compute' ];
+export const vectorComponents = [ 'x', 'y', 'z', 'w' ];

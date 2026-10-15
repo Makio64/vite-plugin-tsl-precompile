@@ -1,3 +1,4 @@
+import { cloneAttributeForFullRenderer as cloneAttribute, cloneGeometryForFullRenderer as cloneGeometry } from './full-renderer-scene.js';
 /**
  * Standard-light shadow-map fallback for the slim renderer.
  *
@@ -281,84 +282,6 @@ function sceneSignatures( scene, camera, slimRenderer ) {
 		frame: `${ shadowType ?? '' }:camera:${ matrixSignature( camera ) }:layers:${ camera && camera.layers && camera.layers.mask || 0 }:projection:${ projectionSignature( camera ) }:${ topology.join( '|' ) }:${ frame.join( '|' ) }`,
 		alwaysUpdate,
 	};
-
-}
-
-function cloneAttribute( attribute, Full ) {
-
-	if ( ! attribute || ! attribute.array || ! Number.isInteger( attribute.itemSize ) ) return null;
-	if ( attribute.isStorageBufferAttribute === true || attribute.isStorageInstancedBufferAttribute === true ) return null;
-	try {
-
-		let cloned = null;
-		if ( attribute.isInterleavedBufferAttribute === true && Full.InterleavedBuffer && Full.InterleavedBufferAttribute ) {
-
-			const data = attribute.data;
-			if ( ! data || ! data.array || ! Number.isInteger( data.stride ) ) return null;
-			const fullData = new Full.InterleavedBuffer( data.array, data.stride );
-			if ( typeof data.usage === 'number' && typeof fullData.setUsage === 'function' ) fullData.setUsage( data.usage );
-			cloned = new Full.InterleavedBufferAttribute( fullData, attribute.itemSize, attribute.offset, attribute.normalized );
-
-		} else if ( attribute.isInstancedBufferAttribute === true && Full.InstancedBufferAttribute ) {
-
-			cloned = new Full.InstancedBufferAttribute( attribute.array, attribute.itemSize, attribute.normalized === true, attribute.meshPerAttribute || 1 );
-
-		} else if ( Full.BufferAttribute ) {
-
-			cloned = new Full.BufferAttribute( attribute.array, attribute.itemSize, attribute.normalized === true );
-
-		}
-		if ( cloned && typeof attribute.usage === 'number' && typeof cloned.setUsage === 'function' ) cloned.setUsage( attribute.usage );
-		return cloned;
-
-	} catch ( _ ) {
-
-		return null;
-
-	}
-
-}
-
-function cloneGeometry( geometry, Full, geometryCache, ownedGeometries ) {
-
-	if ( geometryCache.has( geometry ) ) return geometryCache.get( geometry );
-	if ( ! Full.BufferGeometry ) return null;
-	try {
-
-		const cloned = new Full.BufferGeometry();
-		ownedGeometries.add( cloned );
-		if ( geometry.index ) {
-
-			const index = cloneAttribute( geometry.index, Full );
-			if ( ! index ) return null;
-			cloned.setIndex( index );
-
-		}
-		for ( const [ name, attribute ] of Object.entries( geometry.attributes || {} ) ) {
-
-			const fullAttribute = cloneAttribute( attribute, Full );
-			if ( ! fullAttribute ) return null;
-			cloned.setAttribute( name, fullAttribute );
-
-		}
-		for ( const [ name, attributes ] of Object.entries( geometry.morphAttributes || {} ) ) {
-
-			const mapped = attributes.map( ( attribute ) => cloneAttribute( attribute, Full ) );
-			if ( mapped.some( ( attribute ) => ! attribute ) ) return null;
-			cloned.morphAttributes[ name ] = mapped;
-
-		}
-		cloned.morphTargetsRelative = geometry.morphTargetsRelative === true;
-		if ( geometry.drawRange ) cloned.setDrawRange( geometry.drawRange.start || 0, geometry.drawRange.count === undefined ? Infinity : geometry.drawRange.count );
-		for ( const group of geometry.groups || [] ) cloned.addGroup( group.start || 0, group.count || 0, group.materialIndex || 0 );
-		geometryCache.set( geometry, cloned );
-		return cloned;
-
-	} catch ( _ ) {
-
-		return null;
-
-	}
 
 }
 

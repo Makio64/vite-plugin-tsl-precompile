@@ -30,16 +30,17 @@ import {
 	inspectE2EEvidenceGate,
 } from '../../examples/batch/e2e-evidence-gate.mjs';
 import {
-	assertOfficialThreeR185SourceVerification,
-	THREE_R185_OFFICIAL_COMMIT,
+	assertPinnedThreeSourceVerification,
+	officialThreeReleaseForEvidence,
 } from '../../examples/batch/_three-version.mjs';
 import {
 	comparePngBuffers,
 	pixelGateDisabledReasonForExample,
+	psnrIgnoreRegionsForExample,
 	psnrThresholdForExample,
 } from '../../examples/batch/psnr.mjs';
 
-export const PUBLIC_EVIDENCE_CASE_COUNT = 254;
+export const PUBLIC_EVIDENCE_CASE_COUNT = 272;
 export const SITE_EVIDENCE_GATE_SCHEMA = E2E_SEMANTIC_EVIDENCE_GATE_SCHEMA;
 export const SITE_PUBLIC_COVERAGE_SUMMARY = E2E_COVERAGE_JSON;
 export const SITE_PUBLIC_EVIDENCE_MANIFEST = E2E_EVIDENCE_SET_JSON;
@@ -1048,9 +1049,10 @@ function assertCurrentCanonicalRunPolicy( {
 		throw new Error( `${ label } does not satisfy the current canonical run predicate.` );
 
 	}
-	assertOfficialThreeR185SourceVerification(
+	assertPinnedThreeSourceVerification(
 		manifest.threeCheckout?.sourceVerification,
 		{
+			profile: officialThreeReleaseForEvidence( catalogue.threeVersion ),
 			sourceSnapshot: manifest.sources?.three,
 			sourceFingerprint: manifest.threeCheckout?.sourceFingerprint,
 			label,
@@ -1117,17 +1119,22 @@ function assertCurrentRepositorySources( snapshot, {
 	repositoryRoot,
 	harness,
 	label,
+	verification,
 } ) {
 
-	const requiredHarnessPaths = new Set( resolveE2EHarnessSourceFiles( repositoryRoot ).map( ( file ) => (
-		relative( repositoryRoot, file ).replaceAll( sep, '/' )
-	) ) );
-	assertCurrentEvidenceSourceSnapshot( snapshot, {
-		domain: 'repository',
-		root: repositoryRoot,
-		label,
-		requiredPaths: [ ...requiredHarnessPaths ],
-	} );
+	const fingerprint = fingerprintJson( snapshot ?? null );
+	if ( ! verification.snapshots.has( fingerprint ) ) {
+
+		verification.requiredPaths ??= resolveE2EHarnessSourceFiles( repositoryRoot ).map( ( file ) => (
+			relative( repositoryRoot, file ).replaceAll( sep, '/' )
+		) );
+		assertCurrentEvidenceSourceSnapshot( snapshot, {
+			domain: 'repository', root: repositoryRoot, label,
+			requiredPaths: verification.requiredPaths,
+		} );
+		verification.snapshots.add( fingerprint );
+
+	}
 	if (
 		harness?.sourceFingerprint !== snapshot.sha256 ||
 		harness?.sourceFileCount !== snapshot.fileCount
@@ -1247,6 +1254,12 @@ export function loadCanonicalExamplesEvidence( {
 	const cohortById = new Map();
 	const caseByName = new Map();
 	const descriptorOwners = new Map();
+	// Cohorts commonly carry the same repository snapshot. Verify that snapshot
+	// against disk once per load, while checking each cohort's identity below.
+	const repositoryVerification = { requiredPaths: null, snapshots: new Set() };
+	// This invocation owns the cache. Every descriptor/file is still verified
+	// below before its digest is used; only the pure pixel comparison is reused.
+	const comparisons = new Map();
 	for ( const cohort of evidenceSet.cohorts ) {
 
 		const label = `evidence cohort ${ JSON.stringify( cohort?.id ) }`;
@@ -1296,13 +1309,13 @@ export function loadCanonicalExamplesEvidence( {
 
 		}
 		if (
-			manifest.threeCheckout?.revision !== '185' ||
+			manifest.threeCheckout?.revision !== officialThreeReleaseForEvidence( catalogue.threeVersion ).revision ||
 			manifest.threeCheckout?.packageVersion !== catalogue.threeVersion ||
-			manifest.threeCheckout?.git?.head !== THREE_R185_OFFICIAL_COMMIT ||
+			manifest.threeCheckout?.git?.head !== officialThreeReleaseForEvidence( catalogue.threeVersion ).gitCommit ||
 			manifest.threeCheckout?.git?.clean !== true
 		) {
 
-			throw new Error( `${ label } was not captured from the clean official Three r185 checkout.` );
+			throw new Error( `${ label } was not captured from the clean official Three ${ officialThreeReleaseForEvidence( catalogue.threeVersion ).ref } checkout.` );
 
 		}
 		assertSha256( manifest.harness?.sourceFingerprint, `${ label } harness source fingerprint` );
@@ -1310,6 +1323,7 @@ export function loadCanonicalExamplesEvidence( {
 			repositoryRoot,
 			harness: manifest.harness,
 			label,
+			verification: repositoryVerification,
 		} );
 		if ( expected.kind === 'local' ) {
 
@@ -1346,9 +1360,10 @@ export function loadCanonicalExamplesEvidence( {
 
 			} else {
 
-				assertOfficialThreeR185SourceVerification(
+				assertPinnedThreeSourceVerification(
 					manifest.threeCheckout?.sourceVerification,
 					{
+						profile: officialThreeReleaseForEvidence( catalogue.threeVersion ),
 						sourceSnapshot: manifest.sources?.three,
 						sourceFingerprint: manifest.threeCheckout?.sourceFingerprint,
 						label,
@@ -1436,7 +1451,14 @@ export function loadCanonicalExamplesEvidence( {
 				verifiedShots[ key ] = verifyEvidenceDescriptor( resolvedRoot.root, descriptor, manifest.runId );
 
 			}
-			const comparison = comparePngBuffers( verifiedShots.capture.bytes, verifiedShots.replay.bytes, { name } );
+			const ignoreRegions = psnrIgnoreRegionsForExample( name );
+			const comparisonKey = fingerprintJson( [ entry.capture.sha256, entry.replay.sha256, ignoreRegions ] );
+			if ( ! comparisons.has( comparisonKey ) ) {
+
+				comparisons.set( comparisonKey, comparePngBuffers( verifiedShots.capture.bytes, verifiedShots.replay.bytes, { ignoreRegions } ) );
+
+			}
+			const comparison = comparisons.get( comparisonKey );
 			if ( comparison.error ) throw new Error( `${ label } ${ name } screenshot comparison failed: ${ comparison.error }.` );
 			for ( const key of [ 'userArtifacts', 'auxArtifacts' ] ) {
 
@@ -1595,11 +1617,11 @@ export function loadCanonicalExamplesEvidence( {
 		upstream.manifest.corpus?.kind !== 'three' ||
 		upstream.manifest.corpus?.exact !== true ||
 		upstream.manifest.threeCheckout?.packageVersion !== catalogue.threeVersion ||
-		upstream.manifest.threeCheckout?.git?.head !== THREE_R185_OFFICIAL_COMMIT ||
+		upstream.manifest.threeCheckout?.git?.head !== officialThreeReleaseForEvidence( catalogue.threeVersion ).gitCommit ||
 		upstream.manifest.threeCheckout?.git?.clean !== true
 	) {
 
-		throw new Error( 'Canonical upstream evidence is not the exact clean official Three r185 corpus.' );
+		throw new Error( `Canonical upstream evidence is not the exact clean official Three ${ officialThreeReleaseForEvidence( catalogue.threeVersion ).ref } corpus.` );
 
 	}
 	return {

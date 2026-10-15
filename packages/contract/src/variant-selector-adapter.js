@@ -1,5 +1,5 @@
 import { forEachArtifactPayload } from './artifact-traversal.js';
-import { projectRenderObjectContextSelector } from './render-selector.js';
+import { createProjectedRenderObjectContextSelector, projectRenderObjectContextSelector } from './render-selector.js';
 import { stableJsonStringify } from './stable-json.js';
 import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from './variant-selector-sidecar.js';
 
@@ -28,6 +28,7 @@ export function materializeArtifactVariantSelectorAdapters( value ) {
 }
 
 const GENERATED_VARIANT_SELECTOR_ADAPTER = Object.freeze( {
+	create: createProjectedRenderObjectContextSelector,
 	project: projectRenderObjectContextSelector,
 	match: matchArtifactVariantCandidates,
 } );

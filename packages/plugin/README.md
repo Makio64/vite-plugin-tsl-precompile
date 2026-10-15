@@ -18,17 +18,17 @@ Experimental.
 
 ```sh
 pnpm add -D vite-plugin-tsl-precompile@alpha
-pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
 ```
 
 TypeScript projects must also install the exact matching declarations:
 
 ```sh
-pnpm add -D @types/three@0.185.1 --save-exact
+pnpm add -D @types/three@0.186.0 --save-exact
 ```
 
-Required peer deps: `three 0.185.1`, `vite >= 6.4.3 < 9`, and the matching
-`@tsl-precompile/runtime`. `@types/three 0.185.1` is an optional peer for
+Required peer deps: `three 0.186.1`, `vite >= 6.4.3 < 9`, and the matching
+`@tsl-precompile/runtime`. `@types/three 0.186.0` is an optional peer for
 JavaScript consumers and required when TypeScript checks the Three surface.
 The alpha intentionally pins Three exactly; `0.185.x` requires the documented
 re-vendoring and artifact recapture workflow before it can be supported.

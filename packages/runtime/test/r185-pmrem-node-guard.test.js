@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three/webgpu';
+import { float, vec3 } from 'three/tsl';
 
 import { installR185PMREMNodeGuard } from '../src/r185-pmrem-node-guard.js';
 
@@ -51,30 +52,39 @@ test( 'r185 PMREM guard keeps a pending source on the shader-compatible placehol
 
 } );
 
-test( 'r185.1 PMREMNode retries a real CubeTextureLoader-style pending source', () => {
+test( 'native r186 PMREMNode handles a pending source without the historical guard', () => {
 
 	const source = new THREE.CubeTexture();
 	source.image = [];
 	const generated = new THREE.Texture( { width: 48, height: 64 } );
-	const node = new THREE.PMREMNode( source );
+	const node = new THREE.PMREMNode( source, vec3( 0, 1, 0 ), float( 0 ) );
+	const placeholder = node._texture.value;
+	let generations = 0;
 	node._generator = {
 		fromCubemap() {
 
+			generations ++;
 			return { texture: generated };
 
 		},
 	};
 	const renderer = {};
 
-	assert.equal( installR185PMREMNodeGuard( THREE ), true );
+	const nativeUpdateBefore = THREE.PMREMNode.prototype.updateBefore;
+	assert.equal( installR185PMREMNodeGuard( THREE ), false );
+	assert.equal( THREE.PMREMNode.prototype.updateBefore, nativeUpdateBefore );
 	node.updateBefore( { renderer } );
-	assert.equal( node._pmrem, node._texture.value );
-	assert.notEqual( node._pmrem, generated );
+	assert.equal( node._pmrem, null );
+	assert.equal( node._texture.value, placeholder );
+	assert.equal( generations, 0 );
+	assert.ok( node.setup( { renderer, context: {} } ), 'native setup supports its pending texture' );
+	assert.equal( node._pmrem, null );
 
 	source.image = Array.from( { length: 6 }, () => ( { width: 16, height: 16 } ) );
 	node.updateBefore( { renderer } );
 	assert.equal( node._pmrem, generated );
 	assert.equal( node._texture.value, generated );
+	assert.equal( generations, 1 );
 
 } );
 

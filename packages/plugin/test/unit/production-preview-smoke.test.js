@@ -290,6 +290,7 @@ test( 'production preview shares deterministic WebGPU and WebGL SwiftShader flag
 		'utf8',
 	);
 	assert.match( source, /evidenceBrowserLaunchArgs\( PRODUCTION_BROWSER_BASE_ARGS, platform \)/ );
+	assert.match( source, /await collector\.settle\(\);\s*browserFailures = collector\.failures\(\);/ );
 	assert.doesNotMatch( source, /enable-features=Vulkan,WebGPUService/ );
 
 } );

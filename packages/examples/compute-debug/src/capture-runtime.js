@@ -7,7 +7,7 @@ export async function setupCaptureRuntime( renderer, devEndpoint ) {
 		import( 'three/webgpu' ),
 	] );
 	runtime.installPrecompileMarker( three, { devEndpoint } );
-	runtime.setDevRenderer( renderer );
+	await runtime.setDevRenderer( renderer );
 	return { runtime, three };
 
 }

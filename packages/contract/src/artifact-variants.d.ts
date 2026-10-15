@@ -1,3 +1,6 @@
+/** Shapes registered through the renderer-owned artifact registry. */
+export function isRendererRegistryShape( shape: unknown ): boolean;
+
 import type { IdentityRemapState, StringRecord } from './types.js';
 
 export const ARTIFACT_VARIANT_FIELDS: readonly string[];

@@ -38,6 +38,10 @@ test( 'PMREM helpers identify runtime textures and captured artifact sources', (
 	assert.equal( isPMREMTexture( texture( { mapping: 306 } ) ), true );
 	assert.equal( isPMREMTexture( texture( { name: 'PMREM.cubeUv' } ) ), true );
 	assert.equal( isPMREMTexture( texture( { isCubeTexture: true, mapping: 306 } ) ), false );
+	const filteredCube = texture( { isCubeTexture: true, isPMREMTexture: true, mapping: 301, image: Array.from( { length: 6 }, () => ( { width: 64, height: 64 } ) ) } );
+	assert.equal( isPMREMTexture( filteredCube ), true, 'r187 native cubemap PMREM output uses the explicit flag' );
+	assert.equal( isEnvironmentTextureSource( filteredCube ), false, 'prefiltered cubes must not be filtered again as source cubes' );
+	assert.equal( isPMREMTexture( { isPMREMTexture: true } ), false, 'the PMREM flag still requires a texture' );
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', mapping: 306 } ), true );
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', textureName: 'PMREM.cubeUv' } ), true );
 	assert.equal( isPMREMArtifactTextureSource( { kind: 'artifact.texture', mapping: 301 } ), false );

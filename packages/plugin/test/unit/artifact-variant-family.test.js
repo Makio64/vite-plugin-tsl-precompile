@@ -598,7 +598,7 @@ test( 'artifact variant fingerprints match the durable JSON form of non-finite m
 
 } );
 
-test( 'artifact variant family keeps constant, material, and unresolved live snapshots strict', () => {
+test( 'artifact variant family keeps constant and unresolved live snapshots strict while material opacity stays live', () => {
 
 	for ( const kind of [ 'constant', 'material.opacity', 'uniform.live' ] ) {
 
@@ -614,6 +614,12 @@ test( 'artifact variant family keeps constant, material, and unresolved live sna
 			20,
 			{ kind, valueSnapshot: { type: 'f32', data: 4 } },
 		);
+		if ( kind === 'material.opacity' ) {
+
+			assert.doesNotThrow( () => mergeArtifactVariantFamily( first, [ first, divergent ] ) );
+			continue;
+
+		}
 		assert.throws(
 			() => mergeArtifactVariantFamily( first, [ first, divergent ] ),
 			( error ) => error && error.code === 'TSLP_ARTIFACT_VARIANT_CACHE_KEY_COLLISION',

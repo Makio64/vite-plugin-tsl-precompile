@@ -16,7 +16,15 @@
  * @module Hydrate.Kinds.DynamicTextureClassifier
  */
 
-import { dynamicBindingDescriptor } from '@tsl-precompile/contract/dynamic-bindings';
+import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
+import { createUniformPlanIndex } from '../uniform-plan.js';
+
+function planTexture( ctx, entry ) {
+
+	ctx.uniformPlan ||= createUniformPlanIndex( ctx.artifact );
+	return ctx.uniformPlan.texture( entry.group, entry.binding );
+
+}
 
 function isSampledTextureOrSampler( runtimeBinding ) {
 
@@ -29,24 +37,11 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 	const source = entry.source || {};
 	if ( source.renderTargetSelector !== undefined ) {
 
-		if ( ! isSampledTextureOrSampler( runtimeBinding ) ) return;
-		const bindings = source.fromMaterialGraph === true
-			? ctx.lateArtifactTextureBindings
-			: ctx.artifactTextureBindings;
-		bindings.push( {
-			binding: runtimeBinding,
-			artifact: ctx.artifact,
-			groupName: entry.group || '',
-			bindingName: descriptor.name || '',
-			source,
-			textureType: entry.textureType || descriptor.textureType || '2d',
-			material: ctx.graphMaterial || ctx.material,
-		} );
+		classifyArtifactTexture( entry, runtimeBinding, descriptor, ctx, entry.textureType || descriptor.textureType || '2d' );
 		return;
 
 	}
-	const planGroup = ( ctx.artifact.uniformPlan || [] ).find( ( group ) => group && group.name === entry.group );
-	const planEntry = planGroup && ( planGroup.textures || [] ).find( ( texture ) => texture && texture.name === entry.binding );
+	const planEntry = planTexture( ctx, entry );
 	const depthBinding = {
 		binding: runtimeBinding,
 		artifact: ctx.artifact,
@@ -89,18 +84,21 @@ function classifyDepthTexture( entry, runtimeBinding, descriptor, ctx ) {
 
 }
 
-function classifyArtifactTexture( entry, runtimeBinding, descriptor, ctx ) {
+function classifyArtifactTexture( entry, runtimeBinding, descriptor, ctx, textureType = entry.textureType ) {
 
 	if ( ! isSampledTextureOrSampler( runtimeBinding ) ) return;
-	let textureType = entry.textureType;
 	if ( ! textureType ) {
 
-		const planGroup = ( ctx.artifact.uniformPlan || [] ).find( ( g ) => g.name === entry.group ) || {};
-		const planTex = ( planGroup.textures || [] ).find( ( t ) => t.name === entry.binding ) || {};
-		textureType = planTex.textureType;
+		textureType = planTexture( ctx, entry )?.textureType;
 
 	}
-	ctx.artifactTextureBindings.push( {
+	// Live pass targets may only become discoverable during updateBefore.
+	// Resolve them after their producers, including sampled color and sampler
+	// bindings, so the first draw never uploads a pending 1×1 placeholder.
+	const bindings = entry.source?.renderTargetSelector !== undefined
+		? ctx.lateArtifactTextureBindings
+		: ctx.artifactTextureBindings;
+	bindings.push( {
 		binding: runtimeBinding,
 		artifact: ctx.artifact,
 		groupName: entry.group || '',
@@ -188,38 +186,13 @@ export function indexDynamicTextureBindings( artifact ) {
 
 	const out = new Map();
 	if ( ! artifact ) return out;
-	if ( Array.isArray( artifact.dynamicBindings ) ) {
+	const entries = Array.isArray( artifact.dynamicBindings )
+		? artifact.dynamicBindings
+		: collectArtifactDynamicBindings( artifact, { texturesOnly: true } );
+	for ( const entry of entries ) {
 
-		for ( const entry of artifact.dynamicBindings ) {
-
-			if ( entry.target !== 'sampled-texture' && entry.target !== 'sampler' ) continue;
-			out.set( `${ entry.group || '' }::${ entry.binding || '' }`, entry );
-
-		}
-		return out;
-
-	}
-
-	for ( const group of Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ) {
-
-		const groupName = group && group.name || '';
-		for ( const textureEntry of group && group.textures || [] ) {
-
-			const source = textureEntry && textureEntry.source;
-			const descriptor = source && dynamicBindingDescriptor( source.kind );
-			if ( ! descriptor || ( descriptor.target !== 'sampled-texture' && descriptor.target !== 'sampler' ) ) continue;
-			const binding = textureEntry.name || null;
-			const entry = {
-				kind: source.kind,
-				target: descriptor.target,
-				group: groupName,
-				binding,
-				textureType: textureEntry.textureType || null,
-				source,
-			};
-			out.set( `${ groupName }::${ binding || '' }`, entry );
-
-		}
+		if ( entry.target !== 'sampled-texture' && entry.target !== 'sampler' ) continue;
+		out.set( `${ entry.group || '' }::${ entry.binding || '' }`, entry );
 
 	}
 	return out;

@@ -24,16 +24,20 @@
  * @module ThreeRewrite
  */
 
-import { createHash } from 'node:crypto';
-
 import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import _generate from '@babel/generator';
 import * as t from '@babel/types';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { SLIM_THREE_REWRITE_TARGETS, getSlimThreeRewriteTarget } from '@tsl-precompile/contract/slim-three-policy';
+import { rewriteReplayCompilationLoop } from './three-rewrite-compilation-loop.js';
+import { rewriteWebGPUOnlyRenderer } from './three-rewrite-webgpu-only.js';
+import { rewritePipelineAsyncScopes } from './three-rewrite-pipeline-async-scope.js';
+import { assertExactModuleShape, compactAstFingerprint, parseFunctionBody, findClassMethod } from './three-rewrite-ast.js';
+import { rewriteNodeUtils, rewriteNodeCoreConstants, rewriteQuadMesh } from './three-rewrite-node-primitives.js';
+import { patchNativeBindGroupSetting, createReplayBindGroupInitialization, getWebGPUBackendSamplerBindingOwner } from './three-rewrite-webgpu-bindings.js';
+import { rewriteBindingsDeletion, rewriteRendererResourceDisposal } from './three-rewrite-renderer-lifecycle.js';
 import {
-	NODE_CORE_PRIMITIVES_VIRTUAL_ID,
 	injectSlimRewriteRuntimeImports,
 } from './three-rewrite-runtime.js';
 
@@ -50,8 +54,10 @@ const REWRITE_HANDLERS_BY_FAMILY = Object.freeze( {
 	'node-core-constants': rewriteNodeCoreConstants,
 	'loader-tracking': rewriteLoaderTracking,
 	'cube-render-target': rewriteCubeRenderTarget,
+	'quad-mesh': rewriteQuadMesh,
 	renderer: rewriteRenderer,
 	'render-object': rewriteRenderObject,
+	bindings: rewriteBindingsDeletion,
 	'post-processing': rewritePostProcessing,
 	background: rewriteBackground,
 	'shadow-filter-node': rewriteShadowFilterNode,
@@ -86,6 +92,8 @@ if ( MISSING_REWRITE_FAMILIES.length > 0 || UNDECLARED_REWRITE_FAMILIES.length >
  * @param {string} id - Resolved module id (absolute path).
  * @param {Object} opts
  * @param {string} opts.threeVersion
+ * @param {string} [opts.threeRevision] - Revision verified by the source owner.
+ * @param {string} [opts.threeCommit] - Exact development source commit.
  * @param {string} opts.pluginVersion
  * @return {?{ code: string, map: ?Object, warning: ?string, noop?: boolean }}
  */
@@ -111,7 +119,10 @@ export function rewriteThreeSource( code, id, opts ) {
 		const ctx = {
 			id,
 			threeVersion: opts.threeVersion,
+			threeRevision: opts.threeRevision || null,
+			threeCommit: opts.threeCommit || null,
 			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
+			webgpuOnly: opts.webgpuOnly === true,
 			touched: false,
 		};
 
@@ -186,53 +197,14 @@ function pickHandler( id ) {
 // retained Three module starts consuming one of the exports we intentionally
 // omit, Rollup's ESM linker fails instead of silently growing the Node graph.
 
-const NODE_UTILS_R185_AST_SHA256 = 'aa735f703cc42fb24da1a6398d4c2946f1be36ff07fead14f52becb8f4f60edd';
-const NODE_CORE_CONSTANTS_R185_AST_SHA256 = 'fe34fd8c46b2a1c9629c137f9eae342f51627602c25abfe6696716458d866c24';
 const LOADER_R185_AST_SHA256 = 'd7e782ece3295a50b0572e08a89c489f97da5be914254adb7e2c15555739467e';
+const SHADOW_FILTER_R186_AST_SHA256 = 'b51a991d948491b8b2012891351cfc8910aca73c71f7bd8de6396d92e165dd3a';
 
-function compactAstFingerprint( ast ) {
 
-	const source = generate( ast, { compact: true, comments: false } ).code;
-	return createHash( 'sha256' ).update( source ).digest( 'hex' );
 
-}
 
-function assertExactModuleShape( ast, label, expectedFingerprint ) {
 
-	const actualFingerprint = compactAstFingerprint( ast );
-	if ( actualFingerprint !== expectedFingerprint ) {
 
-		throw new Error( `${ label }: complete r185 module AST changed (expected ${ expectedFingerprint }, got ${ actualFingerprint })` );
-
-	}
-
-}
-
-function replaceWithNamedRuntimeReExports( ast, names ) {
-
-	ast.program.body = [ t.exportNamedDeclaration(
-		null,
-		names.map( ( name ) => t.exportSpecifier( t.identifier( name ), t.identifier( name ) ) ),
-		t.stringLiteral( NODE_CORE_PRIMITIVES_VIRTUAL_ID ),
-	) ];
-
-}
-
-function rewriteNodeUtils( ast, ctx ) {
-
-	assertExactModuleShape( ast, 'NodeUtils', NODE_UTILS_R185_AST_SHA256 );
-	replaceWithNamedRuntimeReExports( ast, [ 'hash', 'hashArray', 'hashString' ] );
-	ctx.touched = true;
-
-}
-
-function rewriteNodeCoreConstants( ast, ctx ) {
-
-	assertExactModuleShape( ast, 'nodes/core/constants', NODE_CORE_CONSTANTS_R185_AST_SHA256 );
-	replaceWithNamedRuntimeReExports( ast, [ 'NodeAccess', 'NodeUpdateType' ] );
-	ctx.touched = true;
-
-}
 
 /**
  * Install URL/name tracking only when a concrete Loader subclass is actually
@@ -859,6 +831,9 @@ function rewriteRenderer( ast, ctx ) {
 	let shadowNodeCalls = 0;
 	let shadowNodeAssignments = 0;
 	let shadowWarnings = 0;
+	let rendererResourceDisposals = 0;
+	let rendererShadowSchedules = 0;
+	let compilationLoops = 0;
 
 	traverse( ast, {
 		ImportDeclaration( path ) {
@@ -877,6 +852,32 @@ function rewriteRenderer( ast, ctx ) {
 		ClassMethod( path ) {
 
 			if ( ! isRendererClassMethod( path ) ) return;
+			if ( t.isIdentifier( path.node.key, { name: 'compileAsync' } ) ) {
+
+				rewriteReplayCompilationLoop( path );
+				compilationLoops ++;
+
+			}
+			if ( t.isIdentifier( path.node.key, { name: 'render' } ) ) {
+
+				path.traverse( { CallExpression( call ) {
+
+					const callee = call.node.callee;
+					if ( ! t.isMemberExpression( callee ) || ! t.isThisExpression( callee.object ) || ! t.isIdentifier( callee.property, { name: '_renderScene' } ) ) return;
+					if ( call.node.arguments.length !== 2 || ! t.isIdentifier( call.node.arguments[ 0 ], { name: 'scene' } ) || ! t.isIdentifier( call.node.arguments[ 1 ], { name: 'camera' } ) || ! call.parentPath.isExpressionStatement() ) throw new Error( 'Renderer: main scene render shape changed' );
+					call.parentPath.insertBefore( t.expressionStatement( t.callExpression(
+						t.memberExpression( t.memberExpression( t.thisExpression(), t.identifier( '_nodes' ) ), t.identifier( 'renderShadows' ) ), [ t.identifier( 'scene' ), t.identifier( 'camera' ) ]
+					) ) );
+					rendererShadowSchedules ++;
+
+				} } );
+
+			}
+			if ( t.isIdentifier( path.node.key, { name: 'dispose' } ) ) {
+
+				rendererResourceDisposals += rewriteRendererResourceDisposal( path );
+
+			}
 			shadowCacheInitializers += removeRendererShadowCacheInitializer( path );
 			if ( t.isIdentifier( path.node.key, { name: '_getShadowNodes' } ) ) {
 
@@ -1031,6 +1032,9 @@ function rewriteRenderer( ast, ctx ) {
 	if ( shadowNodeCalls !== 1 ) throw new Error( `Renderer: shape changed (expected 1 _getShadowNodes() call, got ${ shadowNodeCalls })` );
 	if ( shadowNodeAssignments !== 3 ) throw new Error( `Renderer: shape changed (expected 3 shadow-node assignments, got ${ shadowNodeAssignments })` );
 	if ( shadowWarnings !== 1 ) throw new Error( `Renderer: shape changed (expected 1 graph-free shadow warning, got ${ shadowWarnings })` );
+	if ( rendererResourceDisposals !== 1 ) throw new Error( `Renderer: shape changed (expected 1 backend disposal, got ${ rendererResourceDisposals })` );
+	if ( rendererShadowSchedules !== 1 ) throw new Error( `Renderer: shape changed (expected 1 main scene shadow schedule, got ${ rendererShadowSchedules })` );
+	if ( compilationLoops !== 1 ) throw new Error( 'Renderer: shape changed (compileAsync method not found)' );
 
 	injectMaterialImport( ast );
 	ctx.touched = true;
@@ -1100,6 +1104,26 @@ function rewritePostProcessing( ast, ctx ) {
 		},
 		AssignmentExpression( path ) {
 
+			const node = path.node;
+			if ( t.isMemberExpression( node.left ) && t.isIdentifier( node.left.property, { name: 'contextNode' } ) &&
+				t.isCallExpression( node.right ) && t.isIdentifier( node.right.callee, { name: 'context' } ) ) {
+
+				const expected = 'this._quadMesh.material.contextNode=context(contextData);';
+				const statement = path.getStatementParent();
+				if ( ! statement?.isExpressionStatement() ||
+					generate( statement.node, { compact: true, comments: false } ).code !== expected ||
+					! path.findParent( parent => parent.isClassMethod() && t.isIdentifier( parent.node.key, { name: '_updateContext' } ) ) ||
+					! matchFragmentNodeAssign( statement.getSibling( Number( statement.key ) + 1 ).node?.expression ) ) {
+
+					throw new Error( 'RenderPipeline: discarded material context ownership shape changed' );
+
+				}
+				// Capture already baked the wrapper into the selected final-pass
+				// artifact; the immediately replaced sentinel cannot own a graph.
+				statement.remove();
+				return;
+
+			}
 			if ( ! matchFragmentNodeAssign( path.node ) ) return;
 			const owner = path.node.left.object.object;   // `this._quadMesh`
 			// The runtime adapter hashes the user graph together with Three's
@@ -1268,6 +1292,14 @@ function rewriteBackground( ast, ctx ) {
 
 function rewriteShadowFilterNode( ast, ctx ) {
 
+	// r186 moved shadow material ownership onto ShadowBaseNode. This exact
+	// filter-only module has no material construction seam to replace.
+	if ( compactAstFingerprint( ast ) === SHADOW_FILTER_R186_AST_SHA256 ) {
+
+		ctx.safeNoop = true;
+		return;
+
+	}
 	let rewrites = 0;
 
 	traverse( ast, {
@@ -1558,36 +1590,12 @@ function rewriteGetForCompute( ast ) {
 
 }
 
-function parseFunctionBody( source ) {
-
-	const parsed = parse( `function __tslp_stub__() {${ source }\n}`, {
-		sourceType: 'module',
-		plugins: [ 'importAttributes', 'topLevelAwait' ],
-	} );
-	return parsed.program.body[ 0 ].body;
-
-}
 
 /**
  * Scan the top-level module for `class X { ... methodName( ... ) { ... } }`
  * and return the first matching ClassMethod node. Used for the 0.184+
  * `_createNodeBuilder` helper.
  */
-function findClassMethod( ast, methodName ) {
-
-	let found = null;
-	traverse( ast, {
-		ClassMethod( path ) {
-
-			if ( found ) return;
-			if ( ! t.isIdentifier( path.node.key, { name: methodName } ) ) return;
-			found = path.node;
-
-		},
-	} );
-	return found;
-
-}
 
 /**
  * Body for the rewritten `_createNodeBuilder(renderObject, material)`:
@@ -1818,11 +1826,17 @@ function rewriteWebGPUBackend( ast, ctx ) {
 	stubCreateNodeBuilder( ast, /\/nodes\/WGSLNodeBuilder\.js$/, 'WGSLNodeBuilder', 'WebGPUBackend' );
 	patchLazyIndexBufferCreation( ast );
 	patchLazyVertexBufferCreation( ast );
-	patchRobustBindGroupSetting( ast );
-	patchMissingCameraIndexBinding( ast );
+	if ( ! patchNativeBindGroupSetting( ast ) ) {
+
+		patchRobustBindGroupSetting( ast );
+		patchMissingCameraIndexBinding( ast );
+
+	}
 	ctx.touched = true;
 
 }
+
+
 
 function patchLazyIndexBufferCreation( ast ) {
 
@@ -1924,7 +1938,7 @@ function patchLazyVertexBufferCreation( ast ) {
 
 function patchRobustBindGroupSetting( ast ) {
 
-	let resetPatched = 0;
+	let cachePatched = 0;
 	let createPatched = 0;
 	const samplerBindingOwner = getWebGPUBackendSamplerBindingOwner( ast );
 
@@ -1940,15 +1954,9 @@ function patchRobustBindGroupSetting( ast ) {
 
 				path.insertAfter( parseFunctionBody( `
 					const __tslpPreservedBindingGroups = currentSets.__tslpPreservedBindingGroups;
-					currentBindingGroups.length = 0;
-					if ( __tslpPreservedBindingGroups ) {
-						for ( const __tslpIndex in __tslpPreservedBindingGroups ) {
-							currentBindingGroups[ __tslpIndex ] = __tslpPreservedBindingGroups[ __tslpIndex ];
-						}
-						currentSets.__tslpPreservedBindingGroups = null;
-					}
+					currentSets.__tslpPreservedBindingGroups = null;
 				` ).body );
-				resetPatched ++;
+				cachePatched ++;
 				return;
 
 			}
@@ -1976,54 +1984,49 @@ function patchRobustBindGroupSetting( ast ) {
 					: null;
 			if ( ! cacheMissIf ) return;
 
-			const samplerInitialization = samplerBindingOwner === 'binding'
-				? `
-						const bindingData = this.get( binding );
-						if ( bindingData.sampler === undefined ) this.updateSampler( binding );
-				`
-				: `
-						const texture = binding.texture;
-						const textureData = texture ? this.get( texture ) : null;
-						if ( textureData && textureData.sampler === undefined ) this.updateSampler( texture );
-				`;
-			const initBindings = parseFunctionBody( `
-				for ( const binding of bindGroup.bindings ) {
-					if ( binding.isUniformBuffer ) {
-						const bindingData = this.get( binding );
-						if ( bindingData.buffer === undefined ) this.createUniformBuffer( binding );
-					} else if ( binding.isSampledTexture ) {
-						const texture = binding.texture;
-						const textureData = texture ? this.get( texture ) : null;
-						if ( textureData && textureData.texture === undefined && textureData.externalTexture === undefined ) {
-							if ( this.renderer && this.renderer._textures ) {
-								texture.needsUpdate = true;
-								this.renderer._textures.updateTexture( texture );
-							} else {
-								this.createDefaultTexture( texture );
-							}
-						}
-					} else if ( binding.isSampler ) {
-						${ samplerInitialization }
-					}
-				}
-			` ).body;
+			// The CPU BindGroup id survives GPU resource replacement. Cache the
+			// actual GPUBindGroup so a replacement rebinds without invalidating
+			// every unchanged group on every draw. ArrayCamera's manual binding
+			// belongs to this draw only and must bypass the ordinary group.
+			const cacheWrites = cacheMissIf.get( 'consequent.body' ).filter( ( statement ) => {
 
-			path.insertAfter( t.ifStatement(
-				t.binaryExpression( '===', t.memberExpression( t.identifier( 'bindingsData' ), t.identifier( 'group' ) ), t.identifier( 'undefined' ) ),
-				t.blockStatement( [
-					...initBindings,
-					t.expressionStatement( t.callExpression(
-						t.memberExpression( t.thisExpression(), t.identifier( 'createBindings' ) ),
-						[ t.identifier( 'bindGroup' ), t.identifier( 'bindings' ), t.numericLiteral( 0 ) ]
-					) ),
-				] )
-			) );
+				const expr = statement.node.expression;
+				return t.isAssignmentExpression( expr, { operator: '=' } ) &&
+					isWebGPUBindGroupCacheMissTest( t.binaryExpression( '!==', expr.left, expr.right ) );
+
+			} );
+			if ( cacheWrites.length !== 1 ) throw new Error( 'WebGPUBackend: shape changed (bind group cache assignment)' );
+			cacheWrites[ 0 ].node.expression.right = t.memberExpression( t.identifier( 'bindingsData' ), t.identifier( 'group' ) );
+			cacheMissIf.node.test.right = t.memberExpression( t.identifier( 'bindingsData' ), t.identifier( 'group' ) );
+
+			const initialization = createReplayBindGroupInitialization( samplerBindingOwner );
+			const preserveGuard = [ t.ifStatement(
+				t.logicalExpression( '&&', t.identifier( '__tslpPreservedBindingGroups' ), t.binaryExpression(
+					'===',
+					t.memberExpression( t.identifier( '__tslpPreservedBindingGroups' ), t.identifier( 'i' ), true ),
+					t.memberExpression( t.identifier( 'bindGroup' ), t.identifier( 'id' ) )
+				) ),
+				t.continueStatement()
+			) ];
+			if ( enclosingIf === cacheMissIf ) {
+
+				// r185 put the lookup inside the id-based cache miss. The native
+				// resource must now be resolved before checking the cache.
+				cacheMissIf.insertBefore( [ ...preserveGuard, t.cloneNode( path.node, true ), initialization ] );
+				path.remove();
+
+			} else {
+
+				path.insertBefore( preserveGuard );
+				cacheMissIf.insertBefore( initialization );
+
+			}
 			createPatched ++;
 
 		},
 	} );
 
-	if ( resetPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no currentBindingGroups cache found)' );
+	if ( cachePatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no currentBindingGroups cache found)' );
 	if ( createPatched === 0 ) throw new Error( 'WebGPUBackend: shape changed (no bind group set loop found)' );
 
 }
@@ -2042,39 +2045,6 @@ function isWebGPUBindGroupCacheMissTest( node ) {
 
 }
 
-function getWebGPUBackendSamplerBindingOwner( ast ) {
-
-	const method = findClassMethod( ast, 'updateSampler' );
-	if ( ! method || method.params.length !== 1 || ! t.isIdentifier( method.params[ 0 ] ) ) {
-
-		throw new Error( 'WebGPUBackend: updateSampler signature shape changed' );
-
-	}
-	const owner = method.params[ 0 ].name;
-	if ( owner !== 'texture' && owner !== 'binding' ) {
-
-		throw new Error( `WebGPUBackend: unsupported updateSampler owner ${ owner }` );
-
-	}
-	const statements = method.body.body;
-	const returned = statements.length === 1 && t.isReturnStatement( statements[ 0 ] )
-		? statements[ 0 ].argument
-		: null;
-	if ( ! t.isCallExpression( returned )
-		|| ! t.isMemberExpression( returned.callee )
-		|| ! t.isMemberExpression( returned.callee.object )
-		|| ! t.isThisExpression( returned.callee.object.object )
-		|| ! t.isIdentifier( returned.callee.object.property, { name: 'textureUtils' } )
-		|| ! t.isIdentifier( returned.callee.property, { name: 'updateSampler' } )
-		|| returned.arguments.length !== 1
-		|| ! t.isIdentifier( returned.arguments[ 0 ], { name: owner } ) ) {
-
-		throw new Error( 'WebGPUBackend: updateSampler delegation shape changed' );
-
-	}
-	return owner;
-
-}
 
 function patchMissingCameraIndexBinding( ast ) {
 
@@ -2109,6 +2079,12 @@ function patchMissingCameraIndexBinding( ast ) {
 			if ( ! t.isIdentifier( expr.right.object, { name: 'cameraIndex' } ) ) return;
 			if ( ! t.isIdentifier( expr.right.property, { name: 'id' } ) ) return;
 
+			// Keep the ordinary cache in native GPU identities, including this
+			// manually selected camera group. The sidecar skips its next draw.
+			expr.right = t.memberExpression(
+				t.memberExpression( t.identifier( 'cameraData' ), t.identifier( 'indexesGPU' ) ),
+				t.identifier( 'i' ), true
+			);
 			path.insertAfter( parseFunctionBody( `
 				if ( sets.__tslpPreservedBindingGroups === undefined || sets.__tslpPreservedBindingGroups === null ) sets.__tslpPreservedBindingGroups = [];
 				sets.__tslpPreservedBindingGroups[ indexPos ] = cameraIndex.id;
@@ -2162,6 +2138,7 @@ function rewriteWebGPUPipelineUtils( ast, ctx ) {
 	} );
 
 	if ( rewrites === 0 ) throw new Error( 'WebGPUPipelineUtils: shape changed (no bindingsData.layout destructure found)' );
+	rewritePipelineAsyncScopes( ast, ctx.threeVersion );
 	ctx.touched = true;
 
 }
@@ -2292,6 +2269,7 @@ function rewriteWebGPURenderer( ast, ctx ) {
 	if ( ! foundLibImport ) throw new Error( 'WebGPURenderer: shape changed (no import of StandardNodeLibrary found)' );
 	if ( ! foundLibNew ) throw new Error( 'WebGPURenderer: shape changed (no `new StandardNodeLibrary()` found)' );
 	if ( ! foundWebGLImport ) throw new Error( 'WebGPURenderer: shape changed (no import of WebGLBackend found)' );
+	rewriteWebGPUOnlyRenderer( ast, ctx.webgpuOnly );
 
 	ctx.touched = true;
 

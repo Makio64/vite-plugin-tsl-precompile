@@ -197,6 +197,13 @@ function makeComputePassEncoder() {
 
 }
 
+class MockGPURenderBundleEncoder {
+
+	constructor() { Object.assign( this, makeRenderPassEncoder() ); }
+	finish() { return { __kind: 'RenderBundle' }; }
+
+}
+
 function makeCommandEncoder() {
 
 	return {
@@ -285,6 +292,7 @@ function makeDevice() {
 		createComputePipeline: makeComputePipeline,
 		createComputePipelineAsync: async ( d ) => makeComputePipeline( d ),
 		createCommandEncoder: makeCommandEncoder,
+		createRenderBundleEncoder: () => new MockGPURenderBundleEncoder(),
 		createQuerySet: () => ( { __kind: 'QuerySet' } ),
 		destroy: () => {},
 		pushErrorScope: () => {},
@@ -394,6 +402,7 @@ export function installMockWebGPU( globalTarget = globalThis ) {
 	globalTarget.GPUTextureUsage = GPUTextureUsage;
 	globalTarget.GPUMapMode = GPUMapMode;
 	globalTarget.GPUColorWrite = GPUColorWrite;
+	if ( typeof globalTarget.GPURenderBundleEncoder !== 'function' ) globalTarget.GPURenderBundleEncoder = MockGPURenderBundleEncoder;
 
 	// three.js's `Animation` class caches `self` as its rAF host; Node has
 	// no `self`. Alias it to globalThis so the rAF shim below is reachable.
@@ -402,10 +411,12 @@ export function installMockWebGPU( globalTarget = globalThis ) {
 	// `compileAsync()` yields through requestAnimationFrame in recent
 	// three.js versions. The shim must actually schedule the callback or Node's
 	// test runner sees a pending promise with no active handles and cancels it.
+	// setImmediate keeps that async boundary without paying the minimum timer
+	// delay for every compiled object. This mock does not simulate frame timing.
 	if ( typeof globalTarget.requestAnimationFrame !== 'function' ) {
 
-		globalTarget.requestAnimationFrame = ( cb ) => setTimeout( () => cb( Date.now() ), 0 );
-		globalTarget.cancelAnimationFrame = ( id ) => clearTimeout( id );
+		globalTarget.requestAnimationFrame = ( cb ) => setImmediate( () => cb( Date.now() ) );
+		globalTarget.cancelAnimationFrame = ( id ) => clearImmediate( id );
 
 	}
 

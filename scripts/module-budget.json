@@ -15,13 +15,13 @@
 		{
 			"file": "packages/runtime/src/aux-marker.js",
 			"tracker": "P2.11",
-			"reason": "Aux artifact registration orchestrator; converging with aux-loader.",
-			"baselineLines": 2820,
+			"reason": "Aux artifact registration orchestrator; PMREM discovery, descriptors, and native draw-family capture/resource cleanup live in auxiliary/pmrem-inputs.js, auxiliary/pmrem-capture-descriptor.js, and auxiliary/pmrem-live-capture.js. Ratchet reclaimed orchestration lines and branches down.",
+			"baselineLines": 2191,
 			"linesHeadroom": 0,
-			"maxLines": 2820,
-			"baselineBranches": 201,
+			"maxLines": 2191,
+			"baselineBranches": 142,
 			"branchesHeadroom": 0,
-			"maxBranches": 201
+			"maxBranches": 142
 		},
 		{
 			"file": "packages/plugin/src/three-rewrite.js",
@@ -37,29 +37,29 @@
 		{
 			"file": "packages/runtime/src/precompile-marker.js",
 			"tracker": "P2.14",
-			"reason": "Highest branch density in the runtime; staged split documented in ROADMAP.md P2.14.",
-			"baselineLines": 2432,
+			"reason": "Material capture orchestrator; staged split documented in ROADMAP.md P2.14. Capture scene cloning, observer lifecycle and emitter identity now live in named development helpers; ratchet the reclaimed orchestration lines and branches down.",
+			"baselineLines": 2230,
 			"linesHeadroom": 0,
-			"maxLines": 2432,
-			"baselineBranches": 255,
+			"maxLines": 2230,
+			"baselineBranches": 237,
 			"branchesHeadroom": 0,
-			"maxBranches": 255
+			"maxBranches": 237
 		},
 		{
 			"file": "packages/runtime/src/hydrator.js",
 			"tracker": "P0.2",
-			"reason": "Binding orchestrator; regrew 656 to 1439 after its first split because nothing capped it.",
-			"baselineLines": 1439,
+			"reason": "P0.2: state-local indexed uniform plan; shared dynamic texture projection and one allocator dependency bag per hydration.",
+			"baselineLines": 1270,
 			"linesHeadroom": 0,
-			"maxLines": 1439,
-			"baselineBranches": 118,
+			"maxLines": 1270,
+			"baselineBranches": 98,
 			"branchesHeadroom": 0,
-			"maxBranches": 118
+			"maxBranches": 98
 		},
 		{
 			"file": "packages/plugin/src/dev-capture-server.js",
 			"tracker": "P2.13",
-			"reason": "Browser to local-server trust boundary. Ratcheted 2026-08-02 after \u00a7P2.13 moved the transport guard, byte ceiling, and JSON decode into dev-capture-request.js.",
+			"reason": "Browser to local-server trust boundary. Ratcheted 2026-08-02 after §P2.13 moved the transport guard, byte ceiling, and JSON decode into dev-capture-request.js.",
 			"baselineLines": 1277,
 			"linesHeadroom": 0,
 			"maxLines": 1277,
@@ -70,32 +70,32 @@
 		{
 			"file": "packages/contract/src/kinds.js",
 			"tracker": "P0.3",
-			"reason": "Single kind registry. Ratcheted during the workspace merge after selector-collision diagnostics began reporting the divergent variant keys and fields.",
-			"baselineLines": 1449,
+			"reason": "Single kind registry. Direct material uniform types live once in contract/dynamic-bindings.js. PMREM slot vocabulary now lives once in pmrem-config.js, with exact atlas/cube texture relations in pmrem-uniform-relations.js; ratchet the extracted validation rather than growing the registry for r187 cube metadata.",
+			"baselineLines": 1353,
 			"linesHeadroom": 0,
-			"maxLines": 1449,
-			"baselineBranches": 134,
+			"maxLines": 1353,
+			"baselineBranches": 131,
 			"branchesHeadroom": 0,
-			"maxBranches": 134
+			"maxBranches": 131
 		},
 		{
 			"file": "packages/runtime/src/aux-loader.js",
 			"tracker": "P2.11",
-			"reason": "Texture-wiring predicates overlap slim-support/artifact-texture-wiring.js.",
+			"reason": "Texture-wiring predicates overlap slim-support/artifact-texture-wiring.js. Ratchet the branch ceiling down after PMREM support discovery moved into auxiliary/pmrem-inputs.js.",
 			"baselineLines": 1235,
 			"linesHeadroom": 0,
 			"maxLines": 1235,
-			"baselineBranches": 112,
+			"baselineBranches": 99,
 			"branchesHeadroom": 0,
-			"maxBranches": 112
+			"maxBranches": 99
 		},
 		{
 			"file": "packages/plugin/src/emit-updater.js",
 			"tracker": "P2.8",
-			"reason": "Codegen writer dispatch. Ratcheted 2026-08-02 after \u00a7P2.8 moved the 20 single-write source.kind cases into the DIRECT_SLOT_WRITERS / VELOCITY_SLOT_WRITERS tables.",
-			"baselineLines": 1119,
+			"reason": "Codegen writer dispatch. Ratcheted 2026-08-02 after §P2.8 moved the 20 single-write source.kind cases into the DIRECT_SLOT_WRITERS / VELOCITY_SLOT_WRITERS tables. Direct material writers consume the shared contract type table; ratchet the removed duplicate kind lists and branches.",
+			"baselineLines": 1053,
 			"linesHeadroom": 0,
-			"maxLines": 1119,
+			"maxLines": 1053,
 			"baselineBranches": 162,
 			"branchesHeadroom": 0,
 			"maxBranches": 162

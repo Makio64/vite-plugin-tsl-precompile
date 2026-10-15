@@ -9,8 +9,26 @@ import * as captureEntry from '../src/compute-capture.js';
 import { precompileCompute, precompileComputes } from '../src/compute-capture.js';
 import { getDevCaptureStatus } from '../src/dev-capture-outcome.js';
 import { hashArtifactContentSync } from '../src/graph-hash.js';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-releases';
 
 const RUNTIME_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
+
+test( 'development compute captures sign the exact revision and commit in metadata, payload and content hash', async () => {
+
+	const release = THREE_RELEASE_PROFILES.development;
+	const versions = { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit, pluginVersion: '0.1.0' };
+	const { calls, fetch, compileTSL } = fixture();
+	const capture = await precompileCompute( {}, { isNode: true, nodeType: 'float' }, { name: 'compute-dev', resources: { positions: {} }, scene: {}, camera: {}, ...versions, fetch, compileTSL } );
+	assert.equal( capture.threeRevision, release.revision );
+	assert.equal( capture.threeCommit, release.gitCommit );
+	assert.equal( capture.artifact.sourceThreeRevision, release.revision );
+	assert.equal( capture.artifact.sourceThreeCommit, release.gitCommit );
+	assert.equal( calls.fetch[ 0 ].payload.threeCommit, release.gitCommit );
+	assert.equal( capture.hash, hashArtifactContentSync( capture.artifact, { shape: 'material:compute-dev', ...versions } ) );
+	await assert.rejects( precompileCompute( {}, { isNode: true }, { name: 'compute-dev-incomplete', resources: {}, scene: {}, camera: {}, threeVersion: release.packageVersion, three: { REVISION: release.revision }, fetch, compileTSL } ), /incomplete Three emitter/ );
+	assert.equal( calls.compile.length, 1, 'incomplete provenance fails before extraction' );
+
+} );
 
 function storageArtifact() {
 
@@ -117,6 +135,7 @@ test( 'precompileComputes extracts a named batch with exact public resource iden
 	assert.equal( calls.compile[ 0 ].options.computeBindingResources.get( first ).get( 'positions' ), firstResource );
 	assert.equal( calls.compile[ 0 ].options.computeBindingResources.get( second ).get( 'positions' ), secondResource );
 	assert.equal( calls.compile[ 0 ].options.skipWarmupRender, true );
+	assert.equal( calls.compile[ 0 ].options.computeOnly, true );
 	assert.equal( calls.fetch.length, 2 );
 	assert.deepEqual( captures.map( capture => capture.name ), [ 'compute-first', 'compute-second' ] );
 	for ( const capture of captures ) {

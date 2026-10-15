@@ -14,6 +14,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 const checkedBuildDir = process.env.TSLP_TEST_CHECKED_SLIM_DIR
@@ -32,9 +33,9 @@ function assertDocumentedByteBudget( limits, kind ) {
 
 }
 
-test( 'slim bundle — byte caps document their r185.1 baseline and headroom', () => {
+test( 'slim bundle — byte caps document the pinned stable baseline and headroom', () => {
 
-	assert.equal( BUDGET.baseline.threeVersion, '0.185.1' );
+	assert.equal( BUDGET.baseline.threeVersion, SLIM_THREE_PACKAGE_VERSION );
 	assert.match( BUDGET.baseline.reason, /real compiler-free WebGL2 backend alongside WebGPU/ );
 	assertDocumentedByteBudget( BUDGET.prebuilt, 'Raw' );
 	assertDocumentedByteBudget( BUDGET.prebuilt, 'Gzip' );

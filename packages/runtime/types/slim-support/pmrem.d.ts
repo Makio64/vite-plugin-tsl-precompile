@@ -32,3 +32,6 @@ export function textureListSignature(
 	textures: readonly unknown[] | null | undefined,
 	count?: number,
 ): string;
+
+/** Owned CPU-backed scene clone; dispose after the PMREM transaction. Null means unsupported topology. */
+export function cloneSceneForPMREM( scene: unknown, fullModule: Record<string, unknown> ): ( import( 'three' ).Scene & { dispose(): void } ) | null;

@@ -25,11 +25,16 @@ Only then evaluate `slim: 'source'` as a separate optimization.
 > the compatibility path now, clone this repository, install it with pnpm, and
 > run `pnpm dev:getting-started`.
 
+To test the current checkout in your own application before publication, follow
+the [local consumer workflow](.agents/skills/integrate-tsl-precompile/references/local-consumer.md).
+It explains how to make an isolated copy, install the three packed packages,
+and handle applications whose Vite root differs from their package root.
+
 ## Before you start
 
 | Requirement | Minimum | Why |
 |---|---|---|
-| `three` | Exactly `0.185.1` for this alpha | Captured artifacts are versioned against the three.js native-shader emitters — see [MIGRATION.md](MIGRATION.md). A range or another patch is unsupported until the deliberate migration and re-capture workflow is complete. |
+| `three` | Exactly `0.186.1` for this alpha | Captured artifacts are versioned against the three.js native-shader emitters — see [MIGRATION.md](MIGRATION.md). A range or another patch is unsupported until the deliberate migration and re-capture workflow is complete. |
 | `vite` | `>= 6.4.3 < 9` | The dev-capture endpoint is mounted as Vite middleware; Vite 9 is not yet validated. |
 | Renderer | `WebGPURenderer` | Its WebGPU and WebGL 2 backends are supported, including `{ forceWebGL: true }` and automatic fallback. Classic `WebGLRenderer` is not supported. |
 | Browser | WebGPU or WebGL 2 | It must provide each backend requested for capture and preview. `--backends webgl` works in a WebGL-only environment; the dual sweep also requires a real WebGPU device. |
@@ -39,12 +44,12 @@ In `package.json`, pin three exactly:
 ```json
 {
   "dependencies": {
-    "three": "0.185.1"
+    "three": "0.186.1"
   }
 }
 ```
 
-Not `^0.185.1`, not `~0.185.1`. Bumping three is an explicit "re-capture artifacts" decision, not something dependabot does for you.
+Not `^0.186.1`, not `~0.186.1`. Bumping three is an explicit "re-capture artifacts" decision, not something dependabot does for you.
 The plugin now warns during Vite config resolution when your app's own
 `package.json` uses a ranged `three` dependency, because that can update the
 native shader emitters without regenerating artifacts.
@@ -53,13 +58,13 @@ native shader emitters without regenerating artifacts.
 
 ```sh
 pnpm add -D vite-plugin-tsl-precompile@alpha
-pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
 ```
 
 TypeScript projects must install the exact matching Three declarations too:
 
 ```sh
-pnpm add -D @types/three@0.185.1 --save-exact
+pnpm add -D @types/three@0.186.0 --save-exact
 ```
 
 Run the read-only doctor now and again after the first capture:
@@ -279,11 +284,14 @@ stable checked prebuilt file.
 
 **What slim mode buys you:** no TSL→WGSL/GLSL compile at first frame (predictable
 cold start), no node-graph traversal per draw, and explicit handling for every
-reachable path. The canonical Three r185 gzip-9 fixture baselines and caps are
-maintained in
+reachable path. The canonical Three r185 gzip-9 regression baselines and caps
+are maintained in
 [`packages/runtime/build-tools/slim-budget.json`](packages/runtime/build-tools/slim-budget.json).
-Those are repository fixtures, not a promise for your scene or a current
-stock-Three comparison; `pnpm analyze:slim` recomputes the current exact values.
+The checked baseline → cap pairs are 186,724 → 194,468 bytes for source-minimal,
+196,230 → 204,740 bytes for source-advanced, and 277,936 → 281,669 bytes for the
+prebuilt renderer. Those are repository fixtures, not a promise for your scene
+or a current stock-Three comparison; `pnpm analyze:slim` recomputes
+the current exact values.
 
 Slim is the right choice for shipping a tightly-controlled scene where you want predictable runtime behavior. It is the wrong choice if you have a sprawling scene with addons (`WaterMesh`, `Sky`, etc.) you haven't audited — start without slim, get the dev-capture flow working, then enable slim once you know which materials need markers.
 

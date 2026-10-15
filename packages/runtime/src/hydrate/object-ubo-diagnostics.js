@@ -100,9 +100,8 @@ export function classifyPmremObjectUniformSlots( artifact, planGroup ) {
 
 function recordObjectUboPhase( phase, binding, frame ) {
 
-	if ( ! objectUboDiagnosticsEnabled() || ! binding || ! binding.buffer ) return;
-	const metadata = binding[ OBJECT_UBO_DIAGNOSTIC_KEY ];
-	if ( ! metadata || ! isMeshStandardObjectGroup( metadata.artifact, metadata.planGroup ) ) return;
+	const metadata = binding && binding[ OBJECT_UBO_DIAGNOSTIC_KEY ];
+	if ( ! metadata || ! binding.buffer || ! objectUboDiagnosticsEnabled() || ! isMeshStandardObjectGroup( metadata.artifact, metadata.planGroup ) ) return;
 	const root = typeof globalThis !== 'undefined' ? globalThis : null;
 	if ( ! root ) return;
 	const diagnostics = root.__tslpHarnessDiagnostics || ( root.__tslpHarnessDiagnostics = {

@@ -92,6 +92,12 @@ test( 'extractArtifact serializes exact material paths for anonymous live unifor
 		[],
 		'serialized exact paths and identities are runtime overlay addresses, not blocked codegen kinds',
 	);
+	material.effectorNode = effectorA;
+	material.colorNode = { isNode: true, nested: { effector: effectorA } };
+	const directlyOwned = extractArtifact( 8, state, material );
+	assert.deepEqual( directlyOwned.uniformPlan[ 0 ].slots[ 0 ].source.nodePath, [ 'effectorNode' ],
+		'a direct authored root wins over a lexically earlier expression tree' );
+	assert.deepEqual( directlyOwned.uniformPlan[ 0 ].slots[ 1 ].source.nodePath, [ 'positionNode', 'branchB', 'effector' ] );
 
 } );
 

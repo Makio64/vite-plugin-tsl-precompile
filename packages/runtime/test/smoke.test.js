@@ -2699,6 +2699,52 @@ test( 'hydrator swaps zero-thickness transmission to a live viewport texture', (
 
 } );
 
+test( 'wireViewportTextureRefs: no missing bindings leave shader accessors and shared refs untouched', () => {
+
+	const refs = new Map( [ [ 'live', { isTexture: true } ] ] );
+	for ( const textures of [ [], [ { source: { kind: 'artifact.texture', mapping: 300, textureUuid: 'live' } } ] ] ) {
+
+		const artifact = Object.freeze( {
+			_textureRefs: refs,
+			uniformPlan: [ { textures } ],
+			get vertexShader() { assert.fail( 'shader text is unnecessary when no fallback is missing' ); },
+		} );
+		assert.equal( wireViewportTextureRefs( artifact ), artifact );
+		assert.equal( artifact._textureRefs, refs );
+
+	}
+
+} );
+
+test( 'wireViewportTextureRefs: missing fallbacks copy shared refs once and remain idempotent', () => {
+
+	const live = { isTexture: true };
+	const refs = new Map( [ [ 'live', live ] ] );
+	const texture = ( name, uuid ) => ( { name, source: { kind: 'artifact.texture', mapping: 300, textureUuid: uuid } } );
+	const artifact = {
+		_textureRefs: refs,
+		fragmentShader: 'var depthTex : texture_depth_2d; var colorTex : texture_2d<f32>;',
+		uniformPlan: [ { textures: [ texture( 'liveTex', 'live' ), texture( 'depthTex', 'depth' ), texture( 'depthTex', 'depth' ), texture( 'colorTex', 'color' ) ] } ],
+	};
+	wireViewportTextureRefs( artifact );
+	const wired = artifact._textureRefs;
+	assert.notEqual( wired, refs );
+	assert.equal( refs.size, 1, 'the map shared with another replay owner stays unchanged' );
+	assert.equal( wired.size, 3 );
+	assert.equal( wired.get( 'live' ), live );
+	assert.equal( wired.get( 'depth' ).isDepthTexture, true );
+	assert.equal( wired.get( 'depth' ).format, 1026 );
+	assert.equal( wired.get( 'depth' ).type, 1014 );
+	assert.equal( wired.get( 'color' ).isFramebufferTexture, true );
+	wireViewportTextureRefs( artifact );
+	assert.equal( artifact._textureRefs, wired );
+	assert.equal( Object.getOwnPropertyDescriptor( artifact, '_textureRefs' ).enumerable, false );
+	const compute = { computeShader: artifact.fragmentShader, uniformPlan: artifact.uniformPlan };
+	wireViewportTextureRefs( compute );
+	assert.equal( compute._textureRefs.get( 'depth' ).isDepthTexture, true );
+
+} );
+
 test( 'registerAuxArtifact: automatically wires viewport texture fallbacks on registration', () => {
 
 	__resetAuxRegistryForTests();
@@ -3693,5 +3739,13 @@ test( 'catalogueArtifactTextureRefs: pairs anonymous node textures by captured s
 	assert.ok( artifact._textureRefs instanceof Map );
 	assert.equal( artifact._textureRefs.get( 'captured-first' ), first );
 	assert.equal( artifact._textureRefs.get( 'captured-second' ), second );
+
+} );
+
+test( 'PrecompiledMaterial reports its concrete material type', () => {
+
+	const material = new PrecompiledMaterial( { uniformPlan: [] } );
+	assert.equal( material.type, 'PrecompiledMaterial' );
+	assert.equal( material.clone().type, 'PrecompiledMaterial' );
 
 } );

@@ -23,8 +23,11 @@
  */
 
 import { default as PrecompiledMaterial } from './_vendor-PrecompiledMaterial.js';
+import { isRendererRegistryShape } from '@tsl-precompile/contract/artifact-variants';
 import { registerPrecompiledArtifacts } from './_vendor-PrecompiledArtifactRegistry.js';
 import { preparePrecompiledArtifact } from './apply-precompiled-common.js';
+import { MATERIAL_SHADER_FAMILY } from '@tsl-precompile/contract/render-selector';
+import { hashMaterialSync } from './graph-hash.js';
 import { registerArtifact } from './artifact-loader.js';
 import { attachArtifactTextureRefsByShapeOrder } from './slim-support/artifact-texture-wiring.js';
 import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
@@ -222,7 +225,14 @@ export function catalogueArtifactTextureRefs( artifact, sourceMaterial ) {
  */
 export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
-	return applyPrecompiled( material, artifactModule, expectedHash, null );
+	return applyPrecompiled( material, artifactModule, expectedHash, null, hashMaterialSync, registerPrecompiledArtifacts );
+
+}
+
+/** @internal Only emitted after the plugin verifies captured call-site provenance. */
+export function __applyPrecompiledCallsite( material, artifactModule, expectedHash, validateArtifactHook = null ) {
+
+	return applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook, null, artifactModule && artifactModule.__registerAuxiliary );
 
 }
 
@@ -236,13 +246,19 @@ export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 export function __applyPrecompiledWithValidation( material, artifactModule, expectedHash, validateArtifactHook ) {
 
 	if ( typeof validateArtifactHook !== 'function' ) throw new TypeError( '__applyPrecompiledWithValidation: validation hook must be a function.' );
-	return applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook );
+	return applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook, hashMaterialSync, registerPrecompiledArtifacts );
 
 }
 
-function applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook ) {
+function applyPrecompiled( material, artifactModule, expectedHash, validateArtifactHook, hashSource, registerAuxiliary ) {
 
-	const artifact = preparePrecompiledArtifact( material, artifactModule, expectedHash );
+	const artifact = preparePrecompiledArtifact( material, artifactModule, expectedHash, hashSource );
+	const auxiliary = isRendererRegistryShape( artifact.materialShape );
+	if ( auxiliary && typeof registerAuxiliary !== 'function' ) {
+
+		throw new TypeError( '[tsl-precompile] This renderer-owned artifact requires its generated registration hook. Rebuild its artifact module.' );
+
+	}
 	const name = artifactModule.name || artifact.__name;
 	if ( validateArtifactHook ) validateArtifactHook( artifact, name );
 	if ( artifactModule.__hash && ! artifact.__hash ) {
@@ -257,10 +273,9 @@ function applyPrecompiled( material, artifactModule, expectedHash, validateArtif
 	// output-transform) to the renderer-internal registry so internal
 	// `new NodeMaterial()` constructors auto-hydrate from them. Skip user-
 	// material artifacts — those go through the wrapped material path below.
-	const auxiliary = isAuxiliaryShape( artifact.materialShape );
 	if ( auxiliary ) {
 
-		registerPrecompiledArtifacts( [ artifact ] );
+		registerAuxiliary( [ artifact ] );
 		// Material is unchanged in the auxiliary case — the renderer reaches
 		// into the registry by shape, not by reference.
 		return material;
@@ -356,6 +371,42 @@ function copyBackdropMarkers( src, dst ) {
 
 }
 
+const adoptedPrototypes = new WeakMap();
+const adoptedPrototypeSet = new WeakSet();
+
+function replayPrototypeFor( sourcePrototype, replayPrototype ) {
+
+	if ( ! sourcePrototype || sourcePrototype === Object.prototype ) return replayPrototype;
+	if ( sourcePrototype === replayPrototype || adoptedPrototypeSet.has( sourcePrototype ) ) return sourcePrototype;
+	let adopted = adoptedPrototypes.get( sourcePrototype );
+	if ( adopted ) return adopted;
+	// Keep the author class in the chain: setters, private fields and instanceof
+	// remain valid after a marker inside a custom material constructor.
+	adopted = Object.create( sourcePrototype );
+	Object.defineProperty( adopted, 'customProgramCacheKey', Object.getOwnPropertyDescriptor( replayPrototype, 'customProgramCacheKey' ) );
+	const originalClone = sourcePrototype.clone;
+	Object.defineProperty( adopted, 'clone', {
+		configurable: true,
+		value() {
+
+			const cloned = typeof originalClone === 'function' ? originalClone.call( this ) : replayPrototype.clone.call( this );
+			const replay = new PrecompiledMaterial( this.precompiledArtifact );
+			copyCommonMaterialProperties( this, replay );
+			for ( const key of Object.keys( this ) ) {
+
+				if ( key.endsWith( 'Node' ) && cloned[ key ] == null ) cloned[ key ] = this[ key ];
+
+			}
+			return adoptPrecompiledMaterial( cloned, replay );
+
+		},
+	} );
+	adoptedPrototypes.set( sourcePrototype, adopted );
+	adoptedPrototypeSet.add( adopted );
+	return adopted;
+
+}
+
 function adoptPrecompiledMaterial( target, wrapped ) {
 
 	if ( ! target || typeof target !== 'object' ) return wrapped;
@@ -376,7 +427,7 @@ function adoptPrecompiledMaterial( target, wrapped ) {
 			if ( descriptor ) Object.defineProperty( target, key, descriptor );
 
 		}
-		Object.setPrototypeOf( target, Object.getPrototypeOf( wrapped ) );
+		Object.setPrototypeOf( target, replayPrototypeFor( Object.getPrototypeOf( target ), Object.getPrototypeOf( wrapped ) ) );
 		return target;
 
 	} catch ( _ ) {
@@ -426,12 +477,6 @@ export function collectReflectorBaseNodes( material ) {
 
 }
 
-function isAuxiliaryShape( shape ) {
-
-	return shape === 'shadow-depth' || shape === 'render-pipeline' || shape === 'output-transform';
-
-}
-
 /**
  * Mirror common-case material properties from the user's source material onto
  * the wrapped PrecompiledMaterial so existing code that mutates `mat.color`,
@@ -441,6 +486,12 @@ function isAuxiliaryShape( shape ) {
  * into the artifact and mutating them at runtime would not affect the shader.
  */
 function copyCommonMaterialProperties( src, dst ) {
+
+	if ( typeof src[ MATERIAL_SHADER_FAMILY ] === 'string' ) {
+
+		Object.defineProperty( dst, MATERIAL_SHADER_FAMILY, { value: src[ MATERIAL_SHADER_FAMILY ], configurable: true } );
+
+	}
 
 	// Audited against three.js r185: MeshStandardMaterial, MeshPhysicalMaterial,
 	// MeshPhongMaterial, MeshBasicMaterial, MeshLambertMaterial, MeshMatcap-

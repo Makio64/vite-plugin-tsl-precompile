@@ -12,6 +12,7 @@ import { assertInternalPassArtifact } from '@tsl-precompile/contract/internal-pa
 import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artifact-variants';
 
 import PrecompiledMaterial from '../_vendor-PrecompiledMaterial.js';
+import { validateRuntimeArtifactThreeEmitterIdentity } from '../three-emitter-identity.js';
 
 const ERROR_PREFIX = '[tsl-precompile/internal-pass]';
 
@@ -56,6 +57,7 @@ export function bindInternalPassArtifact( artifact, bindings = {} ) {
 	try {
 
 		descriptor = assertInternalPassArtifact( artifact );
+		validateRuntimeArtifactThreeEmitterIdentity( artifact, '[tsl-precompile/internal-pass] artifact' );
 
 	} catch ( cause ) {
 

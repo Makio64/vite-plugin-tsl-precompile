@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -16,6 +17,78 @@ import {
 
 const PAGE_URL = 'http://127.0.0.1:5192/scene.html';
 
+function mockRequest( url, {
+	errorText = null,
+	method = 'GET',
+	responseBodySize = null,
+	responseEnd = 12,
+	responseStart = 6,
+	sizesError = null,
+} = {} ) {
+
+	return {
+		failure: () => errorText === null ? null : { errorText },
+		method: () => method,
+		sizes: async () => {
+
+			if ( sizesError ) throw sizesError;
+			return { responseBodySize };
+
+		},
+		timing: () => ( { responseEnd, responseStart } ),
+		url: () => url,
+	};
+
+}
+
+function emitResponse( page, request, status = 200, headers = {} ) {
+
+	page.emit( 'response', {
+		headers: () => headers,
+		request: () => request,
+		status: () => status,
+		url: () => request.url(),
+	} );
+
+}
+
+test( 'browser-runner consumers settle asynchronous completion proofs before final reads', () => {
+
+	for ( const { collectorName, path } of [
+		{ path: '../../../site/scripts/test-static-site.mjs', collectorName: 'collector' },
+		{ path: '../../../site/scripts/test-live-example.mjs', collectorName: 'browserFailures' },
+		{ path: '../../preview-smoke/run.mjs', collectorName: 'failureCollector' },
+		{ path: '../../preview-smoke/run-production-routes.mjs', collectorName: 'collector' },
+		{ path: '../../wow-showcase/scripts/capture.mjs', collectorName: 'browserFailures' },
+		{ path: '../../wow-showcase/scripts/test-preview.mjs', collectorName: 'browserFailures' },
+		{ path: '../../fresh-project-smoke/run.mjs', collectorName: 'failureCollector' },
+		{ path: '../run-e2e.mjs', collectorName: 'browserFailures' },
+		{ path: '../run-slim.mjs', collectorName: 'browserFailures' },
+		{ path: '../run.mjs', collectorName: 'failureCollector' },
+	] ) {
+
+		const lines = readFileSync( new URL( path, import.meta.url ), 'utf8' ).split( '\n' );
+		const finalRead = new RegExp( `\\b${ collectorName }\\.(?:failures|messages)(?:Since)?\\(` );
+		let readCount = 0;
+		for ( let index = 0; index < lines.length; index ++ ) {
+
+			if ( ! finalRead.test( lines[ index ] ) ) continue;
+			readCount ++;
+			let previous = index - 1;
+			while ( previous >= 0 && lines[ previous ].trim() === '' ) previous --;
+			assert.equal(
+				lines[ previous ]?.trim(),
+				`await ${ collectorName }.settle();`,
+				`${ path }: final browser-failure read must immediately follow settle()`,
+			);
+
+		}
+		assert.ok( readCount > 0, `${ path }: expected at least one final browser-failure read` );
+
+	}
+
+} );
+
 test( 'favicon exemption is exact, same-origin, and query-free', () => {
 
 	assert.equal( isSameOriginExactFaviconUrl( 'http://127.0.0.1:5192/favicon.ico', PAGE_URL ), true );
@@ -23,6 +96,75 @@ test( 'favicon exemption is exact, same-origin, and query-free', () => {
 	assert.equal( isSameOriginExactFaviconUrl( 'http://127.0.0.1:5192/favicon.ico?v=1', PAGE_URL ), false );
 	assert.equal( isSameOriginExactFaviconUrl( 'http://localhost:5192/favicon.ico', PAGE_URL ), false );
 	assert.equal( isSameOriginExactFaviconUrl( 'https://example.invalid/favicon.ico', PAGE_URL ), false );
+
+} );
+
+test( 'collector reconciles a same-request abort only after exact response-byte proof settles', async () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'http://127.0.0.1:5192/assets/PrimaryIonDrive.glb';
+	const request = mockRequest( url, {
+		errorText: 'net::ERR_ABORTED',
+		responseBodySize: 5_800_408,
+		responseEnd: 12.819,
+		responseStart: 6.027,
+	} );
+	emitResponse( page, request, 200, { 'content-length': '5800408' } );
+	page.emit( 'requestfailed', request );
+
+	// The asynchronous Playwright size query is deliberately fail-closed until
+	// callers settle it; HTTP 200 headers alone are not completion evidence.
+	assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true );
+	await collector.settle();
+	assert.deepEqual( collector.failures(), [] );
+	collector.dispose();
+
+} );
+
+test( 'same-request abort completion proof remains fail-closed when bytes or timing are incomplete', async () => {
+
+	for ( const scenario of [
+		{
+			name: 'missing content length',
+			headers: {},
+			request: { responseBodySize: 100 },
+		},
+		{
+			name: 'short body',
+			headers: { 'content-length': '100' },
+			request: { responseBodySize: 99 },
+		},
+		{
+			name: 'unfinished response timing',
+			headers: { 'content-length': '100' },
+			request: { responseBodySize: 100, responseEnd: - 1 },
+		},
+		{
+			name: 'unavailable transfer sizes',
+			headers: { 'content-length': '100' },
+			request: { responseBodySize: 100, sizesError: new Error( 'sizes unavailable' ) },
+		},
+		{
+			name: 'non-exact abort',
+			headers: { 'content-length': '100' },
+			request: { errorText: 'net::ERR_ABORTED (canceled)', responseBodySize: 100 },
+		},
+	] ) {
+
+		const page = new EventEmitter();
+		const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+		const request = mockRequest( 'http://127.0.0.1:5192/assets/model.glb', {
+			errorText: 'net::ERR_ABORTED',
+			...scenario.request,
+		} );
+		emitResponse( page, request, 200, scenario.headers );
+		page.emit( 'requestfailed', request );
+		await collector.settle();
+		assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true, scenario.name );
+		collector.dispose();
+
+	}
 
 } );
 
@@ -170,6 +312,124 @@ test( 'redirects and intentional non-network requests are not failures', () => {
 		}, { pageUrl: PAGE_URL } ), null );
 
 	}
+
+} );
+
+test( 'collector reconciles an exact aborted duplicate only after a successful response finishes', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'https://threejs.org/examples/models/gltf/Soldier.glb';
+	const aborted = mockRequest( url, { errorText: 'net::ERR_ABORTED' } );
+	const completed = mockRequest( url );
+
+	page.emit( 'requestfailed', aborted );
+	assert.match( collector.messages()[ 0 ], /Soldier\.glb.*net::ERR_ABORTED/ );
+	emitResponse( page, completed, 200 );
+	assert.match( collector.messages()[ 0 ], /Soldier\.glb.*net::ERR_ABORTED/ );
+	page.emit( 'requestfinished', completed );
+	assert.deepEqual( collector.failures(), [] );
+	collector.dispose();
+
+} );
+
+test( 'collector does not use a prior successful request to excuse a later abort', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'https://threejs.org/examples/models/gltf/Soldier.glb';
+	const completed = mockRequest( url );
+	const aborted = mockRequest( url, { errorText: 'net::ERR_ABORTED' } );
+
+	emitResponse( page, completed, 200 );
+	page.emit( 'requestfinished', completed );
+	page.emit( 'requestfailed', aborted );
+	assert.match( collector.messages()[ 0 ], /Soldier\.glb.*net::ERR_ABORTED/ );
+	collector.dispose();
+
+} );
+
+test( 'collector requires the successful completion to belong to a distinct duplicate request', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const request = mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED' } );
+	page.emit( 'requestfailed', request );
+	emitResponse( page, request, 200 );
+	page.emit( 'requestfinished', request );
+	assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true );
+	collector.dispose();
+
+} );
+
+test( 'aborted-request reconciliation is exact and remains fail-closed', () => {
+
+	for ( const scenario of [
+		{
+			name: 'method mismatch',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED', method: 'GET' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb', { method: 'HEAD' } ),
+			status: 200,
+		},
+		{
+			name: 'URL mismatch',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb?v=1', { errorText: 'net::ERR_ABORTED' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb?v=2' ),
+			status: 200,
+		},
+		{
+			name: 'non-exact abort message',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED (canceled)' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb' ),
+			status: 200,
+		},
+		{
+			name: 'failed HTTP response',
+			failure: mockRequest( 'https://cdn.example.invalid/model.glb', { errorText: 'net::ERR_ABORTED' } ),
+			completed: mockRequest( 'https://cdn.example.invalid/model.glb' ),
+			status: 404,
+		},
+	] ) {
+
+		const page = new EventEmitter();
+		const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+		page.emit( 'requestfailed', scenario.failure );
+		emitResponse( page, scenario.completed, scenario.status );
+		page.emit( 'requestfinished', scenario.completed );
+		assert.equal( collector.failures().some( entry => entry.kind === 'requestfailed' ), true, scenario.name );
+		collector.dispose();
+
+	}
+
+} );
+
+test( 'aborted-request reconciliation is one-for-one and checkpoint-scoped', () => {
+
+	const page = new EventEmitter();
+	const collector = installBrowserFailureCollector( page, { pageUrl: PAGE_URL } );
+	const url = 'https://cdn.example.invalid/model.fbx';
+	const abort = () => page.emit( 'requestfailed', mockRequest( url, { errorText: 'net::ERR_ABORTED' } ) );
+	const finish = () => {
+
+		const request = mockRequest( url );
+		emitResponse( page, request, 204 );
+		page.emit( 'requestfinished', request );
+
+	};
+
+	abort();
+	abort();
+	finish();
+	assert.equal( collector.failures().length, 1 );
+	finish();
+	assert.deepEqual( collector.failures(), [] );
+
+	const checkpoint = collector.checkpoint();
+	abort();
+	assert.equal( collector.failuresSince( checkpoint ).length, 1 );
+	finish();
+	assert.deepEqual( collector.failuresSince( checkpoint ), [] );
+	collector.dispose();
 
 } );
 

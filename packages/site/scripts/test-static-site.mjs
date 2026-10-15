@@ -159,6 +159,7 @@ async function probeRoute( context, {
 		collector.dispose();
 
 	}
+	await collector.settle();
 	const browserFailures = collector.failures();
 	failures.push( ...browserFailures.map( failure => failure.text ) );
 	await page.close();

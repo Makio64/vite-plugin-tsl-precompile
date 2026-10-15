@@ -8,12 +8,13 @@ export {
 
 export type CaptureBlockedKind = {
 	kind?: string | null;
+	isStaticSnapshot?: boolean;
 };
 
 export function formatCaptureBlockedKindWarning(
 	name: string,
 	blocked?: readonly ( CaptureBlockedKind | null | undefined )[],
-): string;
+): string | null;
 
 /** @internal Test-only lifecycle reset. */
 export function __resetForTests(): void;

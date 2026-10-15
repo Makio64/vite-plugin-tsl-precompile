@@ -8,6 +8,8 @@ import {
 	createStockMaterialTopologyKey,
 	getMaterialContextMap,
 	getSceneTopologyMap,
+	promoteObservedTopologyCaptureCandidate,
+	rememberTopologyCaptureCandidate,
 } from '../material-context-cache.mjs';
 
 test( 'material context cache deduplicates equivalent meshes but separates skinning topology', () => {
@@ -177,6 +179,72 @@ test( 'scene topology representatives remain scene-local', () => {
 	assert.equal( getSceneTopologyMap( cache, firstScene ), first );
 	assert.equal( getSceneTopologyMap( cache, secondScene ), null );
 	assert.notEqual( getSceneTopologyMap( cache, secondScene, true ), first );
+
+} );
+
+test( 'stock topology capture promotes only an actually rendered equivalent sibling', () => {
+
+	const representativeMaterial = { name: 'stable-capture-name' };
+	const renderedMaterial = { name: '' };
+	const unrenderedMaterial = { name: '' };
+	const representative = {
+		name: 'stable-capture-name',
+		material: representativeMaterial,
+		scene: { name: 'first-scene' },
+		camera: { name: 'first-camera' },
+		object: { name: 'first-object' },
+		renderer: { name: 'first-renderer' },
+		renderTarget: { name: 'first-target' },
+		mrt: { name: 'first-mrt' },
+		done: false,
+	};
+	const renderedContext = {
+		material: renderedMaterial,
+		scene: { name: 'rendered-scene' },
+		camera: { name: 'rendered-camera' },
+		object: { name: 'rendered-object' },
+		renderer: { name: 'rendered-renderer' },
+		renderTarget: { name: 'rendered-target' },
+		mrt: { name: 'rendered-mrt' },
+	};
+	assert.equal( rememberTopologyCaptureCandidate( representative, {
+		...renderedContext,
+		material: unrenderedMaterial,
+	} ), true );
+	assert.equal( rememberTopologyCaptureCandidate( representative, renderedContext ), true );
+
+	const observed = new WeakSet( [ renderedMaterial ] );
+	assert.equal( promoteObservedTopologyCaptureCandidate( representative, observed ), true );
+	for ( const field of [ 'material', 'scene', 'camera', 'object', 'renderer', 'renderTarget', 'mrt' ] ) {
+
+		assert.equal( representative[ field ], renderedContext[ field ], field );
+
+	}
+	assert.equal( renderedMaterial.name, 'stable-capture-name', 'the durable capture name stays stable' );
+	assert.equal( representative.done, false, 'observation chooses the owner but does not complete capture' );
+
+} );
+
+test( 'stock topology candidate observation never crosses pending topology groups', () => {
+
+	const first = { name: 'first', material: {}, done: false };
+	const second = { name: 'second', material: {}, done: false };
+	const firstAlias = {};
+	const secondAlias = {};
+	rememberTopologyCaptureCandidate( first, { material: firstAlias } );
+	rememberTopologyCaptureCandidate( second, { material: secondAlias } );
+	const observed = new WeakSet( [ secondAlias ] );
+
+	assert.equal( promoteObservedTopologyCaptureCandidate( first, observed ), false );
+	assert.equal( first.material === firstAlias, false );
+	assert.equal( promoteObservedTopologyCaptureCandidate( second, observed ), true );
+	assert.equal( second.material, secondAlias );
+
+	const alreadyObservedRepresentative = { name: 'observed', material: firstAlias, done: false };
+	rememberTopologyCaptureCandidate( alreadyObservedRepresentative, { material: secondAlias } );
+	const bothObserved = new WeakSet( [ firstAlias, secondAlias ] );
+	assert.equal( promoteObservedTopologyCaptureCandidate( alreadyObservedRepresentative, bothObserved ), false );
+	assert.equal( alreadyObservedRepresentative.material, firstAlias, 'an observed representative remains stable' );
 
 } );
 

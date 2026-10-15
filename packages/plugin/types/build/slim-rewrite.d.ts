@@ -20,6 +20,9 @@ export function rewriteThreeSource(
 	id: string,
 	options: {
 		threeVersion: string;
+		threeRevision?: string;
+		threeCommit?: string;
+		webgpuOnly?: boolean;
 		pluginVersion?: string;
 	},
 ): SlimRewriteResult | null;
