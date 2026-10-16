@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRecapturePlan } from './recapture-plan.js';
+import { createRecapturePlan, recapturePMREMLayoutForRevision } from './recapture-plan.js';
 import {
 	acquireRecaptureRepositoryLock,
 	installRecaptureSignalHandlers,
@@ -20,7 +20,8 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../../..');
 
-const ALL_EXAMPLES = createRecapturePlan(REPO);
+const { REVISION } = await import('three/src/constants.js');
+const ALL_EXAMPLES = createRecapturePlan(REPO, { pmremLayout: recapturePMREMLayoutForRevision(REVISION) });
 
 const RECAPTURE_SCRIPT = resolve(REPO, 'packages/plugin/src/cli/recapture.js');
 const PRODUCTION_PREVIEW_SCRIPT = resolve(REPO, 'packages/examples/preview-smoke/run-production-routes.mjs');

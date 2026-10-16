@@ -1,144 +1,174 @@
 {
   "__aux": {
-    "lights:0aabb596c2b87db87296fbea80aa05be5498e2f6d9f4594627fd7fa3f7becc97": {
-      "file": "aux-lights-0aabb596c2b8.json",
+    "lights:9ebc858d4f13d50ad2cd3a24378c249c8d7d4c2f4ce3c7076208686cebc26b88": {
+      "file": "aux-lights-9ebc858d4f13.json",
       "shape": "lights",
-      "configHash": "0aabb596c2b87db87296fbea80aa05be5498e2f6d9f4594627fd7fa3f7becc97",
-      "hash": "96c26041fc64c1ed5ae03bea689fd4f86a542f9e8a39f596cc3402521519faca",
-      "threeVersion": "0.186.1",
+      "configHash": "9ebc858d4f13d50ad2cd3a24378c249c8d7d4c2f4ce3c7076208686cebc26b88",
+      "hash": "ab5b7fbd2437367611974d5a9e77d352c2355c35f5c1fab5fbcd8431f65f7666",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:23.828Z"
+      "capturedAt": "2026-10-16T05:01:09.239Z"
     },
-    "shadow-depth:5fb034dea2395ddaf7d658f07c15fa5dbeafb139cb2f92f38bc3a7ddbc87dfa0": {
-      "file": "aux-shadow-depth-5fb034dea239.json",
+    "shadow-depth:83dd45b79a7fda7dd7b41ccb0440248d4d90e81af81bbe700b53995c8ac3ada2": {
+      "file": "aux-shadow-depth-83dd45b79a7f.json",
       "shape": "shadow-depth",
-      "configHash": "5fb034dea2395ddaf7d658f07c15fa5dbeafb139cb2f92f38bc3a7ddbc87dfa0",
-      "hash": "2283dd2bd2fa200141a06a473eb8046f681045ea1c4b961ade26225aa1d4d786",
-      "threeVersion": "0.186.1",
+      "configHash": "83dd45b79a7fda7dd7b41ccb0440248d4d90e81af81bbe700b53995c8ac3ada2",
+      "hash": "a9908281015a6c664a4ea7681a9101e6cce6a828e3293d9f6970aa4f4b425158",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:23.844Z"
+      "capturedAt": "2026-10-16T05:01:09.263Z"
     },
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "b9705c28b1a3acf02b98c90af20795016041395f7bf1a2f1b852d49a0b9656de",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "d22ea5184f97de57926c12015ab870c5126bd8a2968e8aa45167fb2108e1dac8",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:28.574Z"
+      "capturedAt": "2026-10-16T05:01:13.584Z"
     },
-    "shadow-depth:6e91a071180a4dbfb4289275c1990a26bc5737bfd7efdd7b06bcde3367be9467": {
-      "file": "aux-shadow-depth-6e91a071180a.json",
+    "shadow-depth:dab37a07fa4f2942f92a9e58b7ccecd0057758662509857496db044b5d3fd42f": {
+      "file": "aux-shadow-depth-dab37a07fa4f.json",
       "shape": "shadow-depth",
-      "configHash": "6e91a071180a4dbfb4289275c1990a26bc5737bfd7efdd7b06bcde3367be9467",
-      "hash": "d805d6dba0621ab3968886ab98248db75866fee9f261522f319fd0ea878fb582",
-      "threeVersion": "0.186.1",
+      "configHash": "dab37a07fa4f2942f92a9e58b7ccecd0057758662509857496db044b5d3fd42f",
+      "hash": "301c69d302b7fe555428cec3f64f856a9fcfc0f953a4cab5ea055badc3ab75c4",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:25.488Z"
+      "capturedAt": "2026-10-16T05:01:10.882Z"
     },
-    "shadow-depth:4eb25a0fccbbd53c4b2a3890ff8ab83214d6f4eac6a90276e8d284fb2aff64b6": {
-      "file": "aux-shadow-depth-4eb25a0fccbbd53c4b2a3890ff8ab83214d6f4eac6a90276e8d284fb2aff64b6-8b37162cd3e22bcc1c9898e4a9e0f4de44a7289dedfe037410a23e13db3a8973.json",
+    "shadow-depth:22eac80699947a9fb4250b41c759fa28b78e77938f820b5093795c8b73c3f7fe": {
+      "file": "aux-shadow-depth-22eac80699947a9fb4250b41c759fa28b78e77938f820b5093795c8b73c3f7fe-2d025fedb7753aee567877976539375e2324db4d7fdee75c277acf6f5ffdc0fb.json",
       "shape": "shadow-depth",
-      "configHash": "4eb25a0fccbbd53c4b2a3890ff8ab83214d6f4eac6a90276e8d284fb2aff64b6",
-      "hash": "8b37162cd3e22bcc1c9898e4a9e0f4de44a7289dedfe037410a23e13db3a8973",
-      "threeVersion": "0.186.1",
+      "configHash": "22eac80699947a9fb4250b41c759fa28b78e77938f820b5093795c8b73c3f7fe",
+      "hash": "2d025fedb7753aee567877976539375e2324db4d7fdee75c277acf6f5ffdc0fb",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:28.533Z"
+      "capturedAt": "2026-10-16T05:01:13.549Z"
     },
-    "shadow-vsm-vertical:25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e": {
-      "file": "aux-shadow-vsm-vertical-25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e-c72d8ed0206eff4ecfbccf4ccda94118d28a0cec9de5169b8e127ea0d0f1f33c.json",
+    "shadow-vsm-vertical:7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29": {
+      "file": "aux-shadow-vsm-vertical-7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29-c5808c8cc694e2136c44aecd8e7908ee1ac4f3614d6e58a4da63dcdabf8827f3.json",
       "shape": "shadow-vsm-vertical",
-      "configHash": "25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e",
-      "hash": "c72d8ed0206eff4ecfbccf4ccda94118d28a0cec9de5169b8e127ea0d0f1f33c",
-      "threeVersion": "0.186.1",
+      "configHash": "7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29",
+      "hash": "c5808c8cc694e2136c44aecd8e7908ee1ac4f3614d6e58a4da63dcdabf8827f3",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:33.819Z"
+      "capturedAt": "2026-10-16T05:01:19.667Z"
     },
-    "shadow-vsm-horizontal:25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e": {
-      "file": "aux-shadow-vsm-horizontal-25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e-8d6ab27bb57127943a9946cf93bdeb9fb2b9e78dd0c158568be4fc2c67de8a26.json",
+    "shadow-vsm-horizontal:7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29": {
+      "file": "aux-shadow-vsm-horizontal-7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29-3e520f3940ec93e0ded021eb1088aa617431c77ffbec1555b6b262e5a70028cc.json",
       "shape": "shadow-vsm-horizontal",
-      "configHash": "25db41cbbff2e386a7322a3670df8569ab75ea847b728b43665c477871e0079e",
-      "hash": "8d6ab27bb57127943a9946cf93bdeb9fb2b9e78dd0c158568be4fc2c67de8a26",
-      "threeVersion": "0.186.1",
+      "configHash": "7f3bf15ea2a42c4374f9fe017fd33bbfef8610b114b5e60bfc283f27f9321e29",
+      "hash": "3e520f3940ec93e0ded021eb1088aa617431c77ffbec1555b6b262e5a70028cc",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:33.819Z"
+      "capturedAt": "2026-10-16T05:01:19.667Z"
     },
-    "lights:d375a434ff72b83ec700e6bb5c93e5c0d42d5f2067a26fb3484c515538657086": {
-      "file": "aux-lights-d375a434ff72.json",
+    "lights:90e3f4aad13e35faf8ed3cdc5c4543ee766bf778a99bbfba4d0689c0af660ed7": {
+      "file": "aux-lights-90e3f4aad13e.json",
       "shape": "lights",
-      "configHash": "d375a434ff72b83ec700e6bb5c93e5c0d42d5f2067a26fb3484c515538657086",
-      "hash": "4209cea1196c1761b0403a93d0d3219df7f4e693567058dead532939b4693101",
-      "threeVersion": "0.186.1",
+      "configHash": "90e3f4aad13e35faf8ed3cdc5c4543ee766bf778a99bbfba4d0689c0af660ed7",
+      "hash": "18839bf0344875218242cf50bc78b5a9b09fb6bfa30b4c98a9d1917b2ecb444f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:29.838Z"
+      "capturedAt": "2026-10-16T05:01:15.269Z"
     },
-    "shadow-depth:c4a0f0d2a5504bf97f11a2c8d1f94b509acccd7247ab030d5e032e360b14aac2": {
-      "file": "aux-shadow-depth-c4a0f0d2a550.json",
+    "shadow-depth:cb828e2ad9001912bf8f29d6f12a4830139a784e1048ccde11293cec39afada7": {
+      "file": "aux-shadow-depth-cb828e2ad900.json",
       "shape": "shadow-depth",
-      "configHash": "c4a0f0d2a5504bf97f11a2c8d1f94b509acccd7247ab030d5e032e360b14aac2",
-      "hash": "0e94c38c9fd7118b54c38f764c91b5fb0f48662782a85b7d62bfdca73451d482",
-      "threeVersion": "0.186.1",
+      "configHash": "cb828e2ad9001912bf8f29d6f12a4830139a784e1048ccde11293cec39afada7",
+      "hash": "14e1c0c85cb645ff4d92027adf98282d3521e6e62ac3818094db4ecc3b3748a5",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:29.852Z"
+      "capturedAt": "2026-10-16T05:01:15.284Z"
     },
-    "shadow-depth:04110e538763407a1a4fb904a7d29f12f43000c889c84cfaf8b9d26e75877556": {
-      "file": "aux-shadow-depth-04110e538763.json",
+    "shadow-depth:75ae9599fb039509c8caf6a83e24047c87a27d06f00e33e846354d034355d5ef": {
+      "file": "aux-shadow-depth-75ae9599fb03.json",
       "shape": "shadow-depth",
-      "configHash": "04110e538763407a1a4fb904a7d29f12f43000c889c84cfaf8b9d26e75877556",
-      "hash": "2b47b4a49052a6b7f15fb5a94357555971c68e2dd892cb763d616320e9c83c63",
-      "threeVersion": "0.186.1",
+      "configHash": "75ae9599fb039509c8caf6a83e24047c87a27d06f00e33e846354d034355d5ef",
+      "hash": "2fb7b862ce1fa851f240ea86bae204d296080dbbb1b4b79b93e7b2aa747b499c",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:31.169Z"
+      "capturedAt": "2026-10-16T05:01:16.613Z"
     },
-    "shadow-depth:7086ea034c8dcfd9a9837ddef4d3800b8dfa800ee457cf02f9d91f5c99f4460e": {
-      "file": "aux-shadow-depth-7086ea034c8dcfd9a9837ddef4d3800b8dfa800ee457cf02f9d91f5c99f4460e-f765351a176798907bb592ea5609d884958fbbad2f6403ccd32a5b443bf14382.json",
+    "shadow-depth:f5d7ab3b626c5929d489b340126cbd2a6356c0f0f371917ddac00b3fc949964c": {
+      "file": "aux-shadow-depth-f5d7ab3b626c5929d489b340126cbd2a6356c0f0f371917ddac00b3fc949964c-0c9e41e9a7b683efa5082b55d3d1b2e60c9f0320b310909d9da024d7e1fad767.json",
       "shape": "shadow-depth",
-      "configHash": "7086ea034c8dcfd9a9837ddef4d3800b8dfa800ee457cf02f9d91f5c99f4460e",
-      "hash": "f765351a176798907bb592ea5609d884958fbbad2f6403ccd32a5b443bf14382",
-      "threeVersion": "0.186.1",
+      "configHash": "f5d7ab3b626c5929d489b340126cbd2a6356c0f0f371917ddac00b3fc949964c",
+      "hash": "0c9e41e9a7b683efa5082b55d3d1b2e60c9f0320b310909d9da024d7e1fad767",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:33.819Z"
+      "capturedAt": "2026-10-16T05:01:19.667Z"
     },
-    "lights:6e3ce292fee37b168b8fac18152322f8bf4c17a8c35a962f05c9f081e5d10796": {
-      "file": "aux-lights-6e3ce292fee3.json",
+    "lights:a13e13384e99f86abd812fb764c329947a1b5c779de2196f27f94bbf91bbb5db": {
+      "file": "aux-lights-a13e13384e99.json",
       "shape": "lights",
-      "configHash": "6e3ce292fee37b168b8fac18152322f8bf4c17a8c35a962f05c9f081e5d10796",
-      "hash": "74a2448d83484b9f5fec53c3ed5dffa5586ee0c0bf7d113c9bd3d530e92234c5",
-      "threeVersion": "0.186.1",
+      "configHash": "a13e13384e99f86abd812fb764c329947a1b5c779de2196f27f94bbf91bbb5db",
+      "hash": "32ff2aed1759a64487acc02ef15c55e6732bddee672452e7af12d669f31daa99",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:35.112Z"
+      "capturedAt": "2026-10-16T05:01:20.978Z"
     },
-    "shadow-depth:200fa4c5d01caa25e5e5a03f3e9b1c1177acfbcd9adbe8fc806ba4826c32d874": {
-      "file": "aux-shadow-depth-200fa4c5d01c.json",
+    "shadow-depth:c4de0ce0bd39548f44146fcbe893d27c649863a37fbb55c5efa8486c7e5e5baf": {
+      "file": "aux-shadow-depth-c4de0ce0bd39.json",
       "shape": "shadow-depth",
-      "configHash": "200fa4c5d01caa25e5e5a03f3e9b1c1177acfbcd9adbe8fc806ba4826c32d874",
-      "hash": "291e98db12c9a25b76a0be754fbb012d80e185bc789667f45414a51f20a6a1c2",
-      "threeVersion": "0.186.1",
+      "configHash": "c4de0ce0bd39548f44146fcbe893d27c649863a37fbb55c5efa8486c7e5e5baf",
+      "hash": "2ade130dfc7811063ab19d48fdc1164b8ab4499d79d7a9c1b166d8eef0880d04",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:35.129Z"
+      "capturedAt": "2026-10-16T05:01:20.997Z"
     },
-    "shadow-depth:073e1d70ecceead97f516f46f5f4e80910b776e682b9739da796862b62151cd6": {
-      "file": "aux-shadow-depth-073e1d70ecce.json",
+    "shadow-depth:9ca3fc3ff28b419e9b1bd809085d60f0286db185c536c95efac5a991df480807": {
+      "file": "aux-shadow-depth-9ca3fc3ff28b.json",
       "shape": "shadow-depth",
-      "configHash": "073e1d70ecceead97f516f46f5f4e80910b776e682b9739da796862b62151cd6",
-      "hash": "141094280e5801058e6049ec9be2e3e6cb52986133e1d3e462305932b22fba25",
-      "threeVersion": "0.186.1",
+      "configHash": "9ca3fc3ff28b419e9b1bd809085d60f0286db185c536c95efac5a991df480807",
+      "hash": "f914c828daa5d914af4cee424edeb7a0258ea356f65685a952829b2c494b97ee",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:36.450Z"
+      "capturedAt": "2026-10-16T05:01:22.319Z"
     },
-    "shadow-depth:5ddabf557939789f7a37103fdfa9509db35126869226dab4608801935abd46e8": {
-      "file": "aux-shadow-depth-5ddabf557939.json",
+    "shadow-depth:428fa0049db00b08af614ea287aad1ee39ee4c4a03499b5de5b805e9a3e8465d": {
+      "file": "aux-shadow-depth-428fa0049db0.json",
       "shape": "shadow-depth",
-      "configHash": "5ddabf557939789f7a37103fdfa9509db35126869226dab4608801935abd46e8",
-      "hash": "ba20600838b524407e8573ea02d6f20bf0f9647fabdb45150b80007402ad07d1",
-      "threeVersion": "0.186.1",
+      "configHash": "428fa0049db00b08af614ea287aad1ee39ee4c4a03499b5de5b805e9a3e8465d",
+      "hash": "f7101103e1e0cefa85d69ec1555d2c4ff112b883132686d9247ce430be5f777f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:47:39.084Z"
+      "capturedAt": "2026-10-16T05:01:24.965Z"
     }
   },
   "shadow-debug-directional-floor": {
-    "file": "shadow-debug-directional-floor.d183489199a9.json",
-    "hash": "d183489199a90b6b9d157e7f8a7739bba7b56e20c247b0ae226ac28795bbaa05",
+    "file": "shadow-debug-directional-floor.3257b3a1c042.json",
+    "hash": "3257b3a1c0420d41294df85bfdf91b963ea5243f1db13d975585b70ad4944c15",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -151,11 +181,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:28.566Z"
+    "capturedAt": "2026-10-16T05:01:13.576Z"
   },
   "shadow-debug-directional-cube": {
-    "file": "shadow-debug-directional-cube.754b6a61a884.json",
-    "hash": "754b6a61a8840e32a2a7041dcc2bdcca397c5b3f4f18a3c7fb3e8d0e7e6f3c7d",
+    "file": "shadow-debug-directional-cube.804778cdfb54.json",
+    "hash": "804778cdfb54fe747bbbc147dd9693457a41d7f82ad498f4ea9dd6696392a237",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -168,11 +198,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:28.603Z"
+    "capturedAt": "2026-10-16T05:01:13.606Z"
   },
   "shadow-debug-directional-sphere": {
-    "file": "shadow-debug-directional-sphere.0d9a24baacaf.json",
-    "hash": "0d9a24baacaff8bf8e88847e72011bd84e1d12089dd9869b6718abcc6df6051d",
+    "file": "shadow-debug-directional-sphere.507fa46cef57.json",
+    "hash": "507fa46cef57dc8a57485f69d40ba32f24645c4f5177cc3b12f92be1f6b15864",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -185,11 +215,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:28.642Z"
+    "capturedAt": "2026-10-16T05:01:13.635Z"
   },
   "shadow-debug-spot-floor": {
-    "file": "shadow-debug-spot-floor.26937019ca45.json",
-    "hash": "26937019ca454387df18d75d3c06d329f9f2da85e7bf2cbc523da68dd58eec02",
+    "file": "shadow-debug-spot-floor.80b7f657acd9.json",
+    "hash": "80b7f657acd93beb5f100de52e2ca802355377da48f788653d41de56e091c3e3",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -202,11 +232,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:33.852Z"
+    "capturedAt": "2026-10-16T05:01:19.697Z"
   },
   "shadow-debug-spot-cube": {
-    "file": "shadow-debug-spot-cube.9723f0046f28.json",
-    "hash": "9723f0046f282e6f17145cbf045cad56c4ce0d92377fd83c8b5197cf80d7ce65",
+    "file": "shadow-debug-spot-cube.a8b69161e217.json",
+    "hash": "a8b69161e2179c5e1324694664cf3a834f12af4e26426da78f669113dd0cb644",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -219,11 +249,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:33.889Z"
+    "capturedAt": "2026-10-16T05:01:19.729Z"
   },
   "shadow-debug-spot-sphere": {
-    "file": "shadow-debug-spot-sphere.587f80927639.json",
-    "hash": "587f80927639aa145c80b0dfba63ff70c78a4d6e975482df4a7cae4fc1d85a69",
+    "file": "shadow-debug-spot-sphere.88c32db1c2d7.json",
+    "hash": "88c32db1c2d7960bf94a3f84da0930914a7e6a34731702d225ea724302176c6d",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -236,11 +266,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:33.923Z"
+    "capturedAt": "2026-10-16T05:01:19.761Z"
   },
   "shadow-debug-point-floor": {
-    "file": "shadow-debug-point-floor.bacb4455a494.json",
-    "hash": "bacb4455a4948169c1f458b65afbdf6e48cf332f09ffc126b8cc045fd64b7e6e",
+    "file": "shadow-debug-point-floor.6e89e406095d.json",
+    "hash": "6e89e406095dc5a7678b43bad05f2af06758ef2f7c2791f3443623a42e1ffca2",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -253,11 +283,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:39.117Z"
+    "capturedAt": "2026-10-16T05:01:24.994Z"
   },
   "shadow-debug-point-cube": {
-    "file": "shadow-debug-point-cube.3bc3a9ebb517.json",
-    "hash": "3bc3a9ebb517b84e5b7bdb593d013b1bb2fe4b730fd476e836c2acea0eec8db4",
+    "file": "shadow-debug-point-cube.c8805c247eba.json",
+    "hash": "c8805c247eba648b037178ed37a0b8456b509dc46a95a58ed52f54c75444b51c",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -270,11 +300,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:39.151Z"
+    "capturedAt": "2026-10-16T05:01:25.027Z"
   },
   "shadow-debug-point-sphere": {
-    "file": "shadow-debug-point-sphere.0ed5c784a84c.json",
-    "hash": "0ed5c784a84c39478e22f222ebbc01c23a8287ac78aa6a1631e5b78a3ee9439c",
+    "file": "shadow-debug-point-sphere.6dc51963018a.json",
+    "hash": "6dc51963018a834636c8c6b6b54465c448cdeb18b01ff3aba9fd9e2b9793adb9",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -287,6 +317,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:47:39.181Z"
+    "capturedAt": "2026-10-16T05:01:25.060Z"
   }
 }

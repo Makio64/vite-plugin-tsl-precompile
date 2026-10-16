@@ -30,7 +30,7 @@ import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js'
 import { computeArtifactContentHash, computeNodeGraphHash, computePlainConfigHash } from './hash.js';
 import { compileTSL } from './vendor/compileTSL.js';
 import { beginRenderObjectHarvest } from './vendor/render-object-observer.js';
-import { captureEmitterOptions } from './capture-emitter-identity.js';
+import { captureEmitterOptions, withInstalledCaptureEmitter } from './capture-emitter-identity.js';
 import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
@@ -152,6 +152,7 @@ function makeRenderer( webgpu, rendererOptions = {} ) {
 export async function extractBackgroundArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	await renderer.init();
 
@@ -215,6 +216,7 @@ function locateBackgroundArtifact( artifacts, renderer, scene ) {
 export async function extractPostProcessingArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu, opts.rendererOptions );
 	await renderer.init();
 
@@ -291,6 +293,7 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 export async function extractCubeRenderTargetArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	let geometry = null;
 	let material = null;
@@ -718,6 +721,7 @@ function stampPMREMFamily( artifact, subKind, configHash, replayConfig, supportC
 export async function extractPMREMArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const { sourceTexture, scene, kind = 'equirect', sigma = 0.2, size = 256, near = 0.1, far = 100, name = 'pmrem-aux' } = await factory( { webgpu, core, tsl } );
 	if ( kind !== 'equirect' && kind !== 'cube' && kind !== 'scene' ) {
 
@@ -890,6 +894,7 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 export async function extractLightingArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	await renderer.init();
 

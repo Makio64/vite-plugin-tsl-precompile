@@ -113,7 +113,10 @@ The slim Renderer rewrite shape-checks the complete queued compilation loop.
 Replay hydration is synchronous, so it calls `getForRender` directly and replaces
 the unconditional per-object scheduler/RAF yield with a four millisecond budget.
 The legacy r185 fixture retains its original pipeline/callback barriers. Verified
-r186/r187 source can overlap independent replay pipelines as described below.
+r186/r187 source can overlap independent replay pipelines as described below; three
+`ec2b745` overlaps and budgets natively, so replay keeps its loop. That source also
+queues each item's material side itself (#35016), which makes the double-pass
+adapter redundant there; it stays harmless (the matched pair builds synchronously).
 Keep executed loop, callback-barrier, bounded-batch and drift tests with this gate.
 
 Three r185's `NodeFrame` deduplicates a viewport node's `updateBefore()` by the
@@ -495,8 +498,18 @@ Trade-off: a three.js internal API change (e.g. `renderer._nodes.nodeBuilderCach
 
 Stable source is Three `0.186.1`, revision `186`, commit
 `9b4a2ac29c63ccb43fd51c5661f2f873ac2c39b8`. Development source is revision
-`187dev`, nominal package `0.186.0`, commit
-`3995acf2a9e79ebd2b02c0e9e7f820fa2a4838fb`. The shared
+`187dev`, package `0.187.0-dev.ec2b745` (the vendored tarball; upstream's
+package.json still says `0.186.0`), commit
+`ec2b7458eae7bf3718b10a4d7b867fb746a2b70a` (2026-10-15). The tarball's `src/` is
+byte-identical to that Git tree; its `build/` was rebuilt from that `src/`, because the
+commit's checked-in `build/` is stale. `npm ci --ignore-scripts && npm run build` in a
+checkout reproduces it byte for byte, so a built checkout and the tarball share one
+source fingerprint. Build tooling verifies such a checkout (nominal `0.186.0`) by that
+fingerprint plus an asserted `TSLP_THREE_SOURCE_COMMIT`; installs need the tarball
+version. Earlier development pins were `3995acf2a9e79ebd2b02c0e9e7f820fa2a4838fb`
+and `21a3bb705fbed1f21875a886b0d42e90a1efc9b8`; `ec2b745` is 41 and 75 commits
+ahead of them. Its compileAsync work loop, async pipeline error scopes and
+ShadowFilterNode changed (below); NodeManager and QuadMesh shapes did not. The shared
 `THREE_RELEASE_PROFILES` records the complete source fingerprints, Git trees and
 exact identities. A package version alone does not identify development source.
 Current-source tests import `src/Three.WebGPU.js` directly, so an older generated
@@ -505,8 +518,8 @@ development bundle cannot substitute for the pinned source.
 `three-rewrite-compilation-loop.js` pins the complete semantic work-loop AST for
 each supported source shape. Stable r186 brackets synchronous binding updates
 with `_isPreCompiling` and calls `updateAfter` after native pipeline completion.
-The pinned development source uses `_beginPreCompile`/`_finishPreCompile`, passes
-a yield callback into async graph construction, and calls `updateAfter` before
+The `3995acf`/`21a3bb7` development sources use `_beginPreCompile`/`_finishPreCompile`,
+pass a yield callback into async graph construction, and call `updateAfter` before
 the pipeline wait. Replay replaces graph construction with synchronous hydration
 and retains each source's callback and native pipeline barriers for dependent
 objects. Proven precompiled WebGPU objects with empty `updateBeforeNodes` and
@@ -514,21 +527,40 @@ objects. Proven precompiled WebGPU objects with empty `updateBeforeNodes` and
 finishes before dependent preparation or method completion; ordered progress
 events report completed objects. WebGL and unproven states retain the native
 ordered path. Precompilation state is cleared before every await, including setup
-failures. The four millisecond yield budget remains. Unknown work-loop changes
-reject the rewrite.
+failures. Those shapes keep the four millisecond yield budget. Unknown work-loop
+changes reject the rewrite.
 
-Development hydration uses one native begin/finish bracket which closes before
-the batch gate. Independent preparation owns its own brackets; dependent work
-begins again only after earlier pipelines finish. This preserves `_callDepth`
-balance and prevents framebuffer/precompilation state from leaking across an
-await. Regression tests execute the pinned native begin/finish method bodies,
-including mixed independent/dependent objects and rejected hydration.
+The `3995acf`/`21a3bb7` development shape uses one native begin/finish bracket for
+hydration which closes before the batch gate. Independent preparation owns its own
+brackets; dependent work begins again only after earlier pipelines finish. This
+preserves `_callDepth` balance and prevents framebuffer/precompilation state from
+leaking across an await.
+
+The pinned `ec2b745` loop (three #34816/#35016) already does what the replay batch
+added: it queues each item's `material.side`, applies it inside the
+`_beginPreCompile` scope, keeps at most 16 pipeline requests in flight without a
+per-object barrier, awaits them all before returning, and yields through its own
+`CompileScheduler` after 8 ms of work (a frame plus a task; `yieldToMain` only for
+hidden pages). Replay therefore swaps graph construction for synchronous
+hydration and keeps that native tail unchanged; no replay batch or four
+millisecond budget is injected. The scoped work runs in `try/finally`, so a
+hydration failure still restores the material's own side, clears the item and
+balances `_callDepth` (native code leaks all three on a throw). The rewrite also
+requires `await Promise.all( compilingPipelines )` after the loop. Regression tests
+execute the pinned native begin/finish method bodies, including mixed
+independent/dependent objects, rejected hydration and the restored side.
 
 `three-rewrite-pipeline-async-scope.js` validates native render and compute async
 submission shapes. It pops each WebGPU validation scope immediately after API
 submission, before waiting for that pipeline, so reverse completion order cannot
 assign another request's scope to the wrong pipeline. Native error reports,
-shader diagnostics and completion handling remain in place.
+shader diagnostics and completion handling remain in place. Three `ec2b745`
+already pops the scope this way (`errorScopePromise`); that exact shape is accepted
+unchanged.
+
+`ShadowFilterNode.js` has no shadow-material seam since r186; the rewrite accepts
+the exact filter-only module ASTs of r186.1/`21a3bb7` and `ec2b745` (whose PCF soft
+radius scales by both texel axes) as no-ops.
 
 `three-rewrite-webgpu-only.js` specializes the exact native backend-selection AST
 only for explicit `webgpuOnly: true` source builds. It drops the WebGL import,
@@ -564,6 +596,15 @@ r186 keys it by the target's color Texture. Output capture checks these exact
 active identities and rejects distinct conflicting entries; it never selects
 an unrelated cached quad. Both native source profiles exercise resize capture
 and shader/binding family merge through this seam.
+
+Pinned r187dev `lightViewPosition( light )` returns a `.once()` Fn call wrapped in
+a VarNode instead of the memoised UniformNode; for a single camera it resolves
+to the per-light `viewPositionUniform` (ArrayCameras derive it from
+`cameraViewMatrix` and `lightPosition`). `extractUniformPlan.js` calls that
+Fn's `jsFunc` with a single-camera stub to reach the same memoised uniform, so
+spot and point view positions keep `light.viewPosition` provenance. Compact Fn
+layouts are named `'fn' + counter`; variant fingerprints normalize those names
+like `NodeBuffer_<id>`.
 
 The complete graph-free `nodes/core/constants.js` export surface is forwarded,
 including `vectorComponents`: new SplitNode source reads that array at module
@@ -664,8 +705,8 @@ cube target from preempting the PMREM binder. Actual source capture tests exerci
 fromEquirectangular, fromCubemap and fromScene on both pinned source profiles;
 the development tests resolve every Three import to its real src graph.
 
-The development package's nominal `0.186.0` version is insufficient emitter
-identity. Verified source configuration supplies the pinned `187dev` revision
+A development package version alone (`0.187.0-dev.ec2b745`, or the nominal
+`0.186.0` of an upstream dev checkout) is insufficient emitter identity. Verified source configuration supplies the pinned `187dev` revision
 and commit to capture and all material/config/content hashes, then stamps
 `sourceThreeRevision` and `sourceThreeCommit` on the artifact. Auxiliary envelopes
 and registrations carry the corresponding `threeRevision`/`threeCommit` pair.

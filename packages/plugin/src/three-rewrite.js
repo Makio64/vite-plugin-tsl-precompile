@@ -33,7 +33,7 @@ import { SLIM_THREE_REWRITE_TARGETS, getSlimThreeRewriteTarget } from '@tsl-prec
 import { rewriteReplayCompilationLoop } from './three-rewrite-compilation-loop.js';
 import { rewriteWebGPUOnlyRenderer } from './three-rewrite-webgpu-only.js';
 import { rewritePipelineAsyncScopes } from './three-rewrite-pipeline-async-scope.js';
-import { assertExactModuleShape, compactAstFingerprint, parseFunctionBody, findClassMethod } from './three-rewrite-ast.js';
+import { assertExactModuleShape, compactAstFingerprint, parseFunctionBody, findClassMethod, removeUncalledClassMethod } from './three-rewrite-ast.js';
 import { rewriteNodeUtils, rewriteNodeCoreConstants, rewriteQuadMesh } from './three-rewrite-node-primitives.js';
 import { patchNativeBindGroupSetting, createReplayBindGroupInitialization, getWebGPUBackendSamplerBindingOwner } from './three-rewrite-webgpu-bindings.js';
 import { rewriteBindingsDeletion, rewriteRendererResourceDisposal } from './three-rewrite-renderer-lifecycle.js';
@@ -198,7 +198,8 @@ function pickHandler( id ) {
 // omit, Rollup's ESM linker fails instead of silently growing the Node graph.
 
 const LOADER_R185_AST_SHA256 = 'd7e782ece3295a50b0572e08a89c489f97da5be914254adb7e2c15555739467e';
-const SHADOW_FILTER_R186_AST_SHA256 = 'b51a991d948491b8b2012891351cfc8910aca73c71f7bd8de6396d92e165dd3a';
+// r186.1/21a3bb7, then ec2b745 (PCF soft radius scales by both texel axes).
+const SHADOW_FILTER_FILTER_ONLY_AST_SHA256 = new Set( [ 'b51a991d948491b8b2012891351cfc8910aca73c71f7bd8de6396d92e165dd3a', 'f1cb7cbc1d97d8969f4b0d8e9777a2318352ab3178c303fcdd3bd0347b65a24f' ] );
 
 
 
@@ -1294,7 +1295,7 @@ function rewriteShadowFilterNode( ast, ctx ) {
 
 	// r186 moved shadow material ownership onto ShadowBaseNode. This exact
 	// filter-only module has no material construction seam to replace.
-	if ( compactAstFingerprint( ast ) === SHADOW_FILTER_R186_AST_SHA256 ) {
+	if ( SHADOW_FILTER_FILTER_ONLY_AST_SHA256.has( compactAstFingerprint( ast ) ) ) {
 
 		ctx.safeNoop = true;
 		return;
@@ -1420,6 +1421,8 @@ function rewriteNodesJs( ast, ctx ) {
 	const patchedCompute = rewriteGetForCompute( ast );
 	const helperMethod = findClassMethod( ast, '_createNodeBuilder' );
 	replaceImpossibleBuilderFallbacks( ast );
+	// r187dev's `_reportBuildError` (StackTrace logging) is only called by those fallbacks.
+	removeUncalledClassMethod( ast, '_reportBuildError' );
 	narrowNodeFrameImport( ast );
 
 	if ( helperMethod ) {

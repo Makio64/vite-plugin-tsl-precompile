@@ -11,7 +11,7 @@ import { gunzipSync } from 'node:zlib';
 import ts from 'typescript';
 
 import { parseReleaseSemver } from '../../../../scripts/release-semver.mjs';
-import { SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_PEER_RANGE } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_PEER_RANGE, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 const REPO_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '../../../..' );
 const ROOT_LICENSE = readFileSync( resolve( REPO_ROOT, 'LICENSE' ), 'utf8' );
@@ -424,7 +424,11 @@ test( 'public package tarballs are licensed, typed, self-consistent, and product
 	const packRoot = mkdtempSync( join( tmpdir(), 'tslp-pack-' ) );
 	try {
 
-		assert.equal( THREE_PACKAGE_MANIFEST.version, SLIM_THREE_PACKAGE_VERSION, 'license fixture must be the pinned Three release' );
+		// The published prebuilt bundles r186; the pinned r187dev package carries the identical MIT text.
+		assert.ok(
+			[ SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES.development.packageVersion ].includes( THREE_PACKAGE_MANIFEST.version ),
+			'license fixture must be a pinned Three release',
+		);
 		const packed = new Map();
 		for ( const entry of PUBLIC_PACKAGES ) {
 

@@ -222,6 +222,12 @@ test( 'storage byte length prefers Three WebGPU\'s live padded attribute allocat
 			return data;
 
 		},
+		// r187dev WebGPUAttributeUtils resolves interleaved data through Backend.getBufferAttribute().
+		getBufferAttribute( bufferAttribute ) {
+
+			return bufferAttribute.isInterleavedBufferAttribute ? bufferAttribute.data : bufferAttribute;
+
+		},
 	} );
 	attributeUtils.createAttribute( attribute, 0 );
 

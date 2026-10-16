@@ -9,6 +9,6 @@
     "compare:releases": "node compare-releases.mjs",
     "verify": "node ../../plugin/src/cli/verify.js artifacts --source src --source-root . --no-auto-mark"
   },
-  "dependencies": { "@tsl-precompile/runtime": "workspace:*", "three": "0.186.1" },
+  "dependencies": { "@tsl-precompile/runtime": "workspace:*", "three": "file:../../../vendor/three-0.187.0-dev.ec2b745.tgz" },
   "devDependencies": { "vite": "^8.0.16", "vite-plugin-tsl-precompile": "workspace:*", "playwright": "^1.59.1" }
 }

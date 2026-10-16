@@ -36,6 +36,33 @@ export function parseFunctionBody( source ) {
 
 }
 
+/**
+ * Remove a private class method once no member expression in the module still
+ * names it, e.g. a compiler-fallback helper whose only callers were rewritten.
+ * Returns whether the method was removed.
+ */
+export function removeUncalledClassMethod( ast, methodName ) {
+
+	let method = null;
+	let called = false;
+	traverse( ast, {
+		ClassMethod( path ) {
+
+			if ( t.isIdentifier( path.node.key, { name: methodName } ) ) method = path;
+
+		},
+		MemberExpression( path ) {
+
+			if ( t.isIdentifier( path.node.property, { name: methodName } ) ) called = true;
+
+		},
+	} );
+	if ( ! method || called ) return false;
+	method.remove();
+	return true;
+
+}
+
 export function findClassMethod( ast, methodName ) {
 
 	let found = null;

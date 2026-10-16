@@ -1,44 +1,20 @@
 {
   "__aux": {
-    "cube-render-target:1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28": {
-      "file": "aux-cube-render-target-1a6446e96454.json",
-      "shape": "cube-render-target",
-      "configHash": "1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28",
-      "hash": "b4e0abce87d8d58932340f08792bdbd566f7dda60437b82558e9e14c3fe44f84",
-      "threeVersion": "0.186.1",
-      "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T09:47:28.473Z"
-    },
-    "render-output:8341d78dc1c394847d0aa1758d4261fcf1648e4b83847f8a99e3b16c4b4e35e6": {
-      "file": "aux-render-output-8341d78dc1c3.json",
+    "render-output:08c771a4294f706bd5f87c086d96bbc0a27529715ca675cb10581352e7a9f862": {
+      "file": "aux-render-output-08c771a4294f.json",
       "shape": "render-output",
-      "configHash": "8341d78dc1c394847d0aa1758d4261fcf1648e4b83847f8a99e3b16c4b4e35e6",
-      "hash": "e83e6c470573349aabb0c8369f4aae7187cfab97fc120b0d6c4689d4e0e5b9e6",
-      "threeVersion": "0.186.1",
+      "configHash": "08c771a4294f706bd5f87c086d96bbc0a27529715ca675cb10581352e7a9f862",
+      "hash": "7031e2efc41388dbb4f94d0ca81f823aeed81ffacedbeeae3d3861155fec4f4e",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T09:47:28.516Z"
+      "capturedAt": "2026-10-16T05:02:33.142Z"
     }
   },
-  "ocean-sky": {
-    "file": "ocean-sky.5b675472ce1e.json",
-    "hash": "5b675472ce1e665668ec75be55965304adce91233c6b5fdb704975e19212f705",
-    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
-    "sourceIdentityKind": "callsite",
-    "sourceOwners": [
-      {
-        "identity": "main.js:precompile:0",
-        "revision": "f4d29d02aeab2243abdbc6f141ebf36ad448a2c022d2d593e6e944162296f357",
-        "provenance": {
-          "schema": "marker-source-closure@1",
-          "dependencies": []
-        }
-      }
-    ],
-    "capturedAt": "2026-10-13T09:47:29.112Z"
-  },
   "ocean-water": {
-    "file": "ocean-water.89a65b223bb8.json",
-    "hash": "89a65b223bb85e2a9e67db772d299dee32b650a69ad7a8f72d5cb1c842b0bf04",
+    "file": "ocean-water.9d5b98866e1a.json",
+    "hash": "9d5b98866e1a1bf50609f22621669e561728568faa9138e8a0f036c0f7276311",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -51,6 +27,23 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T09:47:29.099Z"
+    "capturedAt": "2026-10-16T05:02:35.174Z"
+  },
+  "ocean-sky": {
+    "file": "ocean-sky.573e3608af4f.json",
+    "hash": "573e3608af4f0f8413122d2638bf991a7620e82178ef1093afd56932d63e244e",
+    "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "main.js:precompile:0",
+        "revision": "f4d29d02aeab2243abdbc6f141ebf36ad448a2c022d2d593e6e944162296f357",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-10-16T05:02:35.188Z"
   }
 }

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Texture } from 'three';
+import { REVISION, Texture } from 'three';
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import {
 	__resetAuxRegistryForTests,
@@ -16,7 +16,14 @@ import { createReplayCubeRenderTargetMaterial } from '../src/slim-replay-cube-re
 import { extractCubeRenderTargetArtifact } from '../../plugin/src/aux-capture.js';
 
 const SHAPE = 'cube-render-target';
-const HASH_OPTIONS = {
+// Offline capture signs with the installed emitter; the pinned r187dev build adds its verified pair.
+const DEVELOPMENT = THREE_RELEASE_PROFILES.development;
+const HASH_OPTIONS = REVISION === DEVELOPMENT.revision ? {
+	threeVersion: DEVELOPMENT.packageVersion,
+	threeRevision: DEVELOPMENT.revision,
+	threeCommit: DEVELOPMENT.gitCommit,
+	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+} : {
 	threeVersion: SLIM_THREE_PACKAGE_VERSION,
 	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
 };

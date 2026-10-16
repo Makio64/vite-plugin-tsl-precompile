@@ -7,8 +7,10 @@ import { pathToFileURL } from 'node:url';
 import { parse } from '@babel/parser';
 import _generate from '@babel/generator';
 import {
+	THREE_RELEASE_PROFILES,
 	resolveSlimThreeRelease,
 } from '@tsl-precompile/contract/slim-three-policy';
+import { readSlimThreeReleaseProfile } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import { assertPMREMAtlasCaptureSupport, createPMREMLayoutConfig } from '@tsl-precompile/contract/pmrem-config';
 import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-variants';
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
@@ -19,6 +21,7 @@ import { extractUniformPlan } from '../../src/vendor/extractUniformPlan.js';
 import ReplayNodeManager from '../../../runtime/src/slim-replay-node-manager.js';
 import { createReplayPipelineBatch } from '../../../runtime/src/slim-pipeline-preparation.js';
 import { THREE_SRC } from '../_three-src.js';
+import { compileReplayLoop, isParallelCompileLoop } from '../_compile-loop.js';
 
 const generate = _generate.default || _generate;
 const externalRoot = process.env.TSLP_THREE_SOURCE_ROOT;
@@ -26,7 +29,11 @@ const sourceRoot = externalRoot ? resolve( externalRoot, 'src' ) : THREE_SRC;
 const packageVersion = JSON.parse( readFileSync( resolve( sourceRoot, '../package.json' ), 'utf8' ) ).version;
 const revision = /export const REVISION\s*=\s*['"]([^'"]+)['"]/.exec( readFileSync( resolve( sourceRoot, 'constants.js' ), 'utf8' ) )[ 1 ];
 const sourceCommit = externalRoot ? execFileSync( 'git', [ '-C', externalRoot, 'rev-parse', 'HEAD' ], { encoding: 'utf8' } ).trim() : undefined;
-const release = resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
+// Development sources verify by their src/ + build/ fingerprint: the vendored tarball by its exact
+// package version, a Git checkout of the pinned commit (upstream's nominal 0.186.0) by that commit.
+const release = revision === THREE_RELEASE_PROFILES.development.revision
+	? await readSlimThreeReleaseProfile( resolve( sourceRoot, '..' ), { sourceCommit } )
+	: resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
 assert.ok( release, `Upgrade fixtures must use a verified release: ${ packageVersion } / ${ revision }` );
 const options = { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit };
 
@@ -48,19 +55,14 @@ function rendererMethod( result, name ) {
 
 function replayLoop() {
 
-	const result = rewrite( 'renderers/common/Renderer.js' );
-	const method = rendererMethod( result, 'compileAsync' );
-	const body = method.body.body;
-	const start = body.find( node => node.type === 'VariableDeclaration' && node.declarations[ 0 ].id.name === 'compileYieldDeadline' );
-	const end = body.at( - 1 );
-	const run = new ( Object.getPrototypeOf( async function () {} ).constructor )(
-		'compilationPromises', 'yieldToMain', 'performance', 'onProgress', 'ProgressEvent', 'precompilationState',
-		'createReplayPipelineBatch',
-		`const total = compilationPromises.length; let loaded = 0; ${ result.code.slice( start.start, end.end ) }`,
-	);
+	const run = compileReplayLoop( rewrite( 'renderers/common/Renderer.js' ).code );
 	return function ( ...args ) { return run.call( this, ...args, createReplayPipelineBatch ); };
 
 }
+
+// Three dev ec2b745 compiles pipelines in a bounded parallel window with its own time-budgeted
+// scheduler; replay keeps that native tail instead of the older per-object barriers.
+const parallelCompileLoop = isParallelCompileLoop( rewrite( 'renderers/common/Renderer.js' ).code );
 
 test( `rewrite/${ release.id }: all changed native source seams remain parseable and compiler guarded`, () => {
 
@@ -445,7 +447,8 @@ test( `rewrite/${ release.id }: compilation keeps progress, precompile state and
 
 	}
 	await compile.call( owner, items, async () => { yielded.push( now ); }, { now: () => now }, event => progress.push( event ), ProgressEvent, {} );
-	assert.deepEqual( yielded, [ 4, 8 ] );
+	// four millisecond replay budget, or ec2b745's native eight millisecond CompileScheduler budget
+	assert.deepEqual( yielded, parallelCompileLoop ? [ 8 ] : [ 4, 8 ] );
 	assert.deepEqual( progress.map( event => event.loaded ), [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ] );
 	assert.ok( progress.every( event => event.total === 10 && event.lengthComputable ) );
 	assert.equal( owner._isPreCompiling, false );
@@ -477,7 +480,10 @@ test( `rewrite/${ release.id }: native pipeline waits retain each release's call
 	};
 	const items = [ 0, 1 ].map( id => ( { object: { id, geometry: {} } } ) );
 	const pending = compile.call( owner, items, async () => {}, { now: () => 0 }, null, null, {} );
-	assert.deepEqual( events, release.channel === 'development' ? [ 'hydrate0', 'after0' ] : [ 'hydrate0' ] );
+	// r186.1 waits before updateAfter; 21a3bb7 after it; ec2b745 only bounds the parallel window
+	// and awaits every pipeline before compileAsync settles.
+	const expectedBeforeFirst = parallelCompileLoop ? [ 'hydrate0', 'after0', 'hydrate1', 'after1' ] : release.channel === 'development' ? [ 'hydrate0', 'after0' ] : [ 'hydrate0' ];
+	assert.deepEqual( events, expectedBeforeFirst );
 	first.resolve();
 	await startedSecond.promise;
 	const failure = new Error( 'native pipeline failed' );

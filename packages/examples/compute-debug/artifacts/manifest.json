@@ -1,37 +1,41 @@
 {
   "compute-debug-particles-init": {
-    "file": "compute-debug-particles-init.af31ecc41a03.json",
-    "hash": "af31ecc41a0311746b1142af7ea9feebcdc663a70c64c8632daca580d22f45c2",
-    "capturedAt": "2026-10-13T10:43:18.086Z"
+    "file": "compute-debug-particles-init.b59b3246a105.json",
+    "hash": "b59b3246a105a1c2c3b5cc88d5f131a3d4e3877d8561891a25f455d7ff772f1d",
+    "capturedAt": "2026-10-16T05:02:04.083Z"
   },
   "compute-debug-particles-update": {
-    "file": "compute-debug-particles-update.6124e571abeb.json",
-    "hash": "6124e571abeb9b76fa8a60ed68659129ccaa8b844c5a3cac17d6cb2130f4e715",
-    "capturedAt": "2026-10-13T10:43:18.087Z"
+    "file": "compute-debug-particles-update.35db2617fab9.json",
+    "hash": "35db2617fab900282cea02a7f73524e240e9c22c1a76b10955324f31e406e7a6",
+    "capturedAt": "2026-10-16T05:02:04.086Z"
   },
   "__aux": {
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "eea5ee9b1eee111b48d5768bee617d87bbbe1f97eacdeafb662e929653f4bb73",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:43:18.137Z"
+      "capturedAt": "2026-10-16T05:02:04.113Z"
     },
-    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
-      "file": "aux-lights-499bfad6a893.json",
+    "lights:a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776": {
+      "file": "aux-lights-a97cd2e6605a.json",
       "shape": "lights",
-      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
-      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
-      "threeVersion": "0.186.1",
+      "configHash": "a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776",
+      "hash": "3a1378bf8ab75459e1ce7c8dc18b743a3293a27a782e89df87ff0033791f4ee0",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:43:19.499Z"
+      "capturedAt": "2026-10-16T05:02:05.498Z"
     }
   },
   "compute-debug-particles": {
-    "file": "compute-debug-particles.133a29195277.json",
-    "hash": "133a2919527756b25cdd137fad68d0437a868fe854e38da7cbcd4ebd84a9bd20",
+    "file": "compute-debug-particles.2ac22adc702c.json",
+    "hash": "2ac22adc702c7cc969d36a7e134abbe6ffb89fd099c17cfbe4fe592469223775",
     "sourceIdentity": "0b932b8d540c415d5ea2a85c2f784c58fd3b31703b5dfd308ba09200aeb8ac7e",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -49,21 +53,21 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:18.172Z"
+    "capturedAt": "2026-10-16T05:02:04.149Z"
   },
   "compute-debug-instanced-init": {
-    "file": "compute-debug-instanced-init.88ef9a23411f.json",
-    "hash": "88ef9a23411f8a60129a0cd8a4c3a534c45554af298d974ebffddba6bc133fe3",
-    "capturedAt": "2026-10-13T10:43:19.494Z"
+    "file": "compute-debug-instanced-init.8cd57820058c.json",
+    "hash": "8cd57820058c9d6c9615a1b237a5e9060deb65bf4b0a1587b2eb1306303dbea3",
+    "capturedAt": "2026-10-16T05:02:05.493Z"
   },
   "compute-debug-instanced-update": {
-    "file": "compute-debug-instanced-update.cff92ae26415.json",
-    "hash": "cff92ae264159af27f230364b325c7a5004bb54d5e029e26deb595c757d084bc",
-    "capturedAt": "2026-10-13T10:43:19.495Z"
+    "file": "compute-debug-instanced-update.5f36dabd0905.json",
+    "hash": "5f36dabd09055c629c09af100f47ddc1dc5de83d6594997b5df155a39daae269",
+    "capturedAt": "2026-10-16T05:02:05.494Z"
   },
   "compute-debug-instanced": {
-    "file": "compute-debug-instanced.c7a375d9d95f.json",
-    "hash": "c7a375d9d95f2a0b403799268fafb0eba509c6d510eb41654407dd4762a39c86",
+    "file": "compute-debug-instanced.f1e1a91bf14e.json",
+    "hash": "f1e1a91bf14e52adbc351923bdbdfb18ffe3d40582c5143f41af22e4cbc9a936",
     "sourceIdentity": "9ace728eac6406706bc9376aa7403206fef4c8fc7ea1b33695a790e5d65abfdd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -81,16 +85,16 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:19.927Z"
+    "capturedAt": "2026-10-16T05:02:05.569Z"
   },
   "compute-debug-texture-update": {
-    "file": "compute-debug-texture-update.5c36a4deb48a.json",
-    "hash": "5c36a4deb48ad2e5a2c9ed39b92e0d311fa3d7ab3c37aa2bcac097c52c26196e",
-    "capturedAt": "2026-10-13T10:43:21.011Z"
+    "file": "compute-debug-texture-update.86b52258869d.json",
+    "hash": "86b52258869d45f972a7e839ed7b7459205550e978b73c459e932e511e3202c1",
+    "capturedAt": "2026-10-16T05:02:06.802Z"
   },
   "compute-debug-texture": {
-    "file": "compute-debug-texture.c9a1e62df465.json",
-    "hash": "c9a1e62df465b2ecc9ab5965be4fafd39fbcdd7fd4106ceac5a908d01171c4fa",
+    "file": "compute-debug-texture.f35edc9247d4.json",
+    "hash": "f35edc9247d4a9b980d2058d3ce25dc394703031aa9fcce1e94b9e37c0d8b686",
     "sourceIdentity": "31e689753aae67c8fca594ecd3484ff7c55542ba9c04d3f313d33ad54ffb05ca",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -108,16 +112,16 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:21.070Z"
+    "capturedAt": "2026-10-16T05:02:06.851Z"
   },
   "compute-debug-dispatch2d-update": {
-    "file": "compute-debug-dispatch2d-update.f2199bd52fc6.json",
-    "hash": "f2199bd52fc65b7181265e5cd3c46000b449dd3e4c6bcd0cf07627ca33183879",
-    "capturedAt": "2026-10-13T10:43:22.332Z"
+    "file": "compute-debug-dispatch2d-update.deb7f81cf6ab.json",
+    "hash": "deb7f81cf6abeb3e00bb17426f885cbee3493fdda8c04886c4e6734fd1dacceb",
+    "capturedAt": "2026-10-16T05:02:08.128Z"
   },
   "compute-debug-dispatch2d": {
-    "file": "compute-debug-dispatch2d.c05d067e5429.json",
-    "hash": "c05d067e54295d4448f33d7b19fb2554389b36a047f86ea4e78802f37b7c1684",
+    "file": "compute-debug-dispatch2d.4f13c0dc5135.json",
+    "hash": "4f13c0dc51353a114ef0fd4c70ef97deda94068643ad8303b31754afaedc1a7b",
     "sourceIdentity": "7ed598aecd4ecd149068378380fbc54f521158b317c7522e83720a36befe889f",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -135,16 +139,16 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:22.390Z"
+    "capturedAt": "2026-10-16T05:02:08.177Z"
   },
   "compute-debug-uniform-update": {
-    "file": "compute-debug-uniform-update.3899003548d6.json",
-    "hash": "3899003548d623df44a0585e5c3848749188191c69529b1350401f8ae05fb0d7",
-    "capturedAt": "2026-10-13T10:43:23.670Z"
+    "file": "compute-debug-uniform-update.ef628edb1eaf.json",
+    "hash": "ef628edb1eaf1e03d3db0dcfbd8bbcc0a3111dc4f016482108bf726aa1ef480b",
+    "capturedAt": "2026-10-16T05:02:09.450Z"
   },
   "compute-debug-uniform": {
-    "file": "compute-debug-uniform.c538594c7399.json",
-    "hash": "c538594c7399773921671897b94f151a9eacd5f07035396d24a15d0bebbf0712",
+    "file": "compute-debug-uniform.42093323b814.json",
+    "hash": "42093323b81423e58126f327b74a4e69737df84ff8596c993f0d7c1d16ca78d9",
     "sourceIdentity": "8624d7ed12c34c79b08b79c7a22579544df92b4850f57762cdf5f8921c1b0d57",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -162,21 +166,21 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:23.727Z"
+    "capturedAt": "2026-10-16T05:02:09.503Z"
   },
   "compute-debug-pipeline-source": {
-    "file": "compute-debug-pipeline-source.70c70803d7f8.json",
-    "hash": "70c70803d7f874d807403a1e85c667eff67eae77350796f4cd5d67fbf0e29d1c",
-    "capturedAt": "2026-10-13T10:43:25.005Z"
+    "file": "compute-debug-pipeline-source.bcd74b204834.json",
+    "hash": "bcd74b204834ddfc7ced31ea2864c3cd6fdd563a365c047c16431b13c4639c3a",
+    "capturedAt": "2026-10-16T05:02:10.773Z"
   },
   "compute-debug-pipeline-display": {
-    "file": "compute-debug-pipeline-display.b0bf63058743.json",
-    "hash": "b0bf63058743443ea2e342e6e17e8507f57b832a2f8d64a582f5f7c24b099272",
-    "capturedAt": "2026-10-13T10:43:25.006Z"
+    "file": "compute-debug-pipeline-display.0802079101b6.json",
+    "hash": "0802079101b672653ef095187dbc06139ffb57b5c0290b87c7aaf06fc1e07afd",
+    "capturedAt": "2026-10-16T05:02:10.775Z"
   },
   "compute-debug-pipeline": {
-    "file": "compute-debug-pipeline.7b7d980953ad.json",
-    "hash": "7b7d980953adcca8c5f2b1359624a336fd4d9007f6a637dd0667b40909851279",
+    "file": "compute-debug-pipeline.b5f93303ec99.json",
+    "hash": "b5f93303ec99c1a60028b6675c3e26853b2ffe34fc2e40291d7000d684535dcc",
     "sourceIdentity": "cf30a176329dd5e7bfcbd6b1e214a0ce31960141da4a0b930fa320951e9f08d5",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -194,21 +198,21 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:25.060Z"
+    "capturedAt": "2026-10-16T05:02:10.827Z"
   },
   "compute-debug-reduce-fill": {
-    "file": "compute-debug-reduce-fill.2b2694b14040.json",
-    "hash": "2b2694b140409402fc41eaa65d95ad64c0b57611e80044c412d8275d36b6c07e",
-    "capturedAt": "2026-10-13T10:43:26.390Z"
+    "file": "compute-debug-reduce-fill.e4cdb2d04f90.json",
+    "hash": "e4cdb2d04f90d623cdbf1d2dc862e5f6268f7e71935359c28b268d4f2c093f6d",
+    "capturedAt": "2026-10-16T05:02:12.117Z"
   },
   "compute-debug-reduce-reduce": {
-    "file": "compute-debug-reduce-reduce.09608dc7de88.json",
-    "hash": "09608dc7de889f7b44f44397c30b6873779e9f2a25bf07c9e8779439599a9828",
-    "capturedAt": "2026-10-13T10:43:26.391Z"
+    "file": "compute-debug-reduce-reduce.bd51ca60d0b3.json",
+    "hash": "bd51ca60d0b30c1761808e5dcb58c88bbdeecd215e84d11a324f7f8eeda18956",
+    "capturedAt": "2026-10-16T05:02:12.119Z"
   },
   "compute-debug-reduce": {
-    "file": "compute-debug-reduce.5ff58b4c2a69.json",
-    "hash": "5ff58b4c2a69bb6dc5adcb0df3e0a467db69ac697f6b676623cb530bd6eebdf3",
+    "file": "compute-debug-reduce.ea405f5e720a.json",
+    "hash": "ea405f5e720a1d3c0c19fb70f914ac09e552472384dc2f5c4405adf89a3b91dd",
     "sourceIdentity": "45410b71c8a34957f9bef85fc242584e397406f046149034ad5bcc0b24a0c70f",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -226,6 +230,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:43:26.470Z"
+    "capturedAt": "2026-10-16T05:02:12.192Z"
   }
 }

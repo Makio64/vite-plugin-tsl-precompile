@@ -77,7 +77,13 @@ export async function readSlimThreeReleaseProfile( packageRoot, { sourceCommit }
 		const profile = resolveSlimThreeRelease( { packageVersion: pkg.version, revision, sourceCommit } );
 		if ( profile ) return profile;
 
-	} else if ( pkg.version === THREE_RELEASE_PROFILES.development.packageVersion && revision === THREE_RELEASE_PROFILES.development.revision ) {
+	} else if ( revision === THREE_RELEASE_PROFILES.development.revision && (
+		pkg.version === THREE_RELEASE_PROFILES.development.packageVersion ||
+		// A Git checkout of the pinned commit still carries upstream's nominal package
+		// version. Build tooling that asserts that exact commit is accepted on the same
+		// src/ + build/ fingerprint; installs without an asserted commit need the package.
+		sourceCommit === THREE_RELEASE_PROFILES.development.gitCommit
+	) ) {
 
 		const profile = THREE_RELEASE_PROFILES.development;
 		const fingerprint = await computeThreeReleaseFingerprint( packageRoot );

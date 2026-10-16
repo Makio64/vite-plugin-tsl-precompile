@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
 import { THREE_SRC } from '../_three-src.js';
+import { compileReplayLoop, isParallelCompileLoop } from '../_compile-loop.js';
 import { createReplayPipelineBatch } from '../../../runtime/src/slim-pipeline-preparation.js';
 
 const sourceRoot = process.env.TSLP_THREE_SOURCE_ROOT ? resolve( process.env.TSLP_THREE_SOURCE_ROOT, 'src' ) : THREE_SRC;
@@ -83,34 +84,44 @@ for ( const kind of [ 'Render', 'Compute' ] ) test( `async ${ kind.toLowerCase()
 
 test( 'async pipeline preparation rejects unverified completion barriers', () => {
 
-	const changed = source.replaceAll( 'await device.popErrorScope()', 'await device.readErrorScope()' );
+	// ec2b745 pops the scope before the pipeline wait (`errorScopePromise`); older sources await it inline.
+	const changed = source.replaceAll( 'device.popErrorScope()', 'device.readErrorScope()' );
 	assert.notEqual( changed, source );
 	const result = rewrite( changed );
 	assert.equal( result.code, null );
-	assert.match( result.warning, /async validation scope shape changed/ );
+	assert.match( result.warning, /async (?:validation scope|pipeline completion) shape changed/ );
 
 } );
 
-function compiledPreparationLoop() {
+function rewrittenRenderer() {
 
 	const rendererSource = readFileSync( resolve( sourceRoot, 'renderers/common/Renderer.js' ), 'utf8' );
 	const result = rewriteThreeSource( rendererSource, resolve( THREE_SRC, 'renderers/common/Renderer.js' ), { threeVersion } );
 	assert.equal( result.warning, null );
-	const ast = parse( result.code, { sourceType: 'module' } );
-	const renderer = ast.program.body.find( node => node.type === 'ClassDeclaration' && node.id.name === 'Renderer' );
-	const body = renderer.body.body.find( node => node.key?.name === 'compileAsync' ).body.body;
-	const start = body.find( node => node.type === 'VariableDeclaration' && node.declarations[ 0 ].id.name === 'compileYieldDeadline' );
-	return new ( Object.getPrototypeOf( async function () {} ).constructor )(
-		'compilationPromises', 'yieldToMain', 'performance', 'onProgress', 'precompilationState', 'createReplayPipelineBatch',
-		`const total = compilationPromises.length; let loaded = 0; ${ result.code.slice( start.start, body.at( - 1 ).end ) }`,
-	);
+	return result.code;
 
 }
+
+const parallelCompileLoop = isParallelCompileLoop( rewrittenRenderer() );
+
+function compiledPreparationLoop() {
+
+	const run = compileReplayLoop( rewrittenRenderer() );
+	return function ( compilationPromises, yieldToMain, performance, onProgress, precompilationState, createReplayPipelineBatch ) {
+
+		return run.call( this, compilationPromises, yieldToMain, performance, onProgress, globalThis.ProgressEvent, precompilationState, createReplayPipelineBatch );
+
+	};
+
+}
+
+// Native ec2b745 begin/finish applies each queued item's material side.
+const queued = ( object, side = 0 ) => ( { object, material: { side }, side } );
 
 test( 'native renderer rewrite bounds independent GPU submissions at sixteen objects', async () => {
 
 	const compile = compiledPreparationLoop(), requests = [], requestedSeventeen = Promise.withResolvers();
-	const items = Array.from( { length: 17 }, ( _, id ) => ( { object: { id, geometry: {} } } ) );
+	const items = Array.from( { length: 17 }, ( _, id ) => queued( { id, geometry: {} } ) );
 	const state = { updateBeforeNodes: [], updateAfterNodes: [] };
 	const owner = {
 		backend: { isWebGPUBackend: true }, ...nativePrecompileFixture(),
@@ -159,7 +170,23 @@ test( 'native dependent-object barriers flush earlier pipelines with precompile 
 
 		} },
 	};
-	const pending = compile.call( owner, [ 0, 1 ].map( id => ( { object: { id, geometry: {} } } ) ), async () => {}, { now: () => 0 }, null, {}, createReplayPipelineBatch );
+	const pending = compile.call( owner, [ 0, 1 ].map( id => queued( { id, geometry: {} } ) ), async () => {}, { now: () => 0 }, null, {}, createReplayPipelineBatch );
+	if ( parallelCompileLoop ) {
+
+		// ec2b745 dropped the per-object barrier upstream: dependent work starts at once, inside
+		// a balanced scope, and compileAsync still settles only after every pipeline.
+		assert.deepEqual( events, [ 0, 1 ] );
+		assert.equal( owner._callDepth, 0 );
+		assert.equal( owner._precompilationState, null );
+		let settled = false;
+		pending.then( () => { settled = true; } );
+		second.resolve(); await Promise.resolve(); await Promise.resolve();
+		assert.equal( settled, false, 'the first pipeline is still awaited' );
+		first.resolve(); await pending;
+		assert.equal( owner._callDepth, 0 );
+		return;
+
+	}
 	assert.deepEqual( events, [ 0 ] );
 	assert.equal( owner._callDepth, 0 );
 	assert.equal( owner._precompilationState, null );
@@ -179,9 +206,25 @@ test( 'native hydration failure closes its precompile scope before rejection', a
 	const failure = new Error( 'hydration failed' );
 	const owner = { backend: { isWebGPUBackend: true }, ...nativePrecompileFixture(),
 		_objects: { get: object => ( { object } ) }, _nodes: { getForRender() { throw failure; } } };
-	await assert.rejects( compiledPreparationLoop().call( owner, [ { object: { geometry: {} } } ], async () => {}, { now: () => 0 }, null, {}, createReplayPipelineBatch ), error => error === failure );
+	await assert.rejects( compiledPreparationLoop().call( owner, [ queued( { geometry: {} } ) ], async () => {}, { now: () => 0 }, null, {}, createReplayPipelineBatch ), error => error === failure );
 	assert.equal( owner._callDepth, 0 );
 	assert.equal( owner._precompilationState, null );
 	assert.equal( owner._isPreCompiling, false );
+
+} );
+
+test( 'native ec2b745 replay applies the queued side and restores it when hydration fails', { skip: ! parallelCompileLoop && 'compileAsync queues no material side before three dev ec2b745' }, async () => {
+
+	const failure = new Error( 'hydration failed' ), sides = [];
+	const item = { object: { geometry: {} }, material: { side: 2 }, side: 1 };
+	const owner = { backend: { isWebGPUBackend: true }, ...nativePrecompileFixture(),
+		_objects: { get: object => ( { object } ) }, _nodes: { getForRender() { sides.push( item.material.side ); throw failure; } } };
+	const state = { item: null, materialSide: null };
+	await assert.rejects( compiledPreparationLoop().call( owner, [ item ], async () => {}, { now: () => 0 }, null, state, createReplayPipelineBatch ), error => error === failure );
+	assert.deepEqual( sides, [ 1 ], 'hydration sees the side the item was queued with' );
+	assert.equal( item.material.side, 2, 'the material keeps its own side after the failure' );
+	assert.equal( state.item, null );
+	assert.equal( owner._callDepth, 0 );
+	assert.equal( owner._precompilationState, null );
 
 } );

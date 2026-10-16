@@ -28,6 +28,7 @@ import { installPrecompileMarker, setDevRenderer } from './precompile-marker.js'
 import { precompileAuxiliary, precompileRendererOutput } from './aux-marker.js';
 import { observeDevRendererRenders } from './dev-render-observers.js';
 import { hashPlainConfigSync } from './graph-hash.js';
+import { createRuntimeCaptureHashOptions } from './three-emitter-identity.js';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { installRangeAttributeCapture } from './range-attribute-capture.js';
@@ -97,7 +98,7 @@ function shouldAutoCaptureRendererOutput() {
 
 }
 
-function rendererOutputCaptureDescriptor( renderer, threeVersion ) {
+function rendererOutputCaptureDescriptor( renderer, three, threeVersion ) {
 
 	let frameBufferTarget = null;
 	try {
@@ -110,10 +111,11 @@ function rendererOutputCaptureDescriptor( renderer, threeVersion ) {
 	const outputTexture = frameBufferTarget &&
 		( frameBufferTarget.texture || frameBufferTarget.textures && frameBufferTarget.textures[ 0 ] ) || null;
 	const config = createRendererOutputConfig( renderer, outputTexture );
+	// Hash with the same emitter identity as precompileRendererOutput(): a pinned development
+	// build adds its verified revision/commit, so a version-only key never matches its capture.
 	const configHash = hashPlainConfigSync( config, {
 		shape: 'render-output',
-		threeVersion,
-		pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
+		...createRuntimeCaptureHashOptions( { three, threeVersion, pluginVersion: ARTIFACT_TOOLCHAIN_VERSION } ),
 	} );
 	return { config, configHash };
 
@@ -155,7 +157,7 @@ function installAutomaticRendererOutputCapture( renderer, three, devEndpoint, ex
 
 	}
 
-	state.describe = () => rendererOutputCaptureDescriptor( renderer, threeVersion );
+	state.describe = () => rendererOutputCaptureDescriptor( renderer, three, threeVersion );
 	state.capture = async ( context, configHash, config ) => {
 
 		state.inFlight.add( configHash );

@@ -1,7 +1,7 @@
 {
   "postprocessing-debug-floor": {
-    "file": "postprocessing-debug-floor.b5e57d9d0c14.json",
-    "hash": "b5e57d9d0c149493795cbdfd7c1465f7e27005aba99085cbdfed2ec282f256fc",
+    "file": "postprocessing-debug-floor.3dc57c85509a.json",
+    "hash": "3dc57c85509a5e2191c6cf39265cc178d1efa1034f3fa99ba1f2751f04ef0d0c",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -14,11 +14,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:19.975Z"
+    "capturedAt": "2026-10-16T05:01:44.317Z"
   },
   "postprocessing-debug-cube": {
-    "file": "postprocessing-debug-cube.adc3f1ca8d33.json",
-    "hash": "adc3f1ca8d338f4594c1bff83db6d67b3132e6d19bd7abcea117e1a4c2d30024",
+    "file": "postprocessing-debug-cube.a325abaa2716.json",
+    "hash": "a325abaa2716516f5717967dad18ae33c62839125fe4f331f810094993b77176",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -31,11 +31,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:19.990Z"
+    "capturedAt": "2026-10-16T05:01:44.329Z"
   },
   "postprocessing-debug-sphere": {
-    "file": "postprocessing-debug-sphere.9fbcd6e736fc.json",
-    "hash": "9fbcd6e736fc5f3a3738dfd447f9961886d8893bcaeea81a5261303d8d8548f7",
+    "file": "postprocessing-debug-sphere.08803a872b44.json",
+    "hash": "08803a872b44cd5e9005ed447a3868f67d4dea52ccecb5a8d93d9843649aa26a",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -48,238 +48,288 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:20.002Z"
+    "capturedAt": "2026-10-16T05:01:44.340Z"
   },
   "__aux": {
-    "post-process:bd6a766166a01935690fb02fda386d7f40bb09f7b409bb26e7c645678882ac3f": {
-      "file": "aux-post-process-bd6a766166a0.json",
+    "post-process:58a9a967696ea5d9e681f1ea4286561cd458260c3f44f4c68c46744de523bc65": {
+      "file": "aux-post-process-58a9a967696e.json",
       "shape": "post-process",
-      "configHash": "bd6a766166a01935690fb02fda386d7f40bb09f7b409bb26e7c645678882ac3f",
-      "hash": "628eb526d254d4a295e06b98c7b7021d1f670ef408641d5fd6371c128d63b38f",
-      "threeVersion": "0.186.1",
+      "configHash": "58a9a967696ea5d9e681f1ea4286561cd458260c3f44f4c68c46744de523bc65",
+      "hash": "81ef5b21355b967e6e1672d96a3a5e04e4c35cbbeae23598994ab490dcb1768f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:20.085Z"
+      "capturedAt": "2026-10-16T05:01:44.424Z"
     },
-    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
-      "file": "aux-lights-499bfad6a893.json",
+    "lights:a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776": {
+      "file": "aux-lights-a97cd2e6605a.json",
       "shape": "lights",
-      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
-      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
-      "threeVersion": "0.186.1",
+      "configHash": "a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776",
+      "hash": "3a1378bf8ab75459e1ce7c8dc18b743a3293a27a782e89df87ff0033791f4ee0",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:20.087Z"
+      "capturedAt": "2026-10-16T05:01:44.427Z"
     },
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "eea5ee9b1eee111b48d5768bee617d87bbbe1f97eacdeafb662e929653f4bb73",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:20.181Z"
+      "capturedAt": "2026-10-16T05:01:44.481Z"
     },
-    "post-process:eefe18eff37ad883335114a869c5b13614247b1b05e15bc65ba56655e6b42e99": {
-      "file": "aux-post-process-eefe18eff37a.json",
+    "post-process:9d2ac228f89e085aa3dc82cb6b39445f6dcf5f9c36df401617236345dfe6ff91": {
+      "file": "aux-post-process-9d2ac228f89e.json",
       "shape": "post-process",
-      "configHash": "eefe18eff37ad883335114a869c5b13614247b1b05e15bc65ba56655e6b42e99",
-      "hash": "002c5eca6baa2e6076a63a3e91dd8785d160b683ef16a7e2c39fe53ab8bb5b6f",
-      "threeVersion": "0.186.1",
+      "configHash": "9d2ac228f89e085aa3dc82cb6b39445f6dcf5f9c36df401617236345dfe6ff91",
+      "hash": "b2f711f457e117153f51d0608bbfda0721923e3dc9b7089d42baaccf2a943343",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.060Z"
+      "capturedAt": "2026-10-16T05:01:46.542Z"
     },
-    "bloom-high-pass:a95701bb101dcd1f674dec03ebd5f6c2be95db1a03fd824f8a027886094eedcb": {
-      "file": "aux-bloom-high-pass-a95701bb101d.json",
+    "bloom-high-pass:43499949f93f1ee9057560aeaa9c708cbb4aba31993536aed66308cad3a68849": {
+      "file": "aux-bloom-high-pass-43499949f93f.json",
       "shape": "bloom-high-pass",
-      "configHash": "a95701bb101dcd1f674dec03ebd5f6c2be95db1a03fd824f8a027886094eedcb",
-      "hash": "fc46c332ab7b0d6e46b308bdf99065a1bd52d49038fd3e28a97a59e6b6834b85",
-      "threeVersion": "0.186.1",
+      "configHash": "43499949f93f1ee9057560aeaa9c708cbb4aba31993536aed66308cad3a68849",
+      "hash": "f63909b7b6ac35d82459b732470b52dcaccc66fdf6306445137e0ad7457a28c4",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.063Z"
+      "capturedAt": "2026-10-16T05:01:46.545Z"
     },
-    "bloom-blur-0:d52d5695835395bd2a5057bcae6580755bb2d8112113ddeac3f29d2dfcab7da8": {
-      "file": "aux-bloom-blur-0-d52d56958353.json",
+    "bloom-blur-0:5c93e41602ee3f1667aa9d30b35e17de65b3e3ea824c010acb38547c62c35895": {
+      "file": "aux-bloom-blur-0-5c93e41602ee.json",
       "shape": "bloom-blur-0",
-      "configHash": "d52d5695835395bd2a5057bcae6580755bb2d8112113ddeac3f29d2dfcab7da8",
-      "hash": "22e38625b0340d7eeb69ec0b4f171e2e475608d0b5b8cb26bc008b8816246db4",
-      "threeVersion": "0.186.1",
+      "configHash": "5c93e41602ee3f1667aa9d30b35e17de65b3e3ea824c010acb38547c62c35895",
+      "hash": "d12cb4ed317a54987119d5c13d6f51d42c988f6f6075b8a70a9fae9c48fc3abb",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.066Z"
+      "capturedAt": "2026-10-16T05:01:46.548Z"
     },
-    "bloom-blur-1:ce03aa0201c192e0fcf66464f38371a96638927d9a9eee26a3a445469cccf17b": {
-      "file": "aux-bloom-blur-1-ce03aa0201c1.json",
+    "bloom-blur-1:b3c0e5e3874cd268d976f82a4e8d1d2486a687db81d1b3baf6839ebf3053c690": {
+      "file": "aux-bloom-blur-1-b3c0e5e3874c.json",
       "shape": "bloom-blur-1",
-      "configHash": "ce03aa0201c192e0fcf66464f38371a96638927d9a9eee26a3a445469cccf17b",
-      "hash": "dd38ca0004703dd6c0d7892ee4a6968dc44389d90193ef7eb24ff4c834c2aac6",
-      "threeVersion": "0.186.1",
+      "configHash": "b3c0e5e3874cd268d976f82a4e8d1d2486a687db81d1b3baf6839ebf3053c690",
+      "hash": "238dd645d4e5a994fc3f17792a43a30edf4ebf6a77788686a6a1d2c4644447fe",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.068Z"
+      "capturedAt": "2026-10-16T05:01:46.551Z"
     },
-    "bloom-blur-2:c97acbec2cd4057f2f8b78bcfa299be84330f10def9a5b5fbb0f328aeae39c0a": {
-      "file": "aux-bloom-blur-2-c97acbec2cd4.json",
+    "bloom-blur-2:d06552a2ce6d006ed0290bdf70ef7c14ea5a3d37575f2ff115a4990e723da13d": {
+      "file": "aux-bloom-blur-2-d06552a2ce6d.json",
       "shape": "bloom-blur-2",
-      "configHash": "c97acbec2cd4057f2f8b78bcfa299be84330f10def9a5b5fbb0f328aeae39c0a",
-      "hash": "b9cc621845bde14bd6bd89abf8ea7e050f476389180520327884dcaf8550caa3",
-      "threeVersion": "0.186.1",
+      "configHash": "d06552a2ce6d006ed0290bdf70ef7c14ea5a3d37575f2ff115a4990e723da13d",
+      "hash": "7305277f61fd9f0df9d871561e3bd695eed7f7e4fa9d7c8a69a0c6b09b28e7a1",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.071Z"
+      "capturedAt": "2026-10-16T05:01:46.554Z"
     },
-    "bloom-blur-3:d2f3ac418e2e1e0ee7ca89e5ad487690ab1373e5abae913d03c37349b5e3203c": {
-      "file": "aux-bloom-blur-3-d2f3ac418e2e.json",
+    "bloom-blur-3:6223076cb23bfd3e837974eb133e2267f1f1dc1ae6077a5ac756f928a902e87a": {
+      "file": "aux-bloom-blur-3-6223076cb23b.json",
       "shape": "bloom-blur-3",
-      "configHash": "d2f3ac418e2e1e0ee7ca89e5ad487690ab1373e5abae913d03c37349b5e3203c",
-      "hash": "73ea2ba54858819d67bc6ebe1ca05aeffe08b7ebfde125c96d75a75f69da10e3",
-      "threeVersion": "0.186.1",
+      "configHash": "6223076cb23bfd3e837974eb133e2267f1f1dc1ae6077a5ac756f928a902e87a",
+      "hash": "3676bf66f1cd87b0e444e8a704904535afde2c225973cb69ea924c4308a5351f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.074Z"
+      "capturedAt": "2026-10-16T05:01:46.557Z"
     },
-    "bloom-blur-4:b1df910334217f47ea7a1a056a224f9a61d9464a4ac70aa1bee968d58e256558": {
-      "file": "aux-bloom-blur-4-b1df91033421.json",
+    "bloom-blur-4:2e8082243121aef25525a46d889f3960cdbc537828c0776227ebf169f3f2a076": {
+      "file": "aux-bloom-blur-4-2e8082243121.json",
       "shape": "bloom-blur-4",
-      "configHash": "b1df910334217f47ea7a1a056a224f9a61d9464a4ac70aa1bee968d58e256558",
-      "hash": "20c3aaa0a2756be6bc67b71f3b151124b5516ca290fbffb3531ce5cf83e43d70",
-      "threeVersion": "0.186.1",
+      "configHash": "2e8082243121aef25525a46d889f3960cdbc537828c0776227ebf169f3f2a076",
+      "hash": "3eacdd01a61ecc4834e26f03cf75e7b0530729e300e3607fa64a15a7cbe5a138",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.077Z"
+      "capturedAt": "2026-10-16T05:01:46.560Z"
     },
-    "bloom-composite:e42ba31fdfd54bb491164a9cdad5ddbc6b6e11c180f76bcfd06a9c1ab4d3855c": {
-      "file": "aux-bloom-composite-e42ba31fdfd5.json",
+    "bloom-composite:2612cfef106b75b6c696650d7cf30a6e91bd04048f9a2382bad9c33826f32066": {
+      "file": "aux-bloom-composite-2612cfef106b.json",
       "shape": "bloom-composite",
-      "configHash": "e42ba31fdfd54bb491164a9cdad5ddbc6b6e11c180f76bcfd06a9c1ab4d3855c",
-      "hash": "344d9088f538a230f2ee9831c7465b90d26fd3e9d08278f2a17f6c1dfc0eb7e9",
-      "threeVersion": "0.186.1",
+      "configHash": "2612cfef106b75b6c696650d7cf30a6e91bd04048f9a2382bad9c33826f32066",
+      "hash": "9f626882f48f0b9964e1402376d9eba692246eecdeaf3652df8574ff4d14908d",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.083Z"
+      "capturedAt": "2026-10-16T05:01:46.564Z"
     },
-    "render-output:61426071f0fca6536e59b13ac58e84a800e9cf2d1399759f12b417d0ac45b719": {
-      "file": "aux-render-output-61426071f0fc.json",
+    "render-output:fcae8e6815c810cb01a45313c5e3b71064c8b20406dc1ff2be3147c5d805d80d": {
+      "file": "aux-render-output-fcae8e6815c8.json",
       "shape": "render-output",
-      "configHash": "61426071f0fca6536e59b13ac58e84a800e9cf2d1399759f12b417d0ac45b719",
-      "hash": "289608c796c72bd312a71eff3d5c09422d814517e9cf80b2d11d2d97e415cacd",
-      "threeVersion": "0.186.1",
+      "configHash": "fcae8e6815c810cb01a45313c5e3b71064c8b20406dc1ff2be3147c5d805d80d",
+      "hash": "bf2ec49df29594b08eb0a0612a424c8b715ea4c8e2ec72b057ccb9c82728e2a1",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:22.099Z"
+      "capturedAt": "2026-10-16T05:01:46.579Z"
     },
-    "post-process:1e02c5b37fa2f1c9672105bef3af77f20adb71243b6365663acf5913a13a1ed6": {
-      "file": "aux-post-process-1e02c5b37fa2.json",
+    "post-process:d0c66315bea8d2dad0674d21dce76ea75c3e63c41599b0abe0e9621fd2e450b5": {
+      "file": "aux-post-process-d0c66315bea8.json",
       "shape": "post-process",
-      "configHash": "1e02c5b37fa2f1c9672105bef3af77f20adb71243b6365663acf5913a13a1ed6",
-      "hash": "698314674f7af3c17f547e6e9966640a6726c1a62f1e87a582fdb2b4f3c8c173",
-      "threeVersion": "0.186.1",
+      "configHash": "d0c66315bea8d2dad0674d21dce76ea75c3e63c41599b0abe0e9621fd2e450b5",
+      "hash": "dc7be1316482ea9ebf95f258d89af1998c70f882e1ceac99250689658bea92c8",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:23.391Z"
+      "capturedAt": "2026-10-16T05:01:47.915Z"
     },
-    "post-process:cd367f3d457d59196f821b5a15dce18149ef627ad948f5da4d2dfb27ac6871b3": {
-      "file": "aux-post-process-cd367f3d457d.json",
+    "post-process:3973b91b0e37d88040ba4a234b652d39e73093c0335acffb9f5f58e53a38ef55": {
+      "file": "aux-post-process-3973b91b0e37.json",
       "shape": "post-process",
-      "configHash": "cd367f3d457d59196f821b5a15dce18149ef627ad948f5da4d2dfb27ac6871b3",
-      "hash": "ecdbdfad14be5e7a2007eb643d3a15d028b7860ee21de111ca95465c9af3437e",
-      "threeVersion": "0.186.1",
+      "configHash": "3973b91b0e37d88040ba4a234b652d39e73093c0335acffb9f5f58e53a38ef55",
+      "hash": "61f607939787e74f16dfee2989689a63f500ebb5997562b49f9b63840c9dbce6",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:23.718Z"
+      "capturedAt": "2026-10-16T05:01:48.096Z"
     },
-    "post-process:c4a59d5f33f35b62fc9bc0fad9f2c98c5c1b1aca18b45476d5d291181db5d1a9": {
-      "file": "aux-post-process-c4a59d5f33f3.json",
+    "post-process:cd4fc18544a6229958f348cb103603b7a2dc442289e0978bcaf8c49e8be8d32a": {
+      "file": "aux-post-process-cd4fc18544a6.json",
       "shape": "post-process",
-      "configHash": "c4a59d5f33f35b62fc9bc0fad9f2c98c5c1b1aca18b45476d5d291181db5d1a9",
-      "hash": "6a1b9b0027b17ad93206d95cad761a5f7c66f50fcbe73648446ccb86f26d8931",
-      "threeVersion": "0.186.1",
+      "configHash": "cd4fc18544a6229958f348cb103603b7a2dc442289e0978bcaf8c49e8be8d32a",
+      "hash": "c592209d4c258c58f876b4ca0c2f26ce2fa089f8ccde57ed1a71bf330c39ad01",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:25.301Z"
+      "capturedAt": "2026-10-16T05:01:49.829Z"
     },
-    "gtao:b1307b867860cc4c7e4af948f1473762270785b378708066f595f08328ad2bac": {
-      "file": "aux-gtao-b1307b867860.json",
+    "gtao:21dbf4f3d503cbc38cd2848747aee3f73b6e5b497bd527717c9e93514867246b": {
+      "file": "aux-gtao-21dbf4f3d503.json",
       "shape": "gtao",
-      "configHash": "b1307b867860cc4c7e4af948f1473762270785b378708066f595f08328ad2bac",
-      "hash": "e25a26c2934625bace7e974cac12a678f01b0b2366d55359a39303e7cae1d828",
-      "threeVersion": "0.186.1",
+      "configHash": "21dbf4f3d503cbc38cd2848747aee3f73b6e5b497bd527717c9e93514867246b",
+      "hash": "144ed57e57b83941beb20e305e81752392d601b54082c77f6ecc0f161f65f817",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:25.305Z"
+      "capturedAt": "2026-10-16T05:01:49.834Z"
     },
-    "post-process:89c83045145f64683960bee08bd6e4020565e4c255b33de9bea5bf291467ebf4": {
-      "file": "aux-post-process-89c83045145f.json",
+    "post-process:6e9c4de9c42bc10263a92cd5bcad431ad6e371ca474da542f06502106c8109a0": {
+      "file": "aux-post-process-6e9c4de9c42b.json",
       "shape": "post-process",
-      "configHash": "89c83045145f64683960bee08bd6e4020565e4c255b33de9bea5bf291467ebf4",
-      "hash": "d240ca0bf20950c17ebd9d445af62813f0d26e6857ad0f844de76da8db320afc",
-      "threeVersion": "0.186.1",
+      "configHash": "6e9c4de9c42bc10263a92cd5bcad431ad6e371ca474da542f06502106c8109a0",
+      "hash": "afc63f76136bbabdd3f7c88034b36bc4109d6b20b8a5d7e92c12cbe42b9c63b8",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:26.922Z"
+      "capturedAt": "2026-10-16T05:01:51.437Z"
     },
-    "post-process:d655363f1ee837941431e7bcc4dc79c6d9d04989e75113797d50def2c716744e": {
-      "file": "aux-post-process-d655363f1ee8.json",
+    "post-process:4b41e6d6cc0eadff015eda90ff1a2c7812fe5d99c2a8ddfb2a6e1831d2909ed3": {
+      "file": "aux-post-process-4b41e6d6cc0e.json",
       "shape": "post-process",
-      "configHash": "d655363f1ee837941431e7bcc4dc79c6d9d04989e75113797d50def2c716744e",
-      "hash": "0077da04481d2e09fce22b1bb546ce1353c60edf1af09e3208c5c07081d27b12",
-      "threeVersion": "0.186.1",
+      "configHash": "4b41e6d6cc0eadff015eda90ff1a2c7812fe5d99c2a8ddfb2a6e1831d2909ed3",
+      "hash": "4f3c92dfbcc31514d022056f5ab9922440209636d6e70b5acae20c3f7fd5edf8",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.900Z"
+      "capturedAt": "2026-10-16T05:01:52.311Z"
     },
-    "bloom-high-pass:5287f98ed41a95d137d18dee20b5bc4a678840f0499fe87d6cc1cee41d9d1cd8": {
-      "file": "aux-bloom-high-pass-5287f98ed41a.json",
+    "bloom-high-pass:b10bed529df20acc81dda695c317351d7d6fc1f20227dca0bdd552218bfb431a": {
+      "file": "aux-bloom-high-pass-b10bed529df2.json",
       "shape": "bloom-high-pass",
-      "configHash": "5287f98ed41a95d137d18dee20b5bc4a678840f0499fe87d6cc1cee41d9d1cd8",
-      "hash": "fc46c332ab7b0d6e46b308bdf99065a1bd52d49038fd3e28a97a59e6b6834b85",
-      "threeVersion": "0.186.1",
+      "configHash": "b10bed529df20acc81dda695c317351d7d6fc1f20227dca0bdd552218bfb431a",
+      "hash": "f63909b7b6ac35d82459b732470b52dcaccc66fdf6306445137e0ad7457a28c4",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.903Z"
+      "capturedAt": "2026-10-16T05:01:52.324Z"
     },
-    "bloom-blur-0:932f5869f9bacbf794eca8320893f8d130045ce1663223eb6ded8e934973930b": {
-      "file": "aux-bloom-blur-0-932f5869f9ba.json",
+    "bloom-blur-0:5ffda3dbb641749e6ba786f8f98ebcea3da35b24834e151f19fd338e2a0c782e": {
+      "file": "aux-bloom-blur-0-5ffda3dbb641.json",
       "shape": "bloom-blur-0",
-      "configHash": "932f5869f9bacbf794eca8320893f8d130045ce1663223eb6ded8e934973930b",
-      "hash": "22e38625b0340d7eeb69ec0b4f171e2e475608d0b5b8cb26bc008b8816246db4",
-      "threeVersion": "0.186.1",
+      "configHash": "5ffda3dbb641749e6ba786f8f98ebcea3da35b24834e151f19fd338e2a0c782e",
+      "hash": "d12cb4ed317a54987119d5c13d6f51d42c988f6f6075b8a70a9fae9c48fc3abb",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.907Z"
+      "capturedAt": "2026-10-16T05:01:52.328Z"
     },
-    "bloom-blur-1:65e8ad88d0fa3f25c49f3b9880a93cb57b5d74bb3a94128fef617dbb195b8d38": {
-      "file": "aux-bloom-blur-1-65e8ad88d0fa.json",
+    "bloom-blur-1:ec5657fb9c7e1b9ff21e1d8d49f2d2657216276c6efc577174bb983d134541e9": {
+      "file": "aux-bloom-blur-1-ec5657fb9c7e.json",
       "shape": "bloom-blur-1",
-      "configHash": "65e8ad88d0fa3f25c49f3b9880a93cb57b5d74bb3a94128fef617dbb195b8d38",
-      "hash": "dd38ca0004703dd6c0d7892ee4a6968dc44389d90193ef7eb24ff4c834c2aac6",
-      "threeVersion": "0.186.1",
+      "configHash": "ec5657fb9c7e1b9ff21e1d8d49f2d2657216276c6efc577174bb983d134541e9",
+      "hash": "238dd645d4e5a994fc3f17792a43a30edf4ebf6a77788686a6a1d2c4644447fe",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.911Z"
+      "capturedAt": "2026-10-16T05:01:52.332Z"
     },
-    "bloom-blur-2:15e0d40d84a3a98195051f520762b9fad14edd665ed37ffd4c3bd1765a577e52": {
-      "file": "aux-bloom-blur-2-15e0d40d84a3.json",
+    "bloom-blur-2:d60aef43145fd14987273d01c31a64362e7fac89a17be37285bee5e6c2bbca60": {
+      "file": "aux-bloom-blur-2-d60aef43145f.json",
       "shape": "bloom-blur-2",
-      "configHash": "15e0d40d84a3a98195051f520762b9fad14edd665ed37ffd4c3bd1765a577e52",
-      "hash": "b9cc621845bde14bd6bd89abf8ea7e050f476389180520327884dcaf8550caa3",
-      "threeVersion": "0.186.1",
+      "configHash": "d60aef43145fd14987273d01c31a64362e7fac89a17be37285bee5e6c2bbca60",
+      "hash": "7305277f61fd9f0df9d871561e3bd695eed7f7e4fa9d7c8a69a0c6b09b28e7a1",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.915Z"
+      "capturedAt": "2026-10-16T05:01:52.336Z"
     },
-    "bloom-blur-3:854c8665c1dc7959714eb3f4c374b4c55083e6ab0521cef174e20c6de6d57ea3": {
-      "file": "aux-bloom-blur-3-854c8665c1dc.json",
+    "bloom-blur-3:7a32296b09b3e7c695fcf460d1d95b9dcf65c4bbc00a01d90443acc460812b48": {
+      "file": "aux-bloom-blur-3-7a32296b09b3.json",
       "shape": "bloom-blur-3",
-      "configHash": "854c8665c1dc7959714eb3f4c374b4c55083e6ab0521cef174e20c6de6d57ea3",
-      "hash": "73ea2ba54858819d67bc6ebe1ca05aeffe08b7ebfde125c96d75a75f69da10e3",
-      "threeVersion": "0.186.1",
+      "configHash": "7a32296b09b3e7c695fcf460d1d95b9dcf65c4bbc00a01d90443acc460812b48",
+      "hash": "3676bf66f1cd87b0e444e8a704904535afde2c225973cb69ea924c4308a5351f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.919Z"
+      "capturedAt": "2026-10-16T05:01:52.340Z"
     },
-    "bloom-blur-4:c84c94461dc3fe09de0cd20cae67871c4b9a083fa26260b8053aca59812a4630": {
-      "file": "aux-bloom-blur-4-c84c94461dc3.json",
+    "bloom-blur-4:bc0c592b63a4e767234235d78b1fe769dcead5b438fa899514d35baf99336dd7": {
+      "file": "aux-bloom-blur-4-bc0c592b63a4.json",
       "shape": "bloom-blur-4",
-      "configHash": "c84c94461dc3fe09de0cd20cae67871c4b9a083fa26260b8053aca59812a4630",
-      "hash": "20c3aaa0a2756be6bc67b71f3b151124b5516ca290fbffb3531ce5cf83e43d70",
-      "threeVersion": "0.186.1",
+      "configHash": "bc0c592b63a4e767234235d78b1fe769dcead5b438fa899514d35baf99336dd7",
+      "hash": "3eacdd01a61ecc4834e26f03cf75e7b0530729e300e3607fa64a15a7cbe5a138",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.923Z"
+      "capturedAt": "2026-10-16T05:01:52.344Z"
     },
-    "bloom-composite:2106354e1943d63ab6e6a41e601558af19bb1d43b6bc523d8bdc3a4789459fd9": {
-      "file": "aux-bloom-composite-2106354e1943.json",
+    "bloom-composite:8f7bb4e8bc0c017261eeeccc4b9ee5b865829e540b2458c7b33c65c439017897": {
+      "file": "aux-bloom-composite-8f7bb4e8bc0c.json",
       "shape": "bloom-composite",
-      "configHash": "2106354e1943d63ab6e6a41e601558af19bb1d43b6bc523d8bdc3a4789459fd9",
-      "hash": "7193f3380468606727b12ed2bdc24beaed05913a4be691eef963d9fe17e33146",
-      "threeVersion": "0.186.1",
+      "configHash": "8f7bb4e8bc0c017261eeeccc4b9ee5b865829e540b2458c7b33c65c439017897",
+      "hash": "9f626882f48f0b9964e1402376d9eba692246eecdeaf3652df8574ff4d14908d",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:22:27.928Z"
+      "capturedAt": "2026-10-16T05:01:52.350Z"
     }
   },
   "postprocessing-debug-gtao-floor": {
-    "file": "postprocessing-debug-gtao-floor.3b63600e4d2f.json",
-    "hash": "3b63600e4d2f44f52464d4381066a5369897ba59fe4a86cc552e4b313ed6e4ab",
+    "file": "postprocessing-debug-gtao-floor.483dcd319559.json",
+    "hash": "483dcd319559d0c584ca7e751155720f35cacd537d618548b658865c43c6ad0b",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -292,11 +342,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:25.168Z"
+    "capturedAt": "2026-10-16T05:01:49.694Z"
   },
   "postprocessing-debug-gtao-cube": {
-    "file": "postprocessing-debug-gtao-cube.30347f113b9b.json",
-    "hash": "30347f113b9bb3927fd343e765f25a585d34d375e9c5016bf325facee3203c27",
+    "file": "postprocessing-debug-gtao-cube.d73d3f5c2e8e.json",
+    "hash": "d73d3f5c2e8e70a1b8a1051b2f45ffb77483e13e7b7d278426f369f25d951752",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -309,11 +359,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:25.181Z"
+    "capturedAt": "2026-10-16T05:01:49.707Z"
   },
   "postprocessing-debug-gtao-sphere": {
-    "file": "postprocessing-debug-gtao-sphere.3ff3e4309b48.json",
-    "hash": "3ff3e4309b483010b25d3941a26e25169cf0a42abc8245fe1599ea37e84e4561",
+    "file": "postprocessing-debug-gtao-sphere.37805ef8137d.json",
+    "hash": "37805ef8137dfc760da706a16567bb5a35c708915017ddb227e7a4864cc41e5c",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -326,11 +376,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:25.193Z"
+    "capturedAt": "2026-10-16T05:01:49.719Z"
   },
   "postprocessing-debug-variants-floor": {
-    "file": "postprocessing-debug-variants-floor.467c8fdc40b9.json",
-    "hash": "467c8fdc40b9496d1f32273310471b4098529b9851f1fdc3cb057cee584fbb02",
+    "file": "postprocessing-debug-variants-floor.22243246a807.json",
+    "hash": "22243246a807dc46362f8b9673ef4f985a812c6a52e67ed815fe31fdb038c84e",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -347,11 +397,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:26.770Z"
+    "capturedAt": "2026-10-16T05:01:51.282Z"
   },
   "postprocessing-debug-variant-ember": {
-    "file": "postprocessing-debug-variant-ember.261c8db4caac.json",
-    "hash": "261c8db4caac0c922cee3d7ee37ba17f996e420ccadb83176958931bc1906caf",
+    "file": "postprocessing-debug-variant-ember.b7ef266ef2cd.json",
+    "hash": "b7ef266ef2cdde53e7e982821ce9113e408607f2b9d2425542bc7b4f1faa68fb",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -368,11 +418,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:26.781Z"
+    "capturedAt": "2026-10-16T05:01:51.293Z"
   },
   "postprocessing-debug-variants-glow": {
-    "file": "postprocessing-debug-variants-glow.15b4c52659b2.json",
-    "hash": "15b4c52659b25849413f4b4f792e92acaeb0cf9369085e12ceebbb56a3d20650",
+    "file": "postprocessing-debug-variants-glow.c2f792b3221e.json",
+    "hash": "c2f792b3221e25977b5839442862f0a6a591a5b9bf2a44459d009443e74a1ff0",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -389,11 +439,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:26.793Z"
+    "capturedAt": "2026-10-16T05:01:51.302Z"
   },
   "postprocessing-debug-variant-lagoon": {
-    "file": "postprocessing-debug-variant-lagoon.8d63ea7f842b.json",
-    "hash": "8d63ea7f842babf5585e06b88ae2e59d769b5b0a3a62d125d02b4f83a1890c82",
+    "file": "postprocessing-debug-variant-lagoon.1021d0354f98.json",
+    "hash": "1021d0354f9871e48ce9247b51c83fafc4ba00e3b2bf4a4485edc5b8d6073775",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -410,11 +460,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:26.816Z"
+    "capturedAt": "2026-10-16T05:01:51.324Z"
   },
   "postprocessing-debug-variant-circuit": {
-    "file": "postprocessing-debug-variant-circuit.380974bf6805.json",
-    "hash": "380974bf6805879d3b77d704a03c720f6e37691320a292f1dfbff34a05db0c04",
+    "file": "postprocessing-debug-variant-circuit.6836105cf1dc.json",
+    "hash": "6836105cf1dc6a931da100b6966580c8e30a62d65c2a8afdeaf28c6cb2241edd",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -431,6 +481,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:22:26.839Z"
+    "capturedAt": "2026-10-16T05:01:51.343Z"
   }
 }

@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-releases';
+import { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-releases';
+import { readSlimThreeReleaseProfile } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import { assertInternalPassFamily } from '@tsl-precompile/contract/internal-pass';
 import { pmremRequiredStages } from '@tsl-precompile/contract/pmrem-config';
 
@@ -17,7 +18,11 @@ const revision = /export const REVISION\s*=\s*['"]([^'"]+)['"]/.exec( readFileSy
 const sourceCommit = process.env.TSLP_THREE_SOURCE_ROOT
 	? execFileSync( 'git', [ '-C', process.env.TSLP_THREE_SOURCE_ROOT, 'rev-parse', 'HEAD' ], { encoding: 'utf8' } ).trim()
 	: undefined;
-const release = resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
+// Development sources verify by their src/ + build/ fingerprint: the vendored tarball by its exact
+// package version, a Git checkout of the pinned commit (upstream's nominal 0.186.0) by that commit.
+const release = revision === THREE_RELEASE_PROFILES.development.revision
+	? await readSlimThreeReleaseProfile( resolve( sourceRoot, '..' ), { sourceCommit } )
+	: resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
 assert.ok( release, 'native PMREM capture requires a verified source release' );
 registerHooks( { resolve( specifier, context, nextResolve ) {
 

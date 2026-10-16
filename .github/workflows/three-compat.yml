@@ -40,6 +40,12 @@ jobs:
           repository: mrdoob/three.js
           ref: ${{ steps.development-profile.outputs.commit }}
           path: three-development
+      - name: Build the pinned development source's build/
+        if: matrix.three-version == 'development'
+        # The pinned commit's checked-in build/ predates its src/. The vendored package and the
+        # profile's src/ + build/ fingerprint use build/ rebuilt from that src/ with its lockfile.
+        working-directory: three-development
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
       - name: Install latest three.js for compat probe
         if: matrix.three-version == 'latest'
         run: pnpm --filter @tsl-precompile/runtime add three@latest --save-dev

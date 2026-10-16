@@ -1,18 +1,20 @@
 {
   "__aux": {
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "b35cbd7d1a77ee02cffa51099019841e926745b2d657591c3e5ad63268196a62",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "59cdb3cc039cc48253fd0016649c24f7eddcff9ffa1cb718f280920c98fabf21",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T09:35:14.654Z"
+      "capturedAt": "2026-10-16T05:00:52.426Z"
     }
   },
   "getting-started": {
-    "file": "getting-started.1317d109c604.json",
-    "hash": "1317d109c604b397f42b643b80f57058118ed95530c72e6a64efc066e783aa4b",
+    "file": "getting-started.79a8929227de.json",
+    "hash": "79a8929227defca3fbf326ffc3f4ac9ccd5e0624b39b870c0052e47e94e4e324",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -25,6 +27,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T09:35:14.879Z"
+    "capturedAt": "2026-10-16T05:00:52.655Z"
   }
 }

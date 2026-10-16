@@ -12,7 +12,8 @@ test( 'a repeated capture redraws a Three shadow already painted in the host fra
 	let draws = 0;
 	node.updateShadow = () => { draws ++; };
 	const frame = { camera: {}, frameId: 12, time: 3.5 };
-	const renderer = { _nodes: { nodeFrame: frame } };
+	// r187dev ShadowNode skips draws unless `_precompilationState` is null (r186 reads `_isPreCompiling`).
+	const renderer = { _nodes: { nodeFrame: frame }, _precompilationState: null };
 	frame.renderer = renderer;
 	node.updateBefore( frame );
 	light.shadow.needsUpdate = true;

@@ -257,6 +257,32 @@ test( 'the payload fingerprint ignores routing metadata but not shader bytes', (
 
 } );
 
+test( 'r187dev compact Fn layout names are capture-order numbers, not shader identity', () => {
+
+	// TSLCore names `{ i: 'vec2', return: 'vec2' }` layouts 'fn' + a global counter, so an identical
+	// graph built twice (e.g. SkyMesh's cloud noise declared inside its node builder) emits new names.
+	const sky = ( first ) => `fn fn${ first } ( i : vec2<f32> ) -> vec2<f32> { return i; }\n` +
+		`fn fn${ first + 1 } ( p : vec2<f32> ) -> f32 { return fn${ first }( p ).x; }\n` +
+		`fn main() { let a = fn${ first + 1 }( vec2<f32>() ); }`;
+	assert.equal(
+		createArtifactVariantPayloadFingerprint( variant( { fragmentShader: sky( 126 ) } ) ),
+		createArtifactVariantPayloadFingerprint( variant( { fragmentShader: sky( 129 ) } ) ),
+	);
+	const swapped = sky( 126 ).replace( 'return fn126( p ).x', 'return fn127( p ).x' );
+	assert.notEqual(
+		createArtifactVariantPayloadFingerprint( variant( { fragmentShader: sky( 126 ) } ) ),
+		createArtifactVariantPayloadFingerprint( variant( { fragmentShader: swapped } ) ),
+		'the call topology between generated functions stays strict',
+	);
+	const target = variant( { cacheKey: 'private-1', fragmentShader: sky( 126 ), renderContextSelectors: [ 'sel-a' ] } );
+	const merged = mergeArtifactVariantFamily( target, [
+		variant( { cacheKey: 'private-2', fragmentShader: sky( 129 ), renderContextSelectors: [ 'sel-a' ] } ),
+	] );
+	assert.equal( merged.variants, undefined, 'renumbered recaptures alias instead of colliding' );
+	assert.equal( merged.fragmentShader, sky( 126 ), 'durable shader bytes stay untouched' );
+
+} );
+
 test( 'a single-member merge leaves no variants map behind', () => {
 
 	const target = variant();

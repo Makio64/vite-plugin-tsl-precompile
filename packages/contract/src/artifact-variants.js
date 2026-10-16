@@ -35,7 +35,9 @@ const VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT = 12;
 const VARIANT_COLLISION_STRING_DETAIL_LIMIT = 2;
 const VARIANT_COLLISION_STRING_EXCERPT_RADIUS = 32;
 const SHADER_SOURCE_FIELDS = new Set( [ 'vertexShader', 'fragmentShader', 'computeShader' ] );
-const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b)/g;
+const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b|fn\d+\b)/g;
+// r187dev names compact Fn layouts ( `{ a: 'vec2', return: 'vec2' }` ) 'fn' + a module-global counter.
+const CAPTURE_GENERATED_FUNCTION_NAME_PATTERN = /\bfn(\d+)\b/g;
 const CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN = /\bNodeBuffer_(\d+)(?=\b|Struct\b)/g;
 const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(?:(NodeBuffer_)(\d+)(?=\b|Struct\b)|(buffer)(\d+)\b)/g;
 const CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN = /^NodeBuffer_(\d+)$/;
@@ -719,6 +721,7 @@ function normalizeVariantFingerprintPayload( value, renderContextSelectors = [] 
 	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
 	const rendererOutput = value?.materialShape === 'render-output';
 	const generatedShaderNodeIds = new Map();
+	const generatedFunctionNames = new Map();
 	const generatedUniformBufferIds = new Map();
 	const generatedStorageBufferIds = new Map();
 	const seen = new Map();
@@ -737,10 +740,12 @@ function normalizeVariantFingerprintPayload( value, renderContextSelectors = [] 
 		}
 		if ( role === 'artifact' ) for ( const field of SHADER_SOURCE_FIELDS ) {
 
-			if ( typeof current[ field ] === 'string' ) collectCaptureGeneratedShaderNodeIds(
-				current[ field ],
-				generatedShaderNodeIds,
-			);
+			if ( typeof current[ field ] === 'string' ) {
+
+				collectCaptureGeneratedShaderNodeIds( current[ field ], generatedShaderNodeIds );
+				collectCaptureGeneratedFunctionNames( current[ field ], generatedFunctionNames );
+
+			}
 
 		}
 		const liveFrameSource = typeof current.kind === 'string' && (
@@ -816,9 +821,16 @@ function normalizeVariantFingerprintPayload( value, renderContextSelectors = [] 
 			// shared-vs-distinct node topology in one namespace, but remove the
 			// capture-order number from fingerprints. Durable shader bytes remain
 			// untouched because this visitor always writes into its clone.
+			// r187dev compact Fn layouts are named the same way ('fn' + a global
+			// counter), and Fns declared inside a node builder receive new numbers
+			// on every build of an identical graph. Fingerprints keep the
+			// first-appearance order of those names, never the counter value.
 			if ( role === 'artifact' && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
 
-				clone[ key ] = normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds );
+				clone[ key ] = normalizeCaptureGeneratedFunctionNames(
+					normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds ),
+					generatedFunctionNames,
+				);
 				continue;
 
 			}
@@ -986,6 +998,24 @@ function collectCaptureGeneratedShaderNodeIds( shader, identities ) {
 		captureGeneratedIdentityId( identities, match[ 1 ] );
 
 	}
+
+}
+
+function collectCaptureGeneratedFunctionNames( shader, identities ) {
+
+	CAPTURE_GENERATED_FUNCTION_NAME_PATTERN.lastIndex = 0;
+	for ( const match of shader.matchAll( CAPTURE_GENERATED_FUNCTION_NAME_PATTERN ) ) captureGeneratedIdentityId( identities, match[ 1 ] );
+
+}
+
+function normalizeCaptureGeneratedFunctionNames( shader, identities ) {
+
+	return shader.replace( CAPTURE_GENERATED_FUNCTION_NAME_PATTERN, ( name, id ) => {
+
+		const canonicalId = identities.get( id );
+		return canonicalId === undefined ? name : `fn<capture-fn-id:${ canonicalId }>`;
+
+	} );
 
 }
 

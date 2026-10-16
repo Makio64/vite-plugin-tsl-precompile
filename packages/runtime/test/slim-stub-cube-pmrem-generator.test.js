@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Color } from 'three/src/math/Color.js';
 import { Vector3 } from 'three/src/math/Vector3.js';
 import { Scene } from 'three/src/scenes/Scene.js';
@@ -209,8 +209,9 @@ test( 'cube PMREM async entry points initialize before rendering and reject mism
 
 } );
 
-const externalRoot = process.env.TSLP_THREE_SOURCE_ROOT;
-const native187 = externalRoot && /REVISION\s*=\s*['"]187dev['"]/.test( readFileSync( resolve( externalRoot, 'src/constants.js' ), 'utf8' ) );
+// A pinned r187dev checkout, or the installed package when it is the vendored r187dev build.
+const externalRoot = process.env.TSLP_THREE_SOURCE_ROOT || dirname( dirname( fileURLToPath( import.meta.resolve( 'three/src/constants.js' ) ) ) );
+const native187 = /REVISION\s*=\s*['"]187dev['"]/.test( readFileSync( resolve( externalRoot, 'src/constants.js' ), 'utf8' ) );
 test( 'pinned native r187 all-operation scheduling, uniform values and camera matrices match compiler-free replay exactly', { skip: ! native187 }, async () => {
 
 	const { default: Native } = await import( pathToFileURL( resolve( externalRoot, 'src/renderers/common/extras/PMREMGenerator.js' ) ).href );

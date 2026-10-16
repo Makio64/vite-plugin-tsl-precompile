@@ -8,6 +8,12 @@ import { VIEWPORT_TEXTURE_IDENTITY_SCHEMA } from '@tsl-precompile/contract/dynam
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
 import { assertFullscreenQuadCapture, renderCapturedFullscreenQuad } from '../../src/vendor/capture-fullscreen-quad.js';
 
+// r187dev compact Fn layouts emit generic `fnN` WGSL names; match the operator bodies as well.
+const REINHARD = /reinhardToneMapping|\/ \( (\w+) \+ vec3<f32>\( 1\.0 \) \)/i;
+const NEUTRAL = /neutralToneMapping|< 0\.76 \)/i;
+// r186 keys Renderer._quadCache by the output texture, r187dev by its RenderTarget.
+const cachedQuad = ( renderer, target ) => renderer._quadCache.get( target ) || renderer._quadCache.get( target.texture );
+
 test( 'isolated fullscreen capture preserves native r186 screen samples and explicit offscreen MSAA', async () => {
 
 	installMockWebGPU();
@@ -651,7 +657,7 @@ test( 'compileTSL correlates the active renderer output across stale caches and 
 			captureRendererOutput: true,
 		} );
 		assert.ok( first.renderOutputCapture, 'fresh capture produces an exact renderer-output sidecar' );
-		assert.match( first.renderOutputCapture.artifact.fragmentShader, /reinhardToneMapping/i );
+		assert.match( first.renderOutputCapture.artifact.fragmentShader, REINHARD );
 
 		renderer.setOutputRenderTarget( secondOutput );
 		renderer.toneMapping = core.NeutralToneMapping;
@@ -663,10 +669,13 @@ test( 'compileTSL correlates the active renderer output across stale caches and 
 		} );
 
 		const outputArtifacts = second.filter( ( artifact ) => artifact.materialShape === 'output-transform' );
-		assert.equal( outputArtifacts.length, 2, 'the accumulated cache still contains the stale first output' );
-		assert.match( outputArtifacts[ 0 ].fragmentShader, /reinhardToneMapping/i );
-		assert.match( second.renderOutputCapture.artifact.fragmentShader, /neutralToneMapping/i );
-		assert.equal( second.renderOutputCapture.artifact.materialUuid, renderer._quadCache.get( renderer._frameBufferTargets.get( secondOutput ).texture ).quad.material.uuid );
+		// r186 still harvests the stale first output from its accumulated cache. The r187dev harvest
+		// holds only the active output's quad; either way the active output must be selected below.
+		const staleOutputHarvested = core.REVISION === '186';
+		assert.equal( outputArtifacts.length, staleOutputHarvested ? 2 : 1, 'harvested renderer outputs' );
+		if ( staleOutputHarvested ) assert.match( outputArtifacts[ 0 ].fragmentShader, REINHARD );
+		assert.match( second.renderOutputCapture.artifact.fragmentShader, NEUTRAL );
+		assert.equal( second.renderOutputCapture.artifact.materialUuid, cachedQuad( renderer, renderer._frameBufferTargets.get( secondOutput ) ).quad.material.uuid );
 		assert.equal( renderer.getRenderTarget(), offscreen, 'capture restores the caller-owned offscreen target' );
 		assert.equal( renderer.getActiveCubeFace(), 3, 'capture restores the caller-owned cube face' );
 		assert.equal( renderer.getActiveMipmapLevel(), 2, 'capture restores the caller-owned mip level' );

@@ -24,6 +24,14 @@ import {
 	SLIM_BUNDLE_VERSIONS,
 	createSlimBundleProvenancePlugin,
 } from '../rollup.config.js';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+
+// The checked-in prebuilt targets the stable release. With the pinned r187dev build installed,
+// verify a candidate bundle by pointing TSLP_TEST_CHECKED_SLIM_DIR at its build directory (or point
+// TSLP_THREE_SOURCE_ROOT at the stable package to verify the checked file).
+const CHECKED_SLIM = process.env.TSLP_TEST_CHECKED_SLIM_DIR || SLIM_BUNDLE_VERSIONS.three === SLIM_THREE_PACKAGE_VERSION
+	? {}
+	: { skip: `checked prebuilt targets three ${ SLIM_THREE_PACKAGE_VERSION }; build inputs resolve ${ SLIM_BUNDLE_VERSIONS.three }` };
 
 const VERSIONS = createSlimBundleVersionIdentity( {
 	threeVersion: '0.185.1',
@@ -209,7 +217,7 @@ test( 'in-memory Rollup emits a post-transform stamp and final-bundle SHA sideca
 
 } );
 
-test( 'checked slim bundle and sidecar match the current source inputs', async () => {
+test( 'checked slim bundle and sidecar match the current source inputs', CHECKED_SLIM, async () => {
 
 	const buildDirectory = process.env.TSLP_TEST_CHECKED_SLIM_DIR || new URL( '../build/', import.meta.url );
 	const [ bundleSource, metadata, expectedSource ] = await Promise.all( [

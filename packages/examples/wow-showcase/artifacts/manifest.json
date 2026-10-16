@@ -1,18 +1,20 @@
 {
   "__aux": {
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "eea5ee9b1eee111b48d5768bee617d87bbbe1f97eacdeafb662e929653f4bb73",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:35:43.838Z"
+      "capturedAt": "2026-10-16T05:02:16.133Z"
     }
   },
   "wow-race-surface": {
-    "file": "wow-race-surface.c307a4223a54.json",
-    "hash": "c307a4223a5498026668e1ead247048bb5759fac31c7e8b3c0b0eac8b9318138",
+    "file": "wow-race-surface.650b5cf94f9c.json",
+    "hash": "650b5cf94f9cad874cafa708acce6f4912fefc5035a84ad42622c0b77c50826c",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -25,11 +27,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:43.873Z"
+    "capturedAt": "2026-10-16T05:02:16.166Z"
   },
   "wow-race-accent": {
-    "file": "wow-race-accent.fc327d139e10.json",
-    "hash": "fc327d139e10596211686ac0c011127def9a0ffcd699e3758a523edd0e83e4f9",
+    "file": "wow-race-accent.7cfeb0ddb5b2.json",
+    "hash": "7cfeb0ddb5b2d25b5f9e7d00ca731df43ce3536d4861d535d0038736dc52cbb4",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -42,11 +44,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:43.887Z"
+    "capturedAt": "2026-10-16T05:02:16.180Z"
   },
   "wow-tool-surface": {
-    "file": "wow-tool-surface.a09d43468283.json",
-    "hash": "a09d434682830a025f030c316659c7755192f70de8a36ac34b82ec5d80dcfaa8",
+    "file": "wow-tool-surface.c754ba6eb1ec.json",
+    "hash": "c754ba6eb1ec9547d7a56bb0e2b9ca16090d0c5a1cea17137f738dd250b5675a",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -59,11 +61,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:45.260Z"
+    "capturedAt": "2026-10-16T05:02:17.494Z"
   },
   "wow-tool-accent": {
-    "file": "wow-tool-accent.82b26148c2f9.json",
-    "hash": "82b26148c2f9d33fbd4b4a01444c848c6e2f6b7743cc288d96036899d6ed9579",
+    "file": "wow-tool-accent.6c7495d80ca6.json",
+    "hash": "6c7495d80ca6fcee0d37f5c451c205f230a0a05b05a5cc5f691d3d48ca2368c4",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -76,11 +78,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:45.279Z"
+    "capturedAt": "2026-10-16T05:02:17.506Z"
   },
   "wow-women-surface": {
-    "file": "wow-women-surface.55ef909214a0.json",
-    "hash": "55ef909214a0d4243134b0c3695b308e05b975f66dec0df313304298041fbcbd",
+    "file": "wow-women-surface.bcd930d9b937.json",
+    "hash": "bcd930d9b93782594a5f2e4c58c7a52d3073c436e03c02b7c5774bdc8ba2809f",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -93,11 +95,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:46.633Z"
+    "capturedAt": "2026-10-16T05:02:18.872Z"
   },
   "wow-women-accent": {
-    "file": "wow-women-accent.c6c197130721.json",
-    "hash": "c6c19713072194e79cd53b40a4ec8db66005f806c28c06d8666e7fa1f366a8f9",
+    "file": "wow-women-accent.139cbc3936e5.json",
+    "hash": "139cbc3936e546999c3e81a99438467e2056e75ea021df2ed1590803347f55a0",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -110,11 +112,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:46.651Z"
+    "capturedAt": "2026-10-16T05:02:18.885Z"
   },
   "wow-robots-surface": {
-    "file": "wow-robots-surface.ab55631c15e7.json",
-    "hash": "ab55631c15e713f2e263bbf59dd5ab61b5fc6dbf39d4bdb2f984b98e39645099",
+    "file": "wow-robots-surface.14d70f5a4cf1.json",
+    "hash": "14d70f5a4cf1393d686b8c429384ba72c4bc672dd76f46949691e653d0c4855d",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -127,11 +129,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:47.982Z"
+    "capturedAt": "2026-10-16T05:02:20.260Z"
   },
   "wow-robots-accent": {
-    "file": "wow-robots-accent.98c8c29f52ef.json",
-    "hash": "98c8c29f52ef5d237a7d7f840146b8b4241326e20de04c92b96f7104bc480e64",
+    "file": "wow-robots-accent.497318a690a3.json",
+    "hash": "497318a690a3b56f8b7cd071b8fe888ef233f1ec54f1a43ab34a84a38040d67f",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -144,11 +146,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:47.996Z"
+    "capturedAt": "2026-10-16T05:02:20.271Z"
   },
   "wow-abyss-surface": {
-    "file": "wow-abyss-surface.f4e11b8f8332.json",
-    "hash": "f4e11b8f8332c37233f370aa5326ad8ff458ad7277fb23266752d8c6032a9a2b",
+    "file": "wow-abyss-surface.8dfaec97b3f1.json",
+    "hash": "8dfaec97b3f1ed3618b98f26d78124548e01b6876fe762d1dc17e275802d0ee0",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -161,11 +163,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:49.335Z"
+    "capturedAt": "2026-10-16T05:02:21.632Z"
   },
   "wow-abyss-accent": {
-    "file": "wow-abyss-accent.087096170adc.json",
-    "hash": "087096170adce54b70e81e12d44caf9a7aa590310ceaea5e3e3c56f33764b9e7",
+    "file": "wow-abyss-accent.7a77687de269.json",
+    "hash": "7a77687de26940bc4d8fdcf9e9e156e3bf29fba3ec8925cdb7adb19bfc16f6a9",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -178,11 +180,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:49.348Z"
+    "capturedAt": "2026-10-16T05:02:21.645Z"
   },
   "wow-orbit-surface": {
-    "file": "wow-orbit-surface.257e16fcc9fa.json",
-    "hash": "257e16fcc9faf7154e5db5e42080832cd01c580a6674676686f57e16bc1bd8ba",
+    "file": "wow-orbit-surface.1bc77e8104cb.json",
+    "hash": "1bc77e8104cba978e2de4a80f1c71107127b0ce9f85f71c637325bc5e07ebd08",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -195,11 +197,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:50.647Z"
+    "capturedAt": "2026-10-16T05:02:22.966Z"
   },
   "wow-orbit-accent": {
-    "file": "wow-orbit-accent.d5aa6294be85.json",
-    "hash": "d5aa6294be85714c12c65a161768ef1535881494c10de39a9642f12da8cede55",
+    "file": "wow-orbit-accent.b304117d5132.json",
+    "hash": "b304117d5132ea7351fdf5a8755d9de683a4212eef461ee9fa0e5ecf26f939fc",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -212,45 +214,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:50.664Z"
-  },
-  "wow-architecture-surface": {
-    "file": "wow-architecture-surface.ea27f2351cee.json",
-    "hash": "ea27f2351ceea9e3a86827f9d610107e3e5d009f0a5a2291533e75d6f613a310",
-    "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
-    "sourceIdentityKind": "callsite",
-    "sourceOwners": [
-      {
-        "identity": "src/markers.js:precompile:0",
-        "revision": "69840c654bc477a293e30487db92d5f2173275efcd6d470adc0c0a3a4a64b58e",
-        "provenance": {
-          "schema": "marker-source-closure@1",
-          "dependencies": []
-        }
-      }
-    ],
-    "capturedAt": "2026-10-13T10:35:50.843Z"
-  },
-  "wow-architecture-accent": {
-    "file": "wow-architecture-accent.4ee7f49d8ff4.json",
-    "hash": "4ee7f49d8ff4557633461c0604f0424cddfbe5a2f9f16ffc65fe623b0b653dd5",
-    "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
-    "sourceIdentityKind": "callsite",
-    "sourceOwners": [
-      {
-        "identity": "src/markers.js:precompile:0",
-        "revision": "69840c654bc477a293e30487db92d5f2173275efcd6d470adc0c0a3a4a64b58e",
-        "provenance": {
-          "schema": "marker-source-closure@1",
-          "dependencies": []
-        }
-      }
-    ],
-    "capturedAt": "2026-10-13T10:35:50.860Z"
+    "capturedAt": "2026-10-16T05:02:22.978Z"
   },
   "wow-pulse-accent": {
-    "file": "wow-pulse-accent.9a05559165d6.json",
-    "hash": "9a05559165d6945debd88ae808075b360f005c67b37a2395c904d1a0c52e86d3",
+    "file": "wow-pulse-accent.acb06420426a.json",
+    "hash": "acb06420426a74f5a433cdfb985685117c0b89946963097570d3909529873e89",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -263,11 +231,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:52.033Z"
+    "capturedAt": "2026-10-16T05:02:24.308Z"
   },
   "wow-pulse-surface": {
-    "file": "wow-pulse-surface.f6a8e9721ec1.json",
-    "hash": "f6a8e9721ec1780a6ea190b2451f2ea7ca48642490782ec4a5519bd72c9b7361",
+    "file": "wow-pulse-surface.6506ea2240b2.json",
+    "hash": "6506ea2240b2f4a4a6ec8213b4bfd24c89e240e56ae1773b7b0453a561e8a1a1",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -280,11 +248,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:52.053Z"
+    "capturedAt": "2026-10-16T05:02:24.319Z"
   },
   "wow-climate-surface": {
-    "file": "wow-climate-surface.ec980bbb9416.json",
-    "hash": "ec980bbb9416cc41ccc68b9a4df9c4f49caf3e981076c5e9ba9fb29a6506ae27",
+    "file": "wow-climate-surface.8e669911b7af.json",
+    "hash": "8e669911b7af5b699c35e0dc283fd7911f41035f180a97579681938b24923056",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -297,11 +265,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:53.397Z"
+    "capturedAt": "2026-10-16T05:02:25.681Z"
   },
   "wow-climate-accent": {
-    "file": "wow-climate-accent.f225d5a8f0f8.json",
-    "hash": "f225d5a8f0f8bfa4102372f49ec72838a177b1fcc5989878bb9522360ad8442f",
+    "file": "wow-climate-accent.2270892cca61.json",
+    "hash": "2270892cca61904aa407f051d2117bc7e823f4a5c22d1f4a648164ddd70d09e1",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -314,11 +282,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:53.410Z"
+    "capturedAt": "2026-10-16T05:02:25.693Z"
   },
   "wow-fashion-accent": {
-    "file": "wow-fashion-accent.63bb3468dd3f.json",
-    "hash": "63bb3468dd3fabd19a29a3db42b3dd3cfcd3e9417bf7f510cb5e021c6e4891fa",
+    "file": "wow-fashion-accent.ee531bef7092.json",
+    "hash": "ee531bef70928b7138ab2ce62543e5e03e6b640a8810a1a2164a0e8638973402",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -331,11 +299,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:54.769Z"
+    "capturedAt": "2026-10-16T05:02:27.024Z"
   },
   "wow-fashion-surface": {
-    "file": "wow-fashion-surface.8e7fcac0a66a.json",
-    "hash": "8e7fcac0a66a42256c7e40c994264f3e25547ccb2dba561735a1146636e0b6a9",
+    "file": "wow-fashion-surface.e3cb003f9b10.json",
+    "hash": "e3cb003f9b10030b45004d5e2111504168b2e131842baf279d61c0ac9b14afd8",
     "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -348,6 +316,40 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:35:54.782Z"
+    "capturedAt": "2026-10-16T05:02:27.036Z"
+  },
+  "wow-architecture-surface": {
+    "file": "wow-architecture-surface.72d2321478da.json",
+    "hash": "72d2321478da3885075773134031e4cc3359c4ce95f533e46415c231b147c2b3",
+    "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/markers.js:precompile:0",
+        "revision": "69840c654bc477a293e30487db92d5f2173275efcd6d470adc0c0a3a4a64b58e",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-10-16T05:02:28.360Z"
+  },
+  "wow-architecture-accent": {
+    "file": "wow-architecture-accent.32e9cc0bb3c2.json",
+    "hash": "32e9cc0bb3c2e456711b4d2eb4979a68ab2642e2ee7059a081b99e1678411dba",
+    "sourceIdentity": "56ab0739dad56f4aa4fc558dfcfd6bf91091f9a13e4ee91223654484a4b810cd",
+    "sourceIdentityKind": "callsite",
+    "sourceOwners": [
+      {
+        "identity": "src/markers.js:precompile:0",
+        "revision": "69840c654bc477a293e30487db92d5f2173275efcd6d470adc0c0a3a4a64b58e",
+        "provenance": {
+          "schema": "marker-source-closure@1",
+          "dependencies": []
+        }
+      }
+    ],
+    "capturedAt": "2026-10-16T05:02:28.371Z"
   }
 }

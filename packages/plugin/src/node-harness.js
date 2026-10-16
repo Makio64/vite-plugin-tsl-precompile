@@ -24,7 +24,7 @@
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactContentHash, computeArtifactHash } from './hash.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
-import { captureEmitterOptions } from './capture-emitter-identity.js';
+import { captureEmitterOptions, withInstalledCaptureEmitter } from './capture-emitter-identity.js';
 import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
@@ -74,6 +74,7 @@ async function importThree() {
 export async function extractMaterial( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const emitterOptions = captureEmitterOptions( core, opts );
 
 	const renderer = new webgpu.WebGPURenderer( {

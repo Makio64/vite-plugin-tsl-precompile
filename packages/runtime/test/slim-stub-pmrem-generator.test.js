@@ -10,10 +10,15 @@ import {
 	CubeReflectionMapping,
 	EquirectangularReflectionMapping,
 	HalfFloatType,
+	REVISION,
 	RGBAFormat,
 } from 'three/src/constants.js';
 
 import PMREMGenerator, { createPMREMReplayConfig } from '../src/slim-stub-pmrem-generator.js';
+
+// These schedules mirror the r186 CubeUV-atlas generator. On r187dev the module's default export is
+// the cube render-target generator, covered by slim-stub-cube-pmrem-generator.test.js.
+const PMREM_ATLAS = REVISION === '186' ? {} : { skip: `three r${ REVISION } uses cube PMREM (see slim-stub-cube-pmrem-generator.test.js)` };
 import NativePMREMGenerator from 'three/src/renderers/common/extras/PMREMGenerator.js';
 import {
 	__resetAuxRegistryForTests,
@@ -206,7 +211,7 @@ test( 'slim PMREM generator stays constructible and compile hints stay graph-fre
 
 } );
 
-test( 'slim PMREM generator schedules captured source and GGX passes without a full renderer', () => {
+test( 'slim PMREM generator schedules captured source and GGX passes without a full renderer', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const config = createPMREMReplayConfig( 32 );
@@ -238,7 +243,7 @@ test( 'slim PMREM generator schedules captured source and GGX passes without a f
 
 } );
 
-test( 'slim PMREM selects distinct equirect and cubemap support at the same atlas layout', () => {
+test( 'slim PMREM selects distinct equirect and cubemap support at the same atlas layout', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const config = createPMREMReplayConfig( 32 );
@@ -276,7 +281,7 @@ test( 'slim PMREM selects distinct equirect and cubemap support at the same atla
 
 } );
 
-test( 'slim PMREM fromScene uses the native face order and clears solid backgrounds without a live material', () => {
+test( 'slim PMREM fromScene uses the native face order and clears solid backgrounds without a live material', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const config = createPMREMReplayConfig( 32 );
@@ -326,7 +331,7 @@ test( 'slim PMREM fromScene uses the native face order and clears solid backgrou
 
 } );
 
-test( 'slim PMREM fromScene selects the scene blur family when sigma is nonzero', () => {
+test( 'slim PMREM fromScene selects the scene blur family when sigma is nonzero', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const config = createPMREMReplayConfig( 32 );
@@ -361,7 +366,7 @@ test( 'slim PMREM fromScene selects the scene blur family when sigma is nonzero'
 
 } );
 
-test( 'slim scene blur schedules the native spherical Gaussian passes and clamps large radii', () => {
+test( 'slim scene blur schedules the native spherical Gaussian passes and clamps large radii', PMREM_ATLAS, () => {
 
 	for ( const sigma of [ 0.02, Math.PI, 10, Infinity ] ) {
 
@@ -387,7 +392,7 @@ test( 'slim scene blur schedules the native spherical Gaussian passes and clamps
 
 } );
 
-test( 'slim PMREM atlas attributes and every vertex match native r186 geometry', () => {
+test( 'slim PMREM atlas attributes and every vertex match native r186 geometry', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const layout = createPMREMReplayConfig( 64 );
@@ -432,7 +437,7 @@ test( 'slim PMREM atlas attributes and every vertex match native r186 geometry',
 
 } );
 
-test( 'slim PMREM restores renderer autoClear when a captured GGX draw fails', () => {
+test( 'slim PMREM restores renderer autoClear when a captured GGX draw fails', PMREM_ATLAS, () => {
 
 	__resetAuxRegistryForTests();
 	const config = createPMREMReplayConfig( 32 );

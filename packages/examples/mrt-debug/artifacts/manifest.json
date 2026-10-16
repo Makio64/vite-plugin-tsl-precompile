@@ -1,72 +1,86 @@
 {
   "__aux": {
-    "post-process:94c44a749752503f9e131d738cd258f7374c2e15a5dce96ef55f306f9d6bd655": {
-      "file": "aux-post-process-94c44a749752.json",
+    "post-process:288dd816111c5478b6520a220025c8a794290a8df100e6311f042ae0093f0915": {
+      "file": "aux-post-process-288dd816111c.json",
       "shape": "post-process",
-      "configHash": "94c44a749752503f9e131d738cd258f7374c2e15a5dce96ef55f306f9d6bd655",
-      "hash": "bd738cf38c20ef0e9eaf3f6bcea726b23674cdb104c0f32594473fa540a907b1",
-      "threeVersion": "0.186.1",
+      "configHash": "288dd816111c5478b6520a220025c8a794290a8df100e6311f042ae0093f0915",
+      "hash": "6d8ade03c87b4967d7660ea2ac37a6f697c51de8401a8fd7aea5a5b047e3e20c",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:00.214Z"
+      "capturedAt": "2026-10-16T05:01:56.835Z"
     },
-    "mrt:189b6818af67c5d2431e9a7bd9adb99030aafa6e5e1d13416de7a0b813dc5fcc": {
-      "file": "aux-mrt-189b6818af67.json",
+    "mrt:24e97576735c6ec467f655378d18267fe07bbdb265cc8501a30d9c8351cb411a": {
+      "file": "aux-mrt-24e97576735c.json",
       "shape": "mrt",
-      "configHash": "189b6818af67c5d2431e9a7bd9adb99030aafa6e5e1d13416de7a0b813dc5fcc",
-      "hash": "8f1c12aa398f8e80f037907bd20a7108ed81c8aabf23af35d48a278843438a59",
-      "threeVersion": "0.186.1",
+      "configHash": "24e97576735c6ec467f655378d18267fe07bbdb265cc8501a30d9c8351cb411a",
+      "hash": "1886e1d6d3c899c168130b7d0c9324948623d7890e46365e26810511f69de3c0",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:00.303Z"
+      "capturedAt": "2026-10-16T05:01:56.916Z"
     },
-    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
-      "file": "aux-lights-499bfad6a893.json",
+    "lights:a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776": {
+      "file": "aux-lights-a97cd2e6605a.json",
       "shape": "lights",
-      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
-      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
-      "threeVersion": "0.186.1",
+      "configHash": "a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776",
+      "hash": "3a1378bf8ab75459e1ce7c8dc18b743a3293a27a782e89df87ff0033791f4ee0",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:00.305Z"
+      "capturedAt": "2026-10-16T05:01:56.920Z"
     },
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "eea5ee9b1eee111b48d5768bee617d87bbbe1f97eacdeafb662e929653f4bb73",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:00.330Z"
+      "capturedAt": "2026-10-16T05:01:56.941Z"
     },
-    "post-process:7b3db37a8838a4775e70f81349c568bb8a6ca1934d575c086066dad3a98242e5": {
-      "file": "aux-post-process-7b3db37a8838.json",
+    "post-process:940bfb00b1317f1d081292d0f0e323fc0ebe878361a0537a08cd86962def2f3a": {
+      "file": "aux-post-process-940bfb00b131.json",
       "shape": "post-process",
-      "configHash": "7b3db37a8838a4775e70f81349c568bb8a6ca1934d575c086066dad3a98242e5",
-      "hash": "aed18ddb53995a86db2aed8e3f67eda15e83edce5073fbe249771d8499d656a1",
-      "threeVersion": "0.186.1",
+      "configHash": "940bfb00b1317f1d081292d0f0e323fc0ebe878361a0537a08cd86962def2f3a",
+      "hash": "150d0b2dedf87f7ec5aae4ac5778d3b64ec803be9a6112fc89620bd3133aced7",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:01.648Z"
+      "capturedAt": "2026-10-16T05:01:58.213Z"
     },
-    "mrt:3ad406b643fa580ccb64a1a2160a11353ed37a2fc26bb60abbf479ddfd4fd5f1": {
-      "file": "aux-mrt-3ad406b643fa.json",
+    "mrt:144e3254f8a33692a9e6661f341dd9a4dffa39f0a6e45569d8e194747d6687d8": {
+      "file": "aux-mrt-144e3254f8a3.json",
       "shape": "mrt",
-      "configHash": "3ad406b643fa580ccb64a1a2160a11353ed37a2fc26bb60abbf479ddfd4fd5f1",
-      "hash": "31915dd29c382dd028fa1c6d4d56b08f80bce5e1f59906b6a8d888c9e5512185",
-      "threeVersion": "0.186.1",
+      "configHash": "144e3254f8a33692a9e6661f341dd9a4dffa39f0a6e45569d8e194747d6687d8",
+      "hash": "bc780fc6bb2438ef83afe37328db5f09a16d804f3a851011cb1d3eacddad37a9",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:01.749Z"
+      "capturedAt": "2026-10-16T05:01:58.288Z"
     },
-    "post-process:27ee023d0eb19bd09918e1dd03ba764c058441459bee324720240c4fd2031ebf": {
-      "file": "aux-post-process-27ee023d0eb1.json",
+    "post-process:f7907690e5dec4141533ea96e695206a4d8aeca0e8015445eab8ec5185a22c38": {
+      "file": "aux-post-process-f7907690e5de.json",
       "shape": "post-process",
-      "configHash": "27ee023d0eb19bd09918e1dd03ba764c058441459bee324720240c4fd2031ebf",
-      "hash": "cdff62863a5ce1dafcb499072b70e205ab872dda2882a6c105569671a45efc81",
-      "threeVersion": "0.186.1",
+      "configHash": "f7907690e5dec4141533ea96e695206a4d8aeca0e8015445eab8ec5185a22c38",
+      "hash": "3ce6de010345c1b12c256f99e94f2b02515ab59faa4afd33960becfcb11d0f25",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:36:03.052Z"
+      "capturedAt": "2026-10-16T05:01:59.619Z"
     }
   },
   "mrt-pass-floor": {
-    "file": "mrt-pass-floor.e29d1166d078.json",
-    "hash": "e29d1166d078df34d526f423c1eb3dd5907179862f7cf0304d948baa78e8821e",
+    "file": "mrt-pass-floor.2d8491665af8.json",
+    "hash": "2d8491665af8d098a3eb05be6b0b8b0f1c2c981d1b68d3ea6e303929b9f70f5a",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -81,11 +95,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:00.373Z"
+    "capturedAt": "2026-10-16T05:01:56.989Z"
   },
   "mrt-pass-cube": {
-    "file": "mrt-pass-cube.2c54c6c19ef7.json",
-    "hash": "2c54c6c19ef7084e09605f3eef05ed90b2b1f3cdbf4ff539e494e7a7e7881637",
+    "file": "mrt-pass-cube.441e6066123f.json",
+    "hash": "441e6066123fb36906948b447e627fc0461b25be8f0a8f0eebb46fac80018206",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -100,11 +114,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:00.385Z"
+    "capturedAt": "2026-10-16T05:01:57.000Z"
   },
   "mrt-pass-sphere": {
-    "file": "mrt-pass-sphere.89bc2d7180d2.json",
-    "hash": "89bc2d7180d2d1ce5894b9d93672276f61d383a71c085273dc5aaef158583562",
+    "file": "mrt-pass-sphere.39137792bede.json",
+    "hash": "39137792bede89a151f6b0316ddaaa1e2dfc77ac41faa8f88bd86546164d5f56",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -119,11 +133,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:00.395Z"
+    "capturedAt": "2026-10-16T05:01:57.010Z"
   },
   "mrt-mask-floor": {
-    "file": "mrt-mask-floor.e6f3f5a1864b.json",
-    "hash": "e6f3f5a1864b8bdf882b706f646a640e74d3ce8475111190b1c681cf95df58cf",
+    "file": "mrt-mask-floor.56453e6a1d00.json",
+    "hash": "56453e6a1d007b2926951c6cb08d95cb6e79b3d669efd4198ddcd13fc9c3085e",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -138,11 +152,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:01.817Z"
+    "capturedAt": "2026-10-16T05:01:58.350Z"
   },
   "mrt-mask-cube": {
-    "file": "mrt-mask-cube.b975c9466bba.json",
-    "hash": "b975c9466bba68e4a3e8af5d2a11030b11d5803ac34440c19239b23ea704fee4",
+    "file": "mrt-mask-cube.6264d16ba48f.json",
+    "hash": "6264d16ba48f6539054af030da60d199697777a3970fa7d1d8adee6889b9580b",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -157,11 +171,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:01.829Z"
+    "capturedAt": "2026-10-16T05:01:58.359Z"
   },
   "mrt-mask-sphere": {
-    "file": "mrt-mask-sphere.fc147d199b44.json",
-    "hash": "fc147d199b442834a49164622abf85b45f4dc3afa8ab975912802b9d4763a048",
+    "file": "mrt-mask-sphere.94c4e1eb8181.json",
+    "hash": "94c4e1eb8181b466cb2b8f609a7f3d0c93603bdf7da2acee43b4e4712f8f7427",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -176,11 +190,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:01.840Z"
+    "capturedAt": "2026-10-16T05:01:58.368Z"
   },
   "mrt-manual-floor": {
-    "file": "mrt-manual-floor.dde9d8c8b1a2.json",
-    "hash": "dde9d8c8b1a2f5179220e953eb32a194d1ee193fefb3cb5537c1612327ea08ab",
+    "file": "mrt-manual-floor.6b1e48fbb58b.json",
+    "hash": "6b1e48fbb58b8c38235435096967f3f1acebbe680f60f109280c464eded3c310",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -195,11 +209,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:03.168Z"
+    "capturedAt": "2026-10-16T05:01:59.726Z"
   },
   "mrt-manual-cube": {
-    "file": "mrt-manual-cube.4e642a112738.json",
-    "hash": "4e642a112738dc75d42049e0e9d154c80c635524e57deb1e5bbcf54fb42aac76",
+    "file": "mrt-manual-cube.259ab74e95ed.json",
+    "hash": "259ab74e95edb366705041278b8fb243a09ff6dd8c55c65383b72cd49435e954",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -214,11 +228,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:03.341Z"
+    "capturedAt": "2026-10-16T05:01:59.899Z"
   },
   "mrt-manual-sphere": {
-    "file": "mrt-manual-sphere.b217946c02c5.json",
-    "hash": "b217946c02c5a6dafeaba4604d9a12328901ee2a200f61967b3091a2f5f61070",
+    "file": "mrt-manual-sphere.19c4454e58a3.json",
+    "hash": "19c4454e58a3e9d58fe7047a01e48826401cb36ca814a64488c2f2d134ffe79d",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -233,6 +247,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:36:03.362Z"
+    "capturedAt": "2026-10-16T05:01:59.916Z"
   }
 }

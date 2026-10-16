@@ -26,6 +26,14 @@ import { hashNodeGraphSync, hashPlainConfigSync } from '../../../runtime/src/gra
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
 import { assertInternalPassArtifact, validateInternalPassDescriptor } from '@tsl-precompile/contract/internal-pass';
 import { PMREM_SPHERICAL_GAUSSIAN_BLUR } from '@tsl-precompile/contract/pmrem-config';
+import { REVISION } from 'three';
+
+// The CubeUV-atlas PMREM expectations below are r186-specific. The pinned r187dev build renders
+// PMREM into cube render targets (with an extra integration stage); that path is exercised
+// against the same installed build by rewrite-pmrem-native-capture.test.js.
+const PMREM_ATLAS = REVISION === '186' ? {} : { skip: `three r${ REVISION } uses cube PMREM (see rewrite-pmrem-native-capture.test.js)` };
+// r187dev compact Fn layouts emit generic `fnN` WGSL names, so match the operator bodies too.
+const OUTPUT_TRANSFORM = /neutralToneMapping|sRGBTransferOETF|0\.0031308/;
 
 // -------- Background --------
 
@@ -94,8 +102,8 @@ test( 'aux/post-process: captures Three output transform instead of the raw colo
 	assert.equal( raw.artifact.replayConfig.outputColorTransform, false );
 	assert.equal( Object.hasOwn( transformed.artifact.replayConfig, 'logarithmicDepthBuffer' ), false );
 	assert.equal( Object.hasOwn( transformed.artifact.replayConfig, 'reversedDepthBuffer' ), false );
-	assert.match( transformed.artifact.fragmentShader, /neutralToneMapping|sRGBTransferOETF/ );
-	assert.doesNotMatch( raw.artifact.fragmentShader, /neutralToneMapping|sRGBTransferOETF/ );
+	assert.match( transformed.artifact.fragmentShader, OUTPUT_TRANSFORM );
+	assert.doesNotMatch( raw.artifact.fragmentShader, OUTPUT_TRANSFORM );
 	assert.equal(
 		transformed.artifact.uniformPlan.some( ( group ) => ( group.slots || [] ).some( ( slot ) => slot.source && slot.source.kind === 'renderer.toneMappingExposure' ) ),
 		true,
@@ -352,7 +360,7 @@ async function captureDirectPMREMShaders( kind, textureOptions = {} ) {
 
 }
 
-test( 'aux/pmrem: native fromScene spherical Gaussian shaders and semantic bindings survive extraction', async () => {
+test( 'aux/pmrem: native fromScene spherical Gaussian shaders and semantic bindings survive extraction', PMREM_ATLAS, async () => {
 
 	const direct = await captureDirectPMREMShaders( 'scene' );
 	const captured = await extractPMREMArtifact( ( { core } ) => {
@@ -413,11 +421,12 @@ test( 'aux/pmrem: scene extraction requires a real scene and an exercised blur o
 
 	await assert.rejects( extractPMREMArtifact( () => ( { kind: 'scene', scene: {} } ) ), /Three Scene/ );
 	for ( const sigma of [ 0, - 1, NaN, Infinity ] ) await assert.rejects( extractPMREMArtifact( ( { core } ) => ( { kind: 'scene', scene: new core.Scene(), sigma } ) ), /sigma > 0/ );
-	await assert.rejects( extractPMREMArtifact( ( { core } ) => ( { kind: 'scene', scene: new core.Scene(), size: 33 } ) ), /power-of-two integer/ );
+	// r187dev cube PMREM normalizes face sizes up to its 256-texel minimum instead.
+	if ( REVISION === '186' ) await assert.rejects( extractPMREMArtifact( ( { core } ) => ( { kind: 'scene', scene: new core.Scene(), size: 33 } ) ), /power-of-two integer/ );
 
 } );
 
-test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {
+test( 'aux/pmrem: equirect input produces a stamped artifact', PMREM_ATLAS, async () => {
 
 	let sourceTexture;
 	const r = await extractPMREMArtifact( ( { core } ) => {
@@ -433,7 +442,7 @@ test( 'aux/pmrem: equirect input produces a stamped artifact', async () => {
 
 } );
 
-test( 'aux/pmrem: captures the exercised stages with native face directions and target topology', async () => {
+test( 'aux/pmrem: captures the exercised stages with native face directions and target topology', PMREM_ATLAS, async () => {
 
 	let sourceTexture;
 	let halfFloatType;
@@ -527,7 +536,7 @@ test( 'aux/pmrem: captures the exercised stages with native face directions and 
 
 } );
 
-test( 'aux/pmrem: generated WGSL hashes match the direct Three.js render harvest', async () => {
+test( 'aux/pmrem: generated WGSL hashes match the direct Three.js render harvest', PMREM_ATLAS, async () => {
 
 	const direct = await captureDirectPMREMShaders( 'equirect' );
 	let sourceTexture;
@@ -557,7 +566,7 @@ test( 'aux/pmrem: generated WGSL hashes match the direct Three.js render harvest
 
 } );
 
-test( 'aux/pmrem: cubemap WGSL hashes match the direct Three.js render harvest', async () => {
+test( 'aux/pmrem: cubemap WGSL hashes match the direct Three.js render harvest', PMREM_ATLAS, async () => {
 
 	const direct = await captureDirectPMREMShaders( 'cube' );
 	let sourceTexture;
@@ -628,7 +637,7 @@ test( 'aux/pmrem: integer source topology follows Three r185 live WGSL declarati
 
 } );
 
-test( 'aux/pmrem: cube input captures cubemap topology and hashes the compiled atlas layout', async () => {
+test( 'aux/pmrem: cube input captures cubemap topology and hashes the compiled atlas layout', PMREM_ATLAS, async () => {
 
 	let source32;
 	const size32 = await extractPMREMArtifact( ( { core } ) => {

@@ -223,7 +223,7 @@
   },
   "peerDependencies": {
     "@types/three": "0.186.0",
-    "three": "0.186.0 || 0.186.1"
+    "three": "0.186.1 || 0.187.0-dev.ec2b745"
   },
   "peerDependenciesMeta": {
     "@types/three": { "optional": true },

@@ -1,0 +1,1949 @@
+{
+  "__materialShape": "pmrem-blur",
+  "__configHash": "8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1",
+  "__hash": "cfd84026365040e4e86b863bfd45c86680d1a0536689d49c14e27ce8243dedb4",
+  "__name": "aux-pmrem-blur-8a03a161503c",
+  "threeVersion": "0.187.0-dev.ec2b745",
+  "threeRevision": "187dev",
+  "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 9217653231205574,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:9217653231205574",
+    "materialShape": "pmrem-blur",
+    "vertexShader": "// Three.js r187dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform2 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - v_positionView );\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform3 * normalLocal ), 0.0 ) ).xyz );\n\tvaryings.v_positionWorldDirection = normalize( ( object.nodeUniform2 * vec4<f32>( positionLocal, 0.0 ) ).xyz );\n\tlet VERTEX_nodeConst2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeConst2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r187dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform5_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform5 : texture_cube<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> reflectVector : vec3<f32>;\nvar<private> positionWorldDirection : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : f32;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tNORMAL_normalView = ( normalViewGeometry * vec3<f32>( -1.0 ) );\n\tnormalView = NORMAL_normalView;\n\treflectVector = normalize( ( render.cameraWorldMatrix * vec4<f32>( reflect( ( - positionViewDirection ), normalView ), 0.0 ) ).xyz );\n\tpositionWorldDirection = normalize( v_positionWorldDirection );\n\tnodeVar0 = positionWorldDirection;\n\n\tif ( ( abs( nodeVar0.z ) < 0.999 ) ) {\n\n\t\tnodeVar1 = vec3<f32>( 0.0, 0.0, 1.0 );\n\n\t} else {\n\n\t\tnodeVar1 = vec3<f32>( 1.0, 0.0, 0.0 );\n\n\t}\n\n\tnodeVar2 = normalize( cross( nodeVar1, nodeVar0 ) );\n\tnodeVar3 = cross( nodeVar0, nodeVar2 );\n\tlet nodeConst0 = min( ( object.nodeUniform4 * 3.0 ), 3.141592653589793 );\n\tnodeVar4 = ( 1.0 - exp( ( ( ( nodeConst0 * nodeConst0 ) * -0.5 ) / ( object.nodeUniform4 * object.nodeUniform4 ) ) ) );\n\tnodeVar5 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = 0.0;\n\n\tfor ( var i : i32 = 0; i < 20; i ++ ) {\n\n\t\tnodeVar7 = ( object.nodeUniform4 * sqrt( ( log( ( 1.0 - ( ( ( f32( i ) + 0.5 ) / 20.0 ) * nodeVar4 ) ) ) * -2.0 ) ) );\n\t\tnodeVar8 = ( f32( i ) * 2.399963229728653 );\n\t\tnodeVar9 = ( sin( nodeVar7 ) / nodeVar7 );\n\t\tlet nodeConst1 = ( ( nodeVar0 * vec3<f32>( cos( nodeVar7 ) ) ) + ( ( ( nodeVar2 * vec3<f32>( cos( nodeVar8 ) ) ) + ( nodeVar3 * vec3<f32>( sin( nodeVar8 ) ) ) ) * vec3<f32>( sin( nodeVar7 ) ) ) );\n\t\tnodeVar10 = textureSampleLevel( nodeUniform5, nodeUniform5_sampler, vec3<f32>( ( - nodeConst1.x ), nodeConst1.yz ), 0.0 );\n\t\tnodeVar5 = ( nodeVar5 + ( nodeVar10.xyz * vec3<f32>( nodeVar9 ) ) );\n\t\tnodeVar6 = ( nodeVar6 + nodeVar9 );\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( ( nodeVar5 / vec3<f32>( nodeVar6 ) ), 1.0 );\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      },
+      {
+        "name": "normal",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 192,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 128,
+            "access": null
+          },
+          {
+            "name": "nodeUniform5_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform5",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "cube",
+            "byteLength": null,
+            "access": "readOnly"
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 192,
+        "slots": [
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  -1.0000000000000002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1.0000000000000002,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1.1111111111111112,
+                  -1,
+                  0,
+                  0,
+                  -1.1111111111111112,
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraWorldMatrix",
+            "offset": 128,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 192,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      -1,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraWorldMatrix",
+                "offset": 128,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 7,
+        "byteLength": 128,
+        "slots": [
+          {
+            "name": "nodeUniform2",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform3",
+            "offset": 64,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "object.normalMatrix",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform4",
+            "offset": 112,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.014142135623730949
+              },
+              "liveNodeId": 0,
+              "nodePath": [
+                "fragmentNode",
+                "rawInputs",
+                "0",
+                "sigma"
+              ]
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform5_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+              "textureName": "PMREM",
+              "mapping": 301,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1008,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "srgb-linear",
+              "flipY": false,
+              "isPMREMTexture": true
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform5",
+            "textureType": "cube",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+              "textureName": "PMREM",
+              "mapping": 301,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1008,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "srgb-linear",
+              "flipY": false,
+              "isPMREMTexture": true
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 128,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform2",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 64,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "object.normalMatrix",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 112,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.014142135623730949
+                  },
+                  "liveNodeId": 0,
+                  "nodePath": [
+                    "fragmentNode",
+                    "rawInputs",
+                    "0",
+                    "sigma"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform5_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                "textureName": "PMREM",
+                "mapping": 301,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1008,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "srgb-linear",
+                "flipY": false,
+                "isPMREMTexture": true
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform5",
+              "textureType": "cube",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                "textureName": "PMREM",
+                "mapping": 301,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1008,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "srgb-linear",
+                "flipY": false,
+                "isPMREMTexture": true
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 1,
+      "depthTest": false,
+      "depthWrite": false,
+      "depthFunc": 3,
+      "blending": 0,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 7,
+      "updateBeforeNodes": 0,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":1,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":2,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":3,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":4,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":5,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "e0bf0444-4a65-480c-bc64-bd8272b8413f",
+    "userMaterialUuid": "e0bf0444-4a65-480c-bc64-bd8272b8413f",
+    "captureClock": 0.05809999999403954,
+    "variants": {
+      "webgpu:16311902934153656": {
+        "version": 3,
+        "cacheKey": 16311902934153656,
+        "variantKey": "webgpu:16311902934153656",
+        "shaderLanguage": "wgsl",
+        "renderContextSelectors": [
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":1,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":2,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":3,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":4,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":5,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}"
+        ],
+        "materialShape": "pmrem-blur",
+        "vertexShader": "// Three.js r187dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform2 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - v_positionView );\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform3 * normalLocal ), 0.0 ) ).xyz );\n\tvaryings.v_positionWorldDirection = normalize( ( object.nodeUniform2 * vec4<f32>( positionLocal, 0.0 ) ).xyz );\n\tlet VERTEX_nodeConst2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeConst2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+        "fragmentShader": "// Three.js r187dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform5_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform5 : texture_cube<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> reflectVector : vec3<f32>;\nvar<private> positionWorldDirection : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : f32;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tNORMAL_normalView = ( normalViewGeometry * vec3<f32>( -1.0 ) );\n\tnormalView = NORMAL_normalView;\n\treflectVector = normalize( ( render.cameraWorldMatrix * vec4<f32>( reflect( ( - positionViewDirection ), normalView ), 0.0 ) ).xyz );\n\tpositionWorldDirection = normalize( v_positionWorldDirection );\n\tnodeVar0 = positionWorldDirection;\n\n\tif ( ( abs( nodeVar0.z ) < 0.999 ) ) {\n\n\t\tnodeVar1 = vec3<f32>( 0.0, 0.0, 1.0 );\n\n\t} else {\n\n\t\tnodeVar1 = vec3<f32>( 1.0, 0.0, 0.0 );\n\n\t}\n\n\tnodeVar2 = normalize( cross( nodeVar1, nodeVar0 ) );\n\tnodeVar3 = cross( nodeVar0, nodeVar2 );\n\tlet nodeConst0 = min( ( object.nodeUniform4 * 3.0 ), 3.141592653589793 );\n\tnodeVar4 = ( 1.0 - exp( ( ( ( nodeConst0 * nodeConst0 ) * -0.5 ) / ( object.nodeUniform4 * object.nodeUniform4 ) ) ) );\n\tnodeVar5 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = 0.0;\n\n\tfor ( var i : i32 = 0; i < 20; i ++ ) {\n\n\t\tnodeVar7 = ( object.nodeUniform4 * sqrt( ( log( ( 1.0 - ( ( ( f32( i ) + 0.5 ) / 20.0 ) * nodeVar4 ) ) ) * -2.0 ) ) );\n\t\tnodeVar8 = ( f32( i ) * 2.399963229728653 );\n\t\tnodeVar9 = ( sin( nodeVar7 ) / nodeVar7 );\n\t\tlet nodeConst1 = ( ( nodeVar0 * vec3<f32>( cos( nodeVar7 ) ) ) + ( ( ( nodeVar2 * vec3<f32>( cos( nodeVar8 ) ) ) + ( nodeVar3 * vec3<f32>( sin( nodeVar8 ) ) ) ) * vec3<f32>( sin( nodeVar7 ) ) ) );\n\t\tnodeVar10 = textureSampleLevel( nodeUniform5, nodeUniform5_sampler, vec3<f32>( ( - nodeConst1.x ), nodeConst1.yz ), 0.0 );\n\t\tnodeVar5 = ( nodeVar5 + ( nodeVar10.xyz * vec3<f32>( nodeVar9 ) ) );\n\t\tnodeVar6 = ( nodeVar6 + nodeVar9 );\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( ( nodeVar5 / vec3<f32>( nodeVar6 ) ), 1.0 );\n\n\treturn output;\n\n}\n",
+        "computeShader": "",
+        "attributes": [
+          {
+            "name": "position",
+            "type": "vec3",
+            "source": "geometry"
+          },
+          {
+            "name": "normal",
+            "type": "vec3",
+            "source": "geometry"
+          }
+        ],
+        "bindings": [
+          {
+            "name": "render",
+            "bindings": [
+              {
+                "name": "render",
+                "kind": "uniform-buffer",
+                "visibility": 7,
+                "textureType": null,
+                "byteLength": 192,
+                "access": null
+              }
+            ]
+          },
+          {
+            "name": "object",
+            "bindings": [
+              {
+                "name": "object",
+                "kind": "uniform-buffer",
+                "visibility": 7,
+                "textureType": null,
+                "byteLength": 128,
+                "access": null
+              },
+              {
+                "name": "nodeUniform5_sampler",
+                "kind": "sampler",
+                "visibility": 2,
+                "textureType": null,
+                "byteLength": null,
+                "access": null,
+                "comparison": false
+              },
+              {
+                "name": "nodeUniform5",
+                "kind": "sampled-texture",
+                "visibility": 2,
+                "textureType": "cube",
+                "byteLength": null,
+                "access": "readOnly"
+              }
+            ]
+          }
+        ],
+        "uniformPlan": [
+          {
+            "name": "render",
+            "shared": true,
+            "visibility": 7,
+            "byteLength": 192,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      -1,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraWorldMatrix",
+                "offset": 128,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ],
+            "textures": [],
+            "storageBuffers": [],
+            "orderedBindings": [
+              {
+                "type": "ubo",
+                "name": "render",
+                "byteLength": 192,
+                "visibility": 7,
+                "slots": [
+                  {
+                    "name": "cameraProjectionMatrix",
+                    "offset": 0,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.projectionMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1.0000000000000002,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1.0000000000000002,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1.1111111111111112,
+                          -1,
+                          0,
+                          0,
+                          -1.1111111111111112,
+                          0
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "cameraViewMatrix",
+                    "offset": 64,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.viewMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "cameraWorldMatrix",
+                    "offset": 128,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.worldMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "object",
+            "shared": false,
+            "visibility": 7,
+            "byteLength": 128,
+            "slots": [
+              {
+                "name": "nodeUniform2",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 64,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "object.normalMatrix",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 112,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.014142135623730949
+                  },
+                  "liveNodeId": 0,
+                  "nodePath": [
+                    "fragmentNode",
+                    "rawInputs",
+                    "0",
+                    "sigma"
+                  ]
+                }
+              }
+            ],
+            "textures": [
+              {
+                "bindingKind": "sampler",
+                "name": "nodeUniform5_sampler",
+                "textureType": "unknown",
+                "access": null,
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                  "textureName": "PMREM",
+                  "mapping": 301,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1008,
+                  "anisotropy": 1,
+                  "generateMipmaps": false,
+                  "colorSpace": "srgb-linear",
+                  "flipY": false,
+                  "isPMREMTexture": true
+                },
+                "comparison": false
+              },
+              {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform5",
+                "textureType": "cube",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                  "textureName": "PMREM",
+                  "mapping": 301,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1008,
+                  "anisotropy": 1,
+                  "generateMipmaps": false,
+                  "colorSpace": "srgb-linear",
+                  "flipY": false,
+                  "isPMREMTexture": true
+                }
+              }
+            ],
+            "storageBuffers": [],
+            "orderedBindings": [
+              {
+                "type": "ubo",
+                "name": "object",
+                "byteLength": 128,
+                "visibility": 7,
+                "slots": [
+                  {
+                    "name": "nodeUniform2",
+                    "offset": 0,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "object.worldMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "nodeUniform3",
+                    "offset": 64,
+                    "size": 48,
+                    "dtype": "mat3",
+                    "source": {
+                      "kind": "object.normalMatrix",
+                      "valueSnapshot": {
+                        "type": "mat3",
+                        "data": [
+                          1,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "nodeUniform4",
+                    "offset": 112,
+                    "size": 4,
+                    "dtype": "number",
+                    "source": {
+                      "kind": "uniform.live",
+                      "valueSnapshot": {
+                        "type": "number",
+                        "data": 0.014142135623730949
+                      },
+                      "liveNodeId": 0,
+                      "nodePath": [
+                        "fragmentNode",
+                        "rawInputs",
+                        "0",
+                        "sigma"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "sampler",
+                "ref": {
+                  "bindingKind": "sampler",
+                  "name": "nodeUniform5_sampler",
+                  "textureType": "unknown",
+                  "access": null,
+                  "visibility": 2,
+                  "source": {
+                    "kind": "artifact.texture",
+                    "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                    "textureName": "PMREM",
+                    "mapping": 301,
+                    "wrapS": 1001,
+                    "wrapT": 1001,
+                    "magFilter": 1006,
+                    "minFilter": 1008,
+                    "anisotropy": 1,
+                    "generateMipmaps": false,
+                    "colorSpace": "srgb-linear",
+                    "flipY": false,
+                    "isPMREMTexture": true
+                  },
+                  "comparison": false
+                }
+              },
+              {
+                "type": "sampled-texture",
+                "ref": {
+                  "bindingKind": "sampled-texture",
+                  "name": "nodeUniform5",
+                  "textureType": "cube",
+                  "access": "readOnly",
+                  "visibility": 2,
+                  "source": {
+                    "kind": "artifact.texture",
+                    "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                    "textureName": "PMREM",
+                    "mapping": 301,
+                    "wrapS": 1001,
+                    "wrapT": 1001,
+                    "magFilter": 1006,
+                    "minFilter": 1008,
+                    "anisotropy": 1,
+                    "generateMipmaps": false,
+                    "colorSpace": "srgb-linear",
+                    "flipY": false,
+                    "isPMREMTexture": true
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "defaults": {},
+        "renderState": {
+          "transparent": false,
+          "opacity": 1,
+          "alphaTest": 0,
+          "alphaHash": false,
+          "alphaToCoverage": false,
+          "side": 1,
+          "depthTest": false,
+          "depthWrite": false,
+          "depthFunc": 3,
+          "blending": 0,
+          "blendSrc": 204,
+          "blendDst": 205,
+          "blendEquation": 100,
+          "colorWrite": true,
+          "premultipliedAlpha": false,
+          "dithering": false,
+          "toneMapped": true,
+          "vertexColors": false,
+          "fog": true,
+          "lights": false,
+          "allowOverride": true,
+          "forceSinglePass": false,
+          "polygonOffset": false,
+          "polygonOffsetFactor": 0,
+          "polygonOffsetUnits": 0,
+          "stencilWrite": false,
+          "stencilWriteMask": 255,
+          "stencilFunc": 519,
+          "stencilRef": 0,
+          "stencilFuncMask": 255,
+          "stencilFail": 7680,
+          "stencilZFail": 7680,
+          "stencilZPass": 7680
+        },
+        "meta": {
+          "updateNodes": 7,
+          "updateBeforeNodes": 0,
+          "updateAfterNodes": 0
+        },
+        "pmremKind": "blur",
+        "replayConfig": {
+          "schema": "pmrem-cube-layout@1",
+          "cubeSize": 256,
+          "lodMax": 5,
+          "target": {
+            "width": 256,
+            "height": 256
+          }
+        },
+        "internalPass": {
+          "schema": "internal-pass@1",
+          "family": "pmrem",
+          "stage": "blur",
+          "shape": "pmrem-blur",
+          "config": {
+            "schema": "pmrem-support@1",
+            "profile": "scene",
+            "layout": {
+              "schema": "pmrem-cube-layout@1",
+              "cubeSize": 256,
+              "lodMax": 5,
+              "target": {
+                "width": 256,
+                "height": 256
+              }
+            }
+          },
+          "uniforms": [
+            {
+              "role": "sigma",
+              "group": "object",
+              "binding": "nodeUniform4",
+              "valueType": "float"
+            }
+          ],
+          "inputs": [
+            {
+              "role": "env-map",
+              "kind": "texture",
+              "group": "object",
+              "binding": "nodeUniform5",
+              "topology": {
+                "dimension": "cube",
+                "format": 1023,
+                "internalFormat": null,
+                "type": 1016,
+                "colorSpace": "srgb-linear"
+              }
+            }
+          ],
+          "output": {
+            "topology": {
+              "dimension": "cube",
+              "depth": false,
+              "format": 1023,
+              "internalFormat": null,
+              "type": 1016,
+              "colorSpace": "srgb-linear"
+            }
+          }
+        }
+      },
+      "webgpu:9217653231205574": {
+        "version": 3,
+        "cacheKey": 9217653231205574,
+        "variantKey": "webgpu:9217653231205574",
+        "shaderLanguage": "wgsl",
+        "renderContextSelectors": [
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":1,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":2,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":3,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":4,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}",
+          "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":1,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":5,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"cube\"}],\"depth\":false,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"offscreen-cube\"},\"version\":\"render-object-selector@1\"}"
+        ],
+        "materialShape": "pmrem-blur",
+        "vertexShader": "// Three.js r187dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform2 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - v_positionView );\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform3 * normalLocal ), 0.0 ) ).xyz );\n\tvaryings.v_positionWorldDirection = normalize( ( object.nodeUniform2 * vec4<f32>( positionLocal, 0.0 ) ).xyz );\n\tlet VERTEX_nodeConst2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeConst2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+        "fragmentShader": "// Three.js r187dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform5_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform5 : texture_cube<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : mat3x3<f32>,\n\tnodeUniform4 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> reflectVector : vec3<f32>;\nvar<private> positionWorldDirection : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : vec3<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : f32;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionWorldDirection : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@location( 2 ) v_normalViewGeometry : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tNORMAL_normalView = ( normalViewGeometry * vec3<f32>( -1.0 ) );\n\tnormalView = NORMAL_normalView;\n\treflectVector = normalize( ( render.cameraWorldMatrix * vec4<f32>( reflect( ( - positionViewDirection ), normalView ), 0.0 ) ).xyz );\n\tpositionWorldDirection = normalize( v_positionWorldDirection );\n\tnodeVar0 = positionWorldDirection;\n\n\tif ( ( abs( nodeVar0.z ) < 0.999 ) ) {\n\n\t\tnodeVar1 = vec3<f32>( 0.0, 0.0, 1.0 );\n\n\t} else {\n\n\t\tnodeVar1 = vec3<f32>( 1.0, 0.0, 0.0 );\n\n\t}\n\n\tnodeVar2 = normalize( cross( nodeVar1, nodeVar0 ) );\n\tnodeVar3 = cross( nodeVar0, nodeVar2 );\n\tlet nodeConst0 = min( ( object.nodeUniform4 * 3.0 ), 3.141592653589793 );\n\tnodeVar4 = ( 1.0 - exp( ( ( ( nodeConst0 * nodeConst0 ) * -0.5 ) / ( object.nodeUniform4 * object.nodeUniform4 ) ) ) );\n\tnodeVar5 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = 0.0;\n\n\tfor ( var i : i32 = 0; i < 20; i ++ ) {\n\n\t\tnodeVar7 = ( object.nodeUniform4 * sqrt( ( log( ( 1.0 - ( ( ( f32( i ) + 0.5 ) / 20.0 ) * nodeVar4 ) ) ) * -2.0 ) ) );\n\t\tnodeVar8 = ( f32( i ) * 2.399963229728653 );\n\t\tnodeVar9 = ( sin( nodeVar7 ) / nodeVar7 );\n\t\tlet nodeConst1 = ( ( nodeVar0 * vec3<f32>( cos( nodeVar7 ) ) ) + ( ( ( nodeVar2 * vec3<f32>( cos( nodeVar8 ) ) ) + ( nodeVar3 * vec3<f32>( sin( nodeVar8 ) ) ) ) * vec3<f32>( sin( nodeVar7 ) ) ) );\n\t\tnodeVar10 = textureSampleLevel( nodeUniform5, nodeUniform5_sampler, vec3<f32>( ( - nodeConst1.x ), nodeConst1.yz ), 0.0 );\n\t\tnodeVar5 = ( nodeVar5 + ( nodeVar10.xyz * vec3<f32>( nodeVar9 ) ) );\n\t\tnodeVar6 = ( nodeVar6 + nodeVar9 );\n\n\t}\n\n\n\t// result\n\n\toutput.color = vec4<f32>( ( nodeVar5 / vec3<f32>( nodeVar6 ) ), 1.0 );\n\n\treturn output;\n\n}\n",
+        "computeShader": "",
+        "attributes": [
+          {
+            "name": "position",
+            "type": "vec3",
+            "source": "geometry"
+          },
+          {
+            "name": "normal",
+            "type": "vec3",
+            "source": "geometry"
+          }
+        ],
+        "bindings": [
+          {
+            "name": "render",
+            "bindings": [
+              {
+                "name": "render",
+                "kind": "uniform-buffer",
+                "visibility": 7,
+                "textureType": null,
+                "byteLength": 192,
+                "access": null
+              }
+            ]
+          },
+          {
+            "name": "object",
+            "bindings": [
+              {
+                "name": "object",
+                "kind": "uniform-buffer",
+                "visibility": 7,
+                "textureType": null,
+                "byteLength": 128,
+                "access": null
+              },
+              {
+                "name": "nodeUniform5_sampler",
+                "kind": "sampler",
+                "visibility": 2,
+                "textureType": null,
+                "byteLength": null,
+                "access": null,
+                "comparison": false
+              },
+              {
+                "name": "nodeUniform5",
+                "kind": "sampled-texture",
+                "visibility": 2,
+                "textureType": "cube",
+                "byteLength": null,
+                "access": "readOnly"
+              }
+            ]
+          }
+        ],
+        "uniformPlan": [
+          {
+            "name": "render",
+            "shared": true,
+            "visibility": 7,
+            "byteLength": 192,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0000000000000002,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      -1,
+                      0,
+                      0,
+                      -1.1111111111111112,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraWorldMatrix",
+                "offset": 128,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            ],
+            "textures": [],
+            "storageBuffers": [],
+            "orderedBindings": [
+              {
+                "type": "ubo",
+                "name": "render",
+                "byteLength": 192,
+                "visibility": 7,
+                "slots": [
+                  {
+                    "name": "cameraProjectionMatrix",
+                    "offset": 0,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.projectionMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1.0000000000000002,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1.0000000000000002,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1.1111111111111112,
+                          -1,
+                          0,
+                          0,
+                          -1.1111111111111112,
+                          0
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "cameraViewMatrix",
+                    "offset": 64,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.viewMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "cameraWorldMatrix",
+                    "offset": 128,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "camera.worldMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          -1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "object",
+            "shared": false,
+            "visibility": 7,
+            "byteLength": 128,
+            "slots": [
+              {
+                "name": "nodeUniform2",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 64,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "object.normalMatrix",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform4",
+                "offset": 112,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.014142135623730949
+                  },
+                  "liveNodeId": 0,
+                  "nodePath": [
+                    "fragmentNode",
+                    "rawInputs",
+                    "0",
+                    "sigma"
+                  ]
+                }
+              }
+            ],
+            "textures": [
+              {
+                "bindingKind": "sampler",
+                "name": "nodeUniform5_sampler",
+                "textureType": "unknown",
+                "access": null,
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                  "textureName": "PMREM",
+                  "mapping": 301,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1008,
+                  "anisotropy": 1,
+                  "generateMipmaps": false,
+                  "colorSpace": "srgb-linear",
+                  "flipY": false,
+                  "isPMREMTexture": true
+                },
+                "comparison": false
+              },
+              {
+                "bindingKind": "sampled-texture",
+                "name": "nodeUniform5",
+                "textureType": "cube",
+                "access": "readOnly",
+                "visibility": 2,
+                "source": {
+                  "kind": "artifact.texture",
+                  "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                  "textureName": "PMREM",
+                  "mapping": 301,
+                  "wrapS": 1001,
+                  "wrapT": 1001,
+                  "magFilter": 1006,
+                  "minFilter": 1008,
+                  "anisotropy": 1,
+                  "generateMipmaps": false,
+                  "colorSpace": "srgb-linear",
+                  "flipY": false,
+                  "isPMREMTexture": true
+                }
+              }
+            ],
+            "storageBuffers": [],
+            "orderedBindings": [
+              {
+                "type": "ubo",
+                "name": "object",
+                "byteLength": 128,
+                "visibility": 7,
+                "slots": [
+                  {
+                    "name": "nodeUniform2",
+                    "offset": 0,
+                    "size": 64,
+                    "dtype": "mat4",
+                    "source": {
+                      "kind": "object.worldMatrix",
+                      "valueSnapshot": {
+                        "type": "mat4",
+                        "data": [
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "nodeUniform3",
+                    "offset": 64,
+                    "size": 48,
+                    "dtype": "mat3",
+                    "source": {
+                      "kind": "object.normalMatrix",
+                      "valueSnapshot": {
+                        "type": "mat3",
+                        "data": [
+                          1,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          1
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "name": "nodeUniform4",
+                    "offset": 112,
+                    "size": 4,
+                    "dtype": "number",
+                    "source": {
+                      "kind": "uniform.live",
+                      "valueSnapshot": {
+                        "type": "number",
+                        "data": 0.014142135623730949
+                      },
+                      "liveNodeId": 0,
+                      "nodePath": [
+                        "fragmentNode",
+                        "rawInputs",
+                        "0",
+                        "sigma"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "sampler",
+                "ref": {
+                  "bindingKind": "sampler",
+                  "name": "nodeUniform5_sampler",
+                  "textureType": "unknown",
+                  "access": null,
+                  "visibility": 2,
+                  "source": {
+                    "kind": "artifact.texture",
+                    "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                    "textureName": "PMREM",
+                    "mapping": 301,
+                    "wrapS": 1001,
+                    "wrapT": 1001,
+                    "magFilter": 1006,
+                    "minFilter": 1008,
+                    "anisotropy": 1,
+                    "generateMipmaps": false,
+                    "colorSpace": "srgb-linear",
+                    "flipY": false,
+                    "isPMREMTexture": true
+                  },
+                  "comparison": false
+                }
+              },
+              {
+                "type": "sampled-texture",
+                "ref": {
+                  "bindingKind": "sampled-texture",
+                  "name": "nodeUniform5",
+                  "textureType": "cube",
+                  "access": "readOnly",
+                  "visibility": 2,
+                  "source": {
+                    "kind": "artifact.texture",
+                    "textureUuid": "16ef5fc7-8611-4f5a-a2e6-820888945e52",
+                    "textureName": "PMREM",
+                    "mapping": 301,
+                    "wrapS": 1001,
+                    "wrapT": 1001,
+                    "magFilter": 1006,
+                    "minFilter": 1008,
+                    "anisotropy": 1,
+                    "generateMipmaps": false,
+                    "colorSpace": "srgb-linear",
+                    "flipY": false,
+                    "isPMREMTexture": true
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "defaults": {},
+        "renderState": {
+          "transparent": false,
+          "opacity": 1,
+          "alphaTest": 0,
+          "alphaHash": false,
+          "alphaToCoverage": false,
+          "side": 1,
+          "depthTest": false,
+          "depthWrite": false,
+          "depthFunc": 3,
+          "blending": 0,
+          "blendSrc": 204,
+          "blendDst": 205,
+          "blendEquation": 100,
+          "colorWrite": true,
+          "premultipliedAlpha": false,
+          "dithering": false,
+          "toneMapped": true,
+          "vertexColors": false,
+          "fog": true,
+          "lights": false,
+          "allowOverride": true,
+          "forceSinglePass": false,
+          "polygonOffset": false,
+          "polygonOffsetFactor": 0,
+          "polygonOffsetUnits": 0,
+          "stencilWrite": false,
+          "stencilWriteMask": 255,
+          "stencilFunc": 519,
+          "stencilRef": 0,
+          "stencilFuncMask": 255,
+          "stencilFail": 7680,
+          "stencilZFail": 7680,
+          "stencilZPass": 7680
+        },
+        "meta": {
+          "updateNodes": 7,
+          "updateBeforeNodes": 0,
+          "updateAfterNodes": 0
+        },
+        "pmremKind": "blur",
+        "replayConfig": {
+          "schema": "pmrem-cube-layout@1",
+          "cubeSize": 256,
+          "lodMax": 5,
+          "target": {
+            "width": 256,
+            "height": 256
+          }
+        },
+        "internalPass": {
+          "schema": "internal-pass@1",
+          "family": "pmrem",
+          "stage": "blur",
+          "shape": "pmrem-blur",
+          "config": {
+            "schema": "pmrem-support@1",
+            "profile": "scene",
+            "layout": {
+              "schema": "pmrem-cube-layout@1",
+              "cubeSize": 256,
+              "lodMax": 5,
+              "target": {
+                "width": 256,
+                "height": 256
+              }
+            }
+          },
+          "uniforms": [
+            {
+              "role": "sigma",
+              "group": "object",
+              "binding": "nodeUniform4",
+              "valueType": "float"
+            }
+          ],
+          "inputs": [
+            {
+              "role": "env-map",
+              "kind": "texture",
+              "group": "object",
+              "binding": "nodeUniform5",
+              "topology": {
+                "dimension": "cube",
+                "format": 1023,
+                "internalFormat": null,
+                "type": 1016,
+                "colorSpace": "srgb-linear"
+              }
+            }
+          ],
+          "output": {
+            "topology": {
+              "dimension": "cube",
+              "depth": false,
+              "format": 1023,
+              "internalFormat": null,
+              "type": 1016,
+              "colorSpace": "srgb-linear"
+            }
+          }
+        }
+      }
+    },
+    "pmremKind": "blur",
+    "replayConfig": {
+      "schema": "pmrem-cube-layout@1",
+      "cubeSize": 256,
+      "lodMax": 5,
+      "target": {
+        "width": 256,
+        "height": 256
+      }
+    },
+    "internalPass": {
+      "schema": "internal-pass@1",
+      "family": "pmrem",
+      "stage": "blur",
+      "shape": "pmrem-blur",
+      "config": {
+        "schema": "pmrem-support@1",
+        "profile": "scene",
+        "layout": {
+          "schema": "pmrem-cube-layout@1",
+          "cubeSize": 256,
+          "lodMax": 5,
+          "target": {
+            "width": 256,
+            "height": 256
+          }
+        }
+      },
+      "uniforms": [
+        {
+          "role": "sigma",
+          "group": "object",
+          "binding": "nodeUniform4",
+          "valueType": "float"
+        }
+      ],
+      "inputs": [
+        {
+          "role": "env-map",
+          "kind": "texture",
+          "group": "object",
+          "binding": "nodeUniform5",
+          "topology": {
+            "dimension": "cube",
+            "format": 1023,
+            "internalFormat": null,
+            "type": 1016,
+            "colorSpace": "srgb-linear"
+          }
+        }
+      ],
+      "output": {
+        "topology": {
+          "dimension": "cube",
+          "depth": false,
+          "format": 1023,
+          "internalFormat": null,
+          "type": 1016,
+          "colorSpace": "srgb-linear"
+        }
+      }
+    },
+    "sourceThreeVersion": "0.187.0-dev.ec2b745",
+    "sourceThreeRevision": "187dev",
+    "sourceThreeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

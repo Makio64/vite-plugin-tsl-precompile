@@ -22,12 +22,16 @@ import { fingerprintArtifactShape } from '@tsl-precompile/contract/artifact-shap
 import { isArtifactCollection, validateArtifact } from '@tsl-precompile/contract/kinds';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { SLIM_THREE_PACKAGE_VERSION, resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
 import { artifactEmitterHashFields } from '../dev-capture-release.js';
 import { computeArtifactContentHash } from '../hash.js';
 import { loadArtifactDirectory } from '../artifact-directory-loader.js';
 import { collectExpectedMarkerCoverage, parseVerifyArgs, VERIFY_HELP } from './verify-support.js';
 import { normalizeMarkerSourceProvenance } from '../_shared/source-provenance.js';
+
+// Version-only signatures from development builds never identify their emitter: the pinned
+// package version, and the nominal 0.186.0 that Three's dev branch (and the previous pin) carries.
+const DEVELOPMENT_PACKAGE_VERSIONS = new Set( [ THREE_RELEASE_PROFILES.development.packageVersion, '0.186.0' ] );
 
 verifyMain: {
 const rawArgs = process.argv.slice( 2 );
@@ -620,7 +624,7 @@ function validateArtifactContentHash( envelope, path, opts = {} ) {
 	try {
 
 		const identity = artifactEmitterHashFields( artifact );
-		if ( artifact.sourceThreeVersion === '0.186.0' && ! identity.threeRevision ) throw new Error( 'Nominal 0.186.0 lacks the pinned r187dev revision/commit. Recapture with the verified emitter.' );
+		if ( DEVELOPMENT_PACKAGE_VERSIONS.has( artifact.sourceThreeVersion ) && ! identity.threeRevision ) throw new Error( `Development three ${ artifact.sourceThreeVersion } lacks the pinned r187dev revision/commit. Recapture with the verified emitter.` );
 		const computed = computeArtifactContentHash( artifact, { shape, threeVersion: artifact.sourceThreeVersion, pluginVersion: artifact.sourceHashVersion, ...identity } );
 		if ( computed !== envelope.__hash ) issues.push( `${ path }: stored __hash does not match artifact runtime content` );
 

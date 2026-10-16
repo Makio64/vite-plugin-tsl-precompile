@@ -7,10 +7,12 @@ import {
 } from '@tsl-precompile/contract/internal-pass';
 import {
 	PMREM_SUPPORT_PROFILES,
+	createPMREMCubeLayoutConfig,
 	createPMREMLayoutConfig,
 	pmremRequiredStages,
 	validatePMREMLayoutConfig,
 } from '@tsl-precompile/contract/pmrem-config';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { discoverLocalExampleCases } from '../../../examples/batch/local-example-discovery.mjs';
 
 function internalPassFamilyShapes( family ) {
@@ -183,6 +185,18 @@ function normalizeRoute( route, source ) {
 	}
 
 	return normalized;
+
+}
+
+/**
+ * The installed Three decides which PMREM family the checked examples recapture: the stable
+ * release renders CubeUV atlases, the pinned r187dev build cube targets plus an integration stage.
+ */
+export function recapturePMREMLayoutForRevision( revision ) {
+
+	return revision === THREE_RELEASE_PROFILES.development.revision
+		? createPMREMCubeLayoutConfig( 256 )
+		: createPMREMLayoutConfig( 256 );
 
 }
 

@@ -548,8 +548,10 @@ export function readThreeCheckoutVersion( threeRepo, label = 'batch' ) {
  */
 export function assertThreeCheckoutMatchesVersion( threeRepo, expectedPackageVersion, label = 'batch' ) {
 
+	// A prerelease (the vendored 0.187.0-dev.* build) parses so that it reaches the explicit
+	// development-revision rejection below instead of an "invalid version" error.
 	const expectedMatch = typeof expectedPackageVersion === 'string'
-		? expectedPackageVersion.match( /^0\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/ )
+		? expectedPackageVersion.match( /^0\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/ )
 		: null;
 	if ( ! expectedMatch ) {
 

@@ -1,117 +1,163 @@
 {
   "__aux": {
-    "background:73fde26e31cc0b88c82e2a95ba25a69b7c4393d44c0593afc698dd07570e4e5d": {
-      "file": "aux-background-73fde26e31cc.json",
+    "background:4a0f6ba2700f6e23d2b1ff6f298db4b986ecd0f05ac577cc8ea70ba3e4259e1a": {
+      "file": "aux-background-4a0f6ba2700f.json",
       "shape": "background",
-      "configHash": "73fde26e31cc0b88c82e2a95ba25a69b7c4393d44c0593afc698dd07570e4e5d",
-      "hash": "60862476ec2a75f55ad56beecbe85f29b3fbc7778d37313e4cca41acd99bc9f8",
-      "threeVersion": "0.186.1",
+      "configHash": "4a0f6ba2700f6e23d2b1ff6f298db4b986ecd0f05ac577cc8ea70ba3e4259e1a",
+      "hash": "e3b1e957c3dddd436f1b6997e7d1bf63fbcebadfddd62ec39bfda0606c08c789",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:06:59.051Z"
+      "capturedAt": "2026-10-16T05:02:43.575Z"
     },
-    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
-      "file": "aux-lights-499bfad6a893.json",
+    "lights:a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776": {
+      "file": "aux-lights-a97cd2e6605a.json",
       "shape": "lights",
-      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
-      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
-      "threeVersion": "0.186.1",
+      "configHash": "a97cd2e6605a99607aa0d2e2eaf64ed3daa7623683b04e14ecc311a6f9232776",
+      "hash": "3a1378bf8ab75459e1ce7c8dc18b743a3293a27a782e89df87ff0033791f4ee0",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:06:59.061Z"
+      "capturedAt": "2026-10-16T05:02:43.587Z"
     },
-    "cube-render-target:cae3cc47b1bb9be28c8a594199335f177beb4c5cfa21b1215d8594879ef32ed5": {
-      "file": "aux-cube-render-target-cae3cc47b1bb.json",
+    "cube-render-target:0996eed00080922b8c8973d524961dacea3c66e5d70510ab0817470d1735170c": {
+      "file": "aux-cube-render-target-0996eed00080.json",
       "shape": "cube-render-target",
-      "configHash": "cae3cc47b1bb9be28c8a594199335f177beb4c5cfa21b1215d8594879ef32ed5",
-      "hash": "9ec86f208fa7319063d35dd8bfb72330a76788fbac08082e8765fc5ef40a5fc6",
-      "threeVersion": "0.186.1",
+      "configHash": "0996eed00080922b8c8973d524961dacea3c66e5d70510ab0817470d1735170c",
+      "hash": "5474ccd2871837ee68fcd14aaf8aee80532dd8e71e0b171d8509abfcd83489c6",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:00.155Z"
+      "capturedAt": "2026-10-16T05:02:45.219Z"
     },
-    "cube-render-target:1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28": {
-      "file": "aux-cube-render-target-1a6446e96454.json",
-      "shape": "cube-render-target",
-      "configHash": "1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28",
-      "hash": "af6f0b09ecfcad88def5507b2bd765cf5861e497d8caa2fc8b231c4f4809dc05",
-      "threeVersion": "0.186.1",
-      "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:00.170Z"
-    },
-    "pmrem-equirect:5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd": {
-      "file": "aux-pmrem-equirect-5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd-e38e51b601e19ace296442b4ab8522a91fa06cfb287bb15990c0d1e9a9e1c7ab.json",
+    "pmrem-equirect:fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5": {
+      "file": "aux-pmrem-equirect-fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5-49b6aa71b41d5d1af184e7355a0ecc262ad89545544703ce875123237e12d67f.json",
       "shape": "pmrem-equirect",
-      "configHash": "5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd",
-      "hash": "e38e51b601e19ace296442b4ab8522a91fa06cfb287bb15990c0d1e9a9e1c7ab",
-      "threeVersion": "0.186.1",
+      "configHash": "fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5",
+      "hash": "49b6aa71b41d5d1af184e7355a0ecc262ad89545544703ce875123237e12d67f",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:00.317Z"
+      "capturedAt": "2026-10-16T05:02:45.359Z"
     },
-    "pmrem-ggx:5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd": {
-      "file": "aux-pmrem-ggx-5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd-e08fc303e92693084a122ac195b341fb89fdfc3042ec85e591f19ed13a97f281.json",
+    "pmrem-ggx:fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5": {
+      "file": "aux-pmrem-ggx-fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5-ca0caf3d54db88e541acb354843c535976512680866806b512d4e89e510f2faa.json",
       "shape": "pmrem-ggx",
-      "configHash": "5f415a0e3e45efd3196ccf54a97f9ed84a8752ce0a276d3fe83d78aa0a9477cd",
-      "hash": "e08fc303e92693084a122ac195b341fb89fdfc3042ec85e591f19ed13a97f281",
-      "threeVersion": "0.186.1",
+      "configHash": "fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5",
+      "hash": "ca0caf3d54db88e541acb354843c535976512680866806b512d4e89e510f2faa",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:00.317Z"
+      "capturedAt": "2026-10-16T05:02:45.359Z"
     },
-    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
-      "file": "aux-render-output-f9eeeab16476.json",
+    "pmrem-integration:fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5": {
+      "file": "aux-pmrem-integration-fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5-b266a2b16ec77f45e294a42bca93e9d70a0d6f3d2b603d635a3ff7292a49af6c.json",
+      "shape": "pmrem-integration",
+      "configHash": "fcf4604fd3eb1c82fc0a2421d2d431f9cf969914574f570aafd047182d9363c5",
+      "hash": "b266a2b16ec77f45e294a42bca93e9d70a0d6f3d2b603d635a3ff7292a49af6c",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-16T05:02:45.359Z"
+    },
+    "render-output:40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0": {
+      "file": "aux-render-output-40d38ad3f452.json",
       "shape": "render-output",
-      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
-      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
-      "threeVersion": "0.186.1",
+      "configHash": "40d38ad3f452b70458475f14a04db240e3c7d8c0f0707264183d554f2bee02e0",
+      "hash": "eea5ee9b1eee111b48d5768bee617d87bbbe1f97eacdeafb662e929653f4bb73",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:00.345Z"
+      "capturedAt": "2026-10-16T05:02:45.393Z"
     },
-    "background:2f3acc07d82ca0a2c2712d326734193ff7222afc2ec5a01ee0bf93ab600fd820": {
-      "file": "aux-background-2f3acc07d82c.json",
+    "background:26fea0a0b41d5b944625a14dca26e4c02189b08f359628d7c2fff99e154847e1": {
+      "file": "aux-background-26fea0a0b41d.json",
       "shape": "background",
-      "configHash": "2f3acc07d82ca0a2c2712d326734193ff7222afc2ec5a01ee0bf93ab600fd820",
-      "hash": "352fd1dedde62496b9c6d30f5c33115f6b97a052e48f97e875588ff919ad3c8e",
-      "threeVersion": "0.186.1",
+      "configHash": "26fea0a0b41d5b944625a14dca26e4c02189b08f359628d7c2fff99e154847e1",
+      "hash": "e3b1e957c3dddd436f1b6997e7d1bf63fbcebadfddd62ec39bfda0606c08c789",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:02.084Z"
+      "capturedAt": "2026-10-16T05:02:46.602Z"
     },
-    "pmrem-cubemap:d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237": {
-      "file": "aux-pmrem-cubemap-d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237-7ec5d6e285fe5ee2ca0584edb6a246fe1241e6b515cda93622697f3d90abf6e0.json",
+    "pmrem-cubemap:9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218": {
+      "file": "aux-pmrem-cubemap-9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218-091707232c09163702d375ac10533f66726579a0e788d6f4fd8cfd48c22ada8d.json",
       "shape": "pmrem-cubemap",
-      "configHash": "d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237",
-      "hash": "7ec5d6e285fe5ee2ca0584edb6a246fe1241e6b515cda93622697f3d90abf6e0",
-      "threeVersion": "0.186.1",
+      "configHash": "9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218",
+      "hash": "091707232c09163702d375ac10533f66726579a0e788d6f4fd8cfd48c22ada8d",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:03.214Z"
+      "capturedAt": "2026-10-16T05:02:46.640Z"
     },
-    "pmrem-ggx:d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237": {
-      "file": "aux-pmrem-ggx-d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237-df0d6e90f452cf8c88fe3d3d5e12a25642df2e9987993e7b8bac5a004257c666.json",
+    "pmrem-ggx:9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218": {
+      "file": "aux-pmrem-ggx-9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218-fe078ead8cb9619b7703d2eab2fa7cc1ee8eca1a17513fd1541f7fccfd398a4c.json",
       "shape": "pmrem-ggx",
-      "configHash": "d660492bbe2d55293921c732ab8ae8827e60a9700d43851d431b3fb812cb0237",
-      "hash": "df0d6e90f452cf8c88fe3d3d5e12a25642df2e9987993e7b8bac5a004257c666",
-      "threeVersion": "0.186.1",
+      "configHash": "9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218",
+      "hash": "fe078ead8cb9619b7703d2eab2fa7cc1ee8eca1a17513fd1541f7fccfd398a4c",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:03.214Z"
+      "capturedAt": "2026-10-16T05:02:46.640Z"
     },
-    "pmrem-blur:2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d": {
-      "file": "aux-pmrem-blur-2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d-327c7747eb60897098a880e9b18b6edc83a7f3841c6e85833e00b7acd8f94789.json",
+    "pmrem-integration:9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218": {
+      "file": "aux-pmrem-integration-9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218-9b92e01e87e7c2ee6ce227c099d220be0e885b1df2ee253cda6eb414665ca09a.json",
+      "shape": "pmrem-integration",
+      "configHash": "9d4e2cd677d4c417b9e692dbea6324614e4fe6838cdd3f1e273f793faab2d218",
+      "hash": "9b92e01e87e7c2ee6ce227c099d220be0e885b1df2ee253cda6eb414665ca09a",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-16T05:02:46.640Z"
+    },
+    "pmrem-blur:8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1": {
+      "file": "aux-pmrem-blur-8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1-cfd84026365040e4e86b863bfd45c86680d1a0536689d49c14e27ce8243dedb4.json",
       "shape": "pmrem-blur",
-      "configHash": "2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d",
-      "hash": "327c7747eb60897098a880e9b18b6edc83a7f3841c6e85833e00b7acd8f94789",
-      "threeVersion": "0.186.1",
+      "configHash": "8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1",
+      "hash": "cfd84026365040e4e86b863bfd45c86680d1a0536689d49c14e27ce8243dedb4",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:06.015Z"
+      "capturedAt": "2026-10-16T05:02:48.251Z"
     },
-    "pmrem-ggx:2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d": {
-      "file": "aux-pmrem-ggx-2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d-4eed8dbec09388bdb2a47d1e71b7cfc6d03f352ae75a8970162a3e5c80302d3d.json",
+    "pmrem-ggx:8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1": {
+      "file": "aux-pmrem-ggx-8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1-53f5f0baaae723a43491a90fa541d60d9b241a94bda7c8a9a33f54ab284115ee.json",
       "shape": "pmrem-ggx",
-      "configHash": "2a73b136e860fb3f7db387df831df37c945b847eabd11a6979876dbde217c68d",
-      "hash": "4eed8dbec09388bdb2a47d1e71b7cfc6d03f352ae75a8970162a3e5c80302d3d",
-      "threeVersion": "0.186.1",
+      "configHash": "8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1",
+      "hash": "53f5f0baaae723a43491a90fa541d60d9b241a94bda7c8a9a33f54ab284115ee",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-10-13T10:07:06.015Z"
+      "capturedAt": "2026-10-16T05:02:48.251Z"
+    },
+    "pmrem-integration:8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1": {
+      "file": "aux-pmrem-integration-8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1-97a08594124363f6c84ececed5c4a81f856898dd9bdd530f1b0d0d880cd06dca.json",
+      "shape": "pmrem-integration",
+      "configHash": "8a03a161503c44eaea6b2b5f8760f6b0106f0c1c0142f192344eb016ebdf7bc1",
+      "hash": "97a08594124363f6c84ececed5c4a81f856898dd9bdd530f1b0d0d880cd06dca",
+      "threeVersion": "0.187.0-dev.ec2b745",
+      "threeRevision": "187dev",
+      "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-16T05:02:48.251Z"
     }
   },
   "pmrem-debug-floor": {
-    "file": "pmrem-debug-floor.9ecaa06681dc.json",
-    "hash": "9ecaa06681dcc557840b86842d6ee2df514f4b6d77f9e066a84e1ebe5c43ce46",
+    "file": "pmrem-debug-floor.30b359533825.json",
+    "hash": "30b3595338256a54f6fe9fdcb57eaaf9ff1cf9fe680c66c2c9f142dac0f087d2",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -124,11 +170,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:00.163Z"
+    "capturedAt": "2026-10-16T05:02:43.602Z"
   },
   "pmrem-debug-metal": {
-    "file": "pmrem-debug-metal.9dfd068f668a.json",
-    "hash": "9dfd068f668a2ed63f48a207febfdd17a4923d207f7db1897a11bc5682a28be6",
+    "file": "pmrem-debug-metal.859925b405d7.json",
+    "hash": "859925b405d705cdc79b759d8102307492e8799ba37ab45631441000888815e7",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -141,11 +187,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:00.188Z"
+    "capturedAt": "2026-10-16T05:02:45.220Z"
   },
   "pmrem-debug-rough": {
-    "file": "pmrem-debug-rough.11a4bd1b6719.json",
-    "hash": "11a4bd1b6719edb1d43e67fcbdef7fd5950b238764942067c9e1f029753793a3",
+    "file": "pmrem-debug-rough.d2b0c5f7a302.json",
+    "hash": "d2b0c5f7a3025fc6c8db577b9fc87c8bf3f70434604f648a6595218bd64ab48d",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -158,11 +204,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:00.338Z"
+    "capturedAt": "2026-10-16T05:02:45.387Z"
   },
   "pmrem-debug-cubemap-floor": {
-    "file": "pmrem-debug-cubemap-floor.4406086e7330.json",
-    "hash": "4406086e7330191bfb21e275a556a57f18db0333e5e61890d267fc40ed834eae",
+    "file": "pmrem-debug-cubemap-floor.cb0a850a1393.json",
+    "hash": "cb0a850a13931b4698873336218ebb34c5e23fd0b51bd87dca99d0816f6eda72",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -175,11 +221,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:03.167Z"
+    "capturedAt": "2026-10-16T05:02:46.615Z"
   },
   "pmrem-debug-cubemap-metal": {
-    "file": "pmrem-debug-cubemap-metal.9d0cde0bafa9.json",
-    "hash": "9d0cde0bafa9daa44ff24253984cc30a98db1ba767f4b05c3445fbc54c374212",
+    "file": "pmrem-debug-cubemap-metal.aa5b43f3d2e0.json",
+    "hash": "aa5b43f3d2e0f290775867eb375fca450c843818f8c893752e2672413bc987a3",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -192,11 +238,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:03.191Z"
+    "capturedAt": "2026-10-16T05:02:46.648Z"
   },
   "pmrem-debug-cubemap-rough": {
-    "file": "pmrem-debug-cubemap-rough.8c13e9192e3c.json",
-    "hash": "8c13e9192e3c4c937d16bf2bd29f438dee6b34d23da3865d0ee0e337ec3f85b0",
+    "file": "pmrem-debug-cubemap-rough.dabc23922fe5.json",
+    "hash": "dabc23922fe5a9f87e75e78a85fc5c0b4489f5a0bd3129362878786c9ce2677b",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -209,11 +255,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:03.237Z"
+    "capturedAt": "2026-10-16T05:02:46.660Z"
   },
   "pmrem-debug-env-face-0": {
-    "file": "pmrem-debug-env-face-0.1341e27e735e.json",
-    "hash": "1341e27e735e7c3bc025e8450327abb6bf3e151dd1cbf2b0f662ece8c5be9e62",
+    "file": "pmrem-debug-env-face-0.8e43ec18f298.json",
+    "hash": "8e43ec18f298c22982d36cb4a08b2e437c0c2148b51c9815bd2cd15984b95317",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -226,11 +272,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:05.980Z"
+    "capturedAt": "2026-10-16T05:02:48.257Z"
   },
   "pmrem-debug-env-face-1": {
-    "file": "pmrem-debug-env-face-1.45b02e16d0ce.json",
-    "hash": "45b02e16d0cec6562ca4810ca5e560ff2797fc88e52ac4de440f2e12bf79f770",
+    "file": "pmrem-debug-env-face-1.34a66a15451e.json",
+    "hash": "34a66a15451edbc38428519fe490e8bbb5bee8ddce41589f43f454430a3747d5",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -243,11 +289,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.020Z"
+    "capturedAt": "2026-10-16T05:02:48.264Z"
   },
   "pmrem-debug-env-face-2": {
-    "file": "pmrem-debug-env-face-2.0c3f38139f9f.json",
-    "hash": "0c3f38139f9f3c4c6fe98027d727807ff484e9ae3c0a7ded843cd9c7b7689f91",
+    "file": "pmrem-debug-env-face-2.17f40116e670.json",
+    "hash": "17f40116e6700f8807700f3eb9e677eaa8940b78d321c4915ef73f0ce1ebbbe0",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -260,11 +306,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.046Z"
+    "capturedAt": "2026-10-16T05:02:48.269Z"
   },
   "pmrem-debug-env-face-3": {
-    "file": "pmrem-debug-env-face-3.db29ef5b9afb.json",
-    "hash": "db29ef5b9afbdd70fc949047340debd667170ba45e11a74277ad53c09354c53c",
+    "file": "pmrem-debug-env-face-3.dac67a84c0c4.json",
+    "hash": "dac67a84c0c4814140ed1f14e66f903731facbbc9a968145ef4fa460f92510ab",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -277,11 +323,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.064Z"
+    "capturedAt": "2026-10-16T05:02:48.273Z"
   },
   "pmrem-debug-from-scene-floor": {
-    "file": "pmrem-debug-from-scene-floor.7665f734fd16.json",
-    "hash": "7665f734fd16f32fca8b5aba92e8a43d05da9929df8dfd59a8a406058d0038ad",
+    "file": "pmrem-debug-from-scene-floor.c76c67619256.json",
+    "hash": "c76c676192567cd343a88a42dc37d8e6970d3d6147095e4351e844f2468772f3",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -294,11 +340,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.184Z"
+    "capturedAt": "2026-10-16T05:02:48.282Z"
   },
   "pmrem-debug-from-scene-metal": {
-    "file": "pmrem-debug-from-scene-metal.40132bd07059.json",
-    "hash": "40132bd070590ce48fb427a544928fa8bba114b0c50252cb49168716d74a60b6",
+    "file": "pmrem-debug-from-scene-metal.bc3fbf41949d.json",
+    "hash": "bc3fbf41949dfd459a6231fe03b818d70e4e3bf33831fd467fcb9754d26d8dd1",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -311,11 +357,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.202Z"
+    "capturedAt": "2026-10-16T05:02:48.291Z"
   },
   "pmrem-debug-from-scene-rough": {
-    "file": "pmrem-debug-from-scene-rough.def431893c7c.json",
-    "hash": "def431893c7c41931f06db6bf142edae844d12f80ca17d94aac748300c71aad1",
+    "file": "pmrem-debug-from-scene-rough.e60dad780c87.json",
+    "hash": "e60dad780c8780827186b3f823a8baa832a38a9100a41fb975cec07e177dc93a",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -328,11 +374,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:06.218Z"
+    "capturedAt": "2026-10-16T05:02:48.299Z"
   },
   "pmrem-debug-transmission-floor": {
-    "file": "pmrem-debug-transmission-floor.8ecd19ffe1d0.json",
-    "hash": "8ecd19ffe1d00304bf0eff4c82a930a3c7bcafcd8fd63771c5b81a87fccc879d",
+    "file": "pmrem-debug-transmission-floor.c75d18eff09d.json",
+    "hash": "c75d18eff09dbd37c89592b16029dda2a85ef7b88127d8bc4ebda42d9d422dbc",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -345,11 +391,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:09.628Z"
+    "capturedAt": "2026-10-16T05:02:49.605Z"
   },
   "pmrem-debug-transmission-metal": {
-    "file": "pmrem-debug-transmission-metal.585747405ea3.json",
-    "hash": "585747405ea3305ce7874d406d7e4231b62401e21ba20ed1baa7dc5ab9ab2d0d",
+    "file": "pmrem-debug-transmission-metal.c8bbf248e3d0.json",
+    "hash": "c8bbf248e3d0630906ec944f2de7d0fa0185e1f2b5c9c78dc6702c6dd6857292",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -362,11 +408,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:09.906Z"
+    "capturedAt": "2026-10-16T05:02:49.616Z"
   },
   "pmrem-debug-transmission-rough": {
-    "file": "pmrem-debug-transmission-rough.b3a121a6f103.json",
-    "hash": "b3a121a6f1034104dd5c6fe6825a346c3186acce5252288be758cde897f19c39",
+    "file": "pmrem-debug-transmission-rough.0c3b0a102f8e.json",
+    "hash": "0c3b0a102f8e3dd063e76705b4a6f39fa45454d5d1cbdf1347c0ec7f9a7d778f",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -379,11 +425,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:09.939Z"
+    "capturedAt": "2026-10-16T05:02:51.816Z"
   },
   "pmrem-debug-transmission": {
-    "file": "pmrem-debug-transmission.60d9830b7bfa.json",
-    "hash": "60d9830b7bfa9071756e2c7c7697ce9de679dc06cdcb03ed9b5ad10b399bff39",
+    "file": "pmrem-debug-transmission.a60d75fc080e.json",
+    "hash": "a60d75fc080e7743e955c49787eb2afec68141ac4c8f8cd1e50d8d1113fde9b3",
     "sourceIdentity": "60d46843ade8a5c822d057f022823275f5f6c9f1f3760ddb1254aa3f3b2e0770",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -396,6 +442,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T10:07:10.234Z"
+    "capturedAt": "2026-10-16T05:02:52.134Z"
   }
 }

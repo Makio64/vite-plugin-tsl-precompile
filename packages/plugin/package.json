@@ -72,7 +72,7 @@
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",
     "@types/three": "0.186.0",
-    "three": "0.186.0 || 0.186.1",
+    "three": "0.186.1 || 0.187.0-dev.ec2b745",
     "vite": ">=6.4.3 <9"
   },
   "peerDependenciesMeta": {

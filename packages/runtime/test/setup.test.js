@@ -10,6 +10,7 @@ import {
 	__resetForTests as resetMarkerForTests,
 } from '../src/precompile-marker.js';
 import { recordDevCaptureOutcome } from '../src/dev-capture-outcome.js';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-releases';
 
 const MARKER_METHOD = 'precompile';
 
@@ -425,6 +426,82 @@ test( 'slim-mode setup captures renderer output once per successful real-render 
 		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = originalThreeVersion;
 		if ( originalSynthetic === undefined ) delete globalThis.__tslpSyntheticRenderActive;
 		else globalThis.__tslpSyntheticRenderActive = originalSynthetic;
+
+	}
+
+} );
+
+test( 'renderer-output capture keys the observed topology with the pinned development emitter identity', async () => {
+
+	const { three } = freshHarness();
+	three.REVISION = THREE_RELEASE_PROFILES.development.revision;
+	const renderer = fakeRenderer( { initialised: true } );
+	const outputArtifact = {
+		materialShape: 'output-transform',
+		vertexShader: 'output-vertex',
+		fragmentShader: 'output-fragment',
+		uniformPlan: [ { name: 'object', textures: [ {
+			bindingKind: 'sampled-texture',
+			textureType: '2d',
+			source: { kind: 'artifact.texture', textureUuid: 'output-texture', mapping: 300 },
+		} ] } ],
+	};
+	const compileCalls = [];
+	const compileTSL = async ( activeRenderer, scene, camera, options ) => {
+
+		compileCalls.push( options );
+		const artifacts = [ outputArtifact ];
+		Object.defineProperty( artifacts, 'renderOutputCapture', {
+			value: { artifact: outputArtifact, replayConfig: { ...options.rendererOutputConfig } },
+		} );
+		return artifacts;
+
+	};
+	const development = THREE_RELEASE_PROFILES.development;
+	const saved = Object.fromEntries( [ '__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__', '__TSLP_THREE_PACKAGE_VERSION__', '__TSLP_THREE_REVISION__', '__TSLP_THREE_COMMIT__' ]
+		.map( ( key ) => [ key, globalThis[ key ] ] ) );
+	const originalFetch = globalThis.fetch;
+	const originalError = console.error;
+	const errors = [];
+	const posts = [];
+	globalThis.__TSLP_AUTO_CAPTURE_RENDER_OUTPUT__ = true;
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = development.packageVersion;
+	globalThis.__TSLP_THREE_REVISION__ = development.revision;
+	globalThis.__TSLP_THREE_COMMIT__ = development.gitCommit;
+	globalThis.fetch = async ( endpoint, request ) => {
+
+		posts.push( JSON.parse( request.body ) );
+		return { ok: true, text: async () => '' };
+
+	};
+	console.error = ( ...args ) => errors.push( args.join( ' ' ) );
+	try {
+
+		const setup = setupPrecompile( { three, renderer, scene: { traverse() {} }, camera: {}, devEndpoint: '/capture', aux: { compileTSL } } );
+		await setup.ready;
+		for ( let i = 0; i < 3; i ++ ) {
+
+			renderer.render( { isScene: true }, {} );
+			for ( let j = 0; j < 20; j ++ ) await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		}
+		assert.deepEqual( errors.filter( ( message ) => /renderer-output capture failed/.test( message ) ), [] );
+		assert.equal( compileCalls.length, 1, 'the captured development topology is recognised on later renders' );
+		assert.equal( posts.length, 1 );
+		assert.equal( posts[ 0 ].threeRevision, development.revision );
+		assert.equal( posts[ 0 ].threeCommit, development.gitCommit );
+
+	} finally {
+
+		resetMarkerForTests();
+		console.error = originalError;
+		globalThis.fetch = originalFetch;
+		for ( const [ key, value ] of Object.entries( saved ) ) {
+
+			if ( value === undefined ) delete globalThis[ key ];
+			else globalThis[ key ] = value;
+
+		}
 
 	}
 

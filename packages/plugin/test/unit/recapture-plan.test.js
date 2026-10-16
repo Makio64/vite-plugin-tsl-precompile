@@ -3,10 +3,10 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { createPMREMCubeLayoutConfig } from '@tsl-precompile/contract/pmrem-config';
+import { createPMREMCubeLayoutConfig, createPMREMLayoutConfig } from '@tsl-precompile/contract/pmrem-config';
 
 import { selectRecaptureExamples } from '../../src/cli/recapture-all-support.js';
-import { createRecapturePlan } from '../../src/cli/recapture-plan.js';
+import { createRecapturePlan, recapturePMREMLayoutForRevision } from '../../src/cli/recapture-plan.js';
 
 const REPO = resolve( import.meta.dirname, '../../../..' );
 
@@ -21,6 +21,13 @@ test( 'recapture PMREM obligations follow the validated target layout', () => {
 		() => createRecapturePlan( REPO, { pmremLayout: { schema: 'future-layout@1' } } ),
 		/Invalid recapture PMREM layout/,
 	);
+
+} );
+
+test( 'recapture PMREM layout follows the installed Three revision', () => {
+
+	assert.deepEqual( recapturePMREMLayoutForRevision( '187dev' ), createPMREMCubeLayoutConfig( 256 ) );
+	assert.deepEqual( recapturePMREMLayoutForRevision( '186' ), createPMREMLayoutConfig( 256 ) );
 
 } );
 

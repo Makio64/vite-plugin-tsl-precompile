@@ -26,6 +26,11 @@ import {
 import { createMockGPUCanvasContext, installMockWebGPU } from '../../plugin/src/mock-webgpu.js';
 import { compileTSL as compileRealTSL } from '../../plugin/src/vendor/compileTSL.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
+import { REVISION } from 'three';
+
+// r186 CubeUV-atlas PMREM expectations; the pinned r187dev cube PMREM family is exercised against
+// the same installed build by pmrem-native-family.test.js.
+const PMREM_ATLAS = REVISION === '186' ? {} : { skip: `three r${ REVISION } uses cube PMREM (see pmrem-native-family.test.js)` };
 
 const auxMarkerSource = readFileSync( new URL( '../src/aux-marker.js', import.meta.url ), 'utf8' );
 
@@ -2862,7 +2867,7 @@ function pmremSelectorDepthKinds( artifact ) {
 
 }
 
-test( 'precompileAuxiliary captures a selector-complete internal-pass family for an explicit fromScene-only layout', async () => {
+test( 'precompileAuxiliary captures a selector-complete internal-pass family for an explicit fromScene-only layout', PMREM_ATLAS, async () => {
 
 	installMockWebGPU();
 	const webgpu = await import( 'three/webgpu' );
@@ -3048,7 +3053,7 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 
 } );
 
-test( 'PMREM auxiliary-family HTTP failures retain profile and configHash in capture diagnostics', async () => {
+test( 'PMREM auxiliary-family HTTP failures retain profile and configHash in capture diagnostics', PMREM_ATLAS, async () => {
 
 	installMockWebGPU();
 	const webgpu = await import( 'three/webgpu' );

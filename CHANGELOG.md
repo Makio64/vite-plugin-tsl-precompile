@@ -8,6 +8,33 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Changed
+- The experimental r187dev profile now pins three dev `ec2b7458ea` (2026-10-15) installed as the vendored
+  `three@0.187.0-dev.ec2b745` tarball (was `3995acf`, nominal `0.186.0`); the plugin/runtime peer range is
+  `0.186.1 || 0.187.0-dev.ec2b745`. The published prebuilt slim bundle stays r186.
+- r187dev slim `compileAsync` replay keeps three's own parallel pipeline window and time-budgeted
+  `CompileScheduler` (#34816) and only swaps graph construction for synchronous hydration; the async
+  pipeline error-scope and ShadowFilterNode rewrites accept the `ec2b745` sources unchanged.
+
+### Fixed
+- r187dev development capture: automatic renderer-output capture keyed its observed topology without the
+  development revision/commit and never matched its own capture.
+- Node harness captures (`extractMaterial`, `extract*Artifact`) verify an installed r187dev package by source
+  fingerprint and use its identity when no explicit identity is passed.
+- The r187dev NodeManager rewrite drops the uncalled `_reportBuildError` so the `nodes/Nodes.js` barrel import goes.
+- `recapture-all` and the support-plan verifier require the cube PMREM stages when r187dev is installed.
+- r187dev spot/point lights keep live `light.viewPosition` uniforms: `lightViewPosition()` became a `.once()`
+  Fn call, and the extractor froze it as a snapshot (unlit spot-light floors).
+- Artifact variant fingerprints normalize r187dev compact-Fn names (`fn<N>`), so materials that define Fns
+  inside their node builders (SkyMesh clouds) merge across captures instead of failing as divergent variants.
+- Build tooling (`TSLP_THREE_SOURCE_ROOT` + `TSLP_THREE_SOURCE_COMMIT`) accepts a Git checkout of the pinned
+  r187dev commit, whose package.json still says `0.186.0`, on the same source fingerprint as the tarball once
+  its stale `build/` is rebuilt (`npm ci --ignore-scripts && npm run build`; the compatibility workflow does so).
+- r187dev slim `compileAsync` restores the material's side and the precompile scope when replay hydration
+  throws (three's own `ec2b745` loop leaves the queued side applied).
+- `verify` rejects every version-only development signature (`0.187.0-dev.ec2b745` as well as `0.186.0`), and
+  the batch three-checkout check reports prerelease versions as rejected development REVISIONs.
+
 ## [0.1.0-alpha.0] - 2026-07-30
 
 ### Added

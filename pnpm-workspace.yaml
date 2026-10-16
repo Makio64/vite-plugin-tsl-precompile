@@ -5,6 +5,9 @@ allowBuilds:
   esbuild: true
   sharp: true
 overrides:
+  # One three instance: the vendored r187dev build (three dev ec2b7458ea, REVISION 187dev) until
+  # r187 is published. Covers the auto-installed plugin/runtime/inspector peers too.
+  three: file:vendor/three-0.187.0-dev.ec2b745.tgz
   'vite@8.0.16>postcss': 8.5.23
   'postcss@8.5.23>nanoid': 3.3.17
   '@eslint/eslintrc@3.3.6>js-yaml': 4.3.1

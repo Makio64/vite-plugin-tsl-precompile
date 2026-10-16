@@ -27,7 +27,7 @@
   },
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "three": "0.186.1"
+    "three": "0.186.1 || 0.187.0-dev.ec2b745"
   },
   "keywords": [
     "three.js",

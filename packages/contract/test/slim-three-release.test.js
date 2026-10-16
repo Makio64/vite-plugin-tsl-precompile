@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from '../src/slim-three-policy.js';
 import {
 	computeThreeReleaseFingerprint,
@@ -72,5 +73,36 @@ test( 'claiming a development revision cannot authenticate unrelated source file
 	await writeFile( join( root, 'src/constants.js' ), `export const REVISION = '${ THREE_RELEASE_PROFILES.development.revision }';` );
 	await writeFile( join( root, 'build/three.js' ), 'unrelated build' );
 	await assert.rejects( readSlimThreeReleaseProfile( root, { sourceCommit: THREE_RELEASE_PROFILES.development.gitCommit } ), /Unsupported Three source/ );
+
+} );
+
+test( 'a Git checkout of the pinned development commit verifies by asserted commit and fingerprint', async ( t ) => {
+
+	// Upstream's package.json at the pinned commit still says 0.186.0; only the vendored tarball
+	// carries the prerelease version. Build tooling asserts the commit (TSLP_THREE_SOURCE_COMMIT).
+	const development = THREE_RELEASE_PROFILES.development;
+	let installed = null;
+	try {
+
+		installed = dirname( dirname( fileURLToPath( import.meta.resolve( 'three/src/constants.js' ) ) ) );
+
+	} catch { /* three is not resolvable from the contract package */ }
+	const installedRevision = installed && /REVISION\s*=\s*['"]([^'"]+)['"]/.exec( await readFile( join( installed, 'src/constants.js' ), 'utf8' ) )?.[ 1 ];
+	if ( installedRevision !== development.revision ) {
+
+		t.skip( 'requires the pinned r187dev package installed as the source of a checkout-shaped copy' );
+		return;
+
+	}
+	const root = await mkdtemp( join( tmpdir(), 'tslp-release-checkout-' ) );
+	t.after( () => rm( root, { recursive: true, force: true } ) );
+	await cp( join( installed, 'src' ), join( root, 'src' ), { recursive: true } );
+	await cp( join( installed, 'build' ), join( root, 'build' ), { recursive: true } );
+	await writeFile( join( root, 'package.json' ), JSON.stringify( { name: 'three', version: '0.186.0' } ) );
+	assert.equal( await readSlimThreeReleaseProfile( root, { sourceCommit: development.gitCommit } ), development );
+	await assert.rejects( readSlimThreeReleaseProfile( root ), /Unsupported Three source 0\.186\.0/, 'an install without an asserted commit needs the pinned package version' );
+	await assert.rejects( readSlimThreeReleaseProfile( root, { sourceCommit: 'f'.repeat( 40 ) } ), /Unsupported Three source/ );
+	await appendFile( join( root, 'src/constants.js' ), '\n// not the pinned source\n' );
+	await assert.rejects( readSlimThreeReleaseProfile( root, { sourceCommit: development.gitCommit } ), /Unsupported Three source/ );
 
 } );

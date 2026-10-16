@@ -20,7 +20,7 @@ export interface ThreeReleaseProfile {
 export const SLIM_THREE_POLICY_VERSION: 'slim-three-policy@13';
 export const SLIM_THREE_PACKAGE_VERSION: '0.186.1';
 export const SLIM_THREE_TYPES_PACKAGE_VERSION: '0.186.0';
-export const SLIM_THREE_PEER_RANGE: '0.186.0 || 0.186.1';
+export const SLIM_THREE_PEER_RANGE: '0.186.1 || 0.187.0-dev.ec2b745';
 export const THREE_RELEASE_PROFILES: Readonly<{
 	stable: Readonly<ThreeReleaseProfile>;
 	development: Readonly<ThreeReleaseProfile>;

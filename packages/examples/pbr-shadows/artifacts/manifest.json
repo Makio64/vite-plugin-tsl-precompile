@@ -1,7 +1,7 @@
 {
   "sphere": {
-    "file": "sphere.768e50fd534f.json",
-    "hash": "768e50fd534f96d99799729acd01cc7fceae8f9d34dc41597c393783b41ecc12",
+    "file": "sphere.8a527b7688ad.json",
+    "hash": "8a527b7688ad73e2f22c64520a6a83966db3c07ad90d7a349f96365458d6cc2d",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -14,11 +14,11 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T09:47:23.363Z"
+    "capturedAt": "2026-10-16T05:01:05.478Z"
   },
   "ground": {
-    "file": "ground.9f7f04d32d54.json",
-    "hash": "9f7f04d32d54f6304d7c5771b0a5bd50f3698c4e6999d3b12a5777dd91cb7ab5",
+    "file": "ground.b1b0079a89fe.json",
+    "hash": "b1b0079a89fe04d28b1e9375354c3c750b077859e7b8a3c889433a117e5ff44c",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -31,6 +31,6 @@
         }
       }
     ],
-    "capturedAt": "2026-10-13T09:47:23.380Z"
+    "capturedAt": "2026-10-16T05:01:05.502Z"
   }
 }

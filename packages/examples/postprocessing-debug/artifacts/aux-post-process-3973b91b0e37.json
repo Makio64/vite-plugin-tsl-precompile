@@ -1,0 +1,512 @@
+{
+  "__materialShape": "post-process",
+  "__configHash": "3973b91b0e37d88040ba4a234b652d39e73093c0335acffb9f5f58e53a38ef55",
+  "__hash": "61f607939787e74f16dfee2989689a63f500ebb5997562b49f9b63840c9dbce6",
+  "__name": "postprocessing-debug-fxaa",
+  "threeVersion": "0.187.0-dev.ec2b745",
+  "threeRevision": "187dev",
+  "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 11539149388186162,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:11539149388186162",
+    "materialShape": "post-process",
+    "vertexShader": "// Three.js r187dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying0 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\n\n\n// codes\n\n\n@vertex\nfn main( @builtin( vertex_index ) vertexIndex : u32,\n\t@location( 0 ) uv : vec2<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying0 = uv;\n\tlet nodeConst18 = vec4<f32>( array< f32, 3 >( -1.0, -1.0, 3.0 )[ vertexIndex ], array< f32, 3 >( 3.0, -1.0, -1.0 )[ vertexIndex ], 0.0, 1.0 );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeConst18;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r187dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 0 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 0 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct nodeUniform3Struct {\n\tvalue : array< vec4<f32>, 6 >\n};\n@binding( 3 ) @group( 0 )\nvar<uniform> nodeUniform3 : nodeUniform3Struct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : vec2<f32>\n};\n@binding( 2 ) @group( 0 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec2<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\nvar<private> nodeVar9 : vec4<f32>;\nvar<private> nodeVar10 : vec4<f32>;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : vec2<f32>;\nvar<private> nodeVar17 : vec2<f32>;\nvar<private> nodeVar18 : vec2<f32>;\nvar<private> nodeVar19 : vec4<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : bool;\nvar<private> nodeVar22 : vec4<f32>;\nvar<private> nodeVar23 : vec2<f32>;\nvar<private> nodeVar24 : vec4<f32>;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : bool;\nvar<private> nodeVar27 : vec4<f32>;\nvar<private> nodeVar28 : f32;\nvar<private> nodeVar29 : f32;\nvar<private> nodeVar30 : f32;\nvar<private> nodeVar31 : bool;\nvar<private> nodeVar32 : f32;\nvar<private> nodeVar33 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying0 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = nodeVarying0;\n\tnodeVar1 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( 0.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tlet nodeConst0 = dot( nodeVar1.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar2 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( 1.0, 0.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tlet nodeConst1 = dot( nodeVar2.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar3 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( 0.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tlet nodeConst2 = dot( nodeVar3.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar4 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( -1.0, 0.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\tlet nodeConst3 = dot( nodeVar4.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tnodeVar5 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying0, 1.0 ) ).xy, -100.0 );\n\tlet nodeConst4 = dot( nodeVar5.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\tlet nodeConst5 = max( max( max( max( nodeConst0, nodeConst1 ), nodeConst2 ), nodeConst3 ), nodeConst4 );\n\tlet nodeConst6 = ( nodeConst5 - min( min( min( min( nodeConst0, nodeConst1 ), nodeConst2 ), nodeConst3 ), nodeConst4 ) );\n\n\tif ( ( ! ( nodeConst6 < max( 0.0312, ( 0.063 * nodeConst5 ) ) ) ) ) {\n\n\t\tnodeVar7 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( 1.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\t\tlet nodeConst7 = dot( nodeVar7.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\t\tnodeVar8 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( 1.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\t\tlet nodeConst8 = dot( nodeVar8.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\t\tnodeVar9 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( -1.0, 1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\t\tlet nodeConst9 = dot( nodeVar9.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\t\tnodeVar10 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( ( nodeVarying0 + ( object.nodeUniform2 * vec2<f32>( -1.0, -1.0 ) ) ), 1.0 ) ).xy, -100.0 );\n\t\tlet nodeConst10 = dot( nodeVar10.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) );\n\t\tlet nodeConst11 = ( ( ( abs( ( ( nodeConst0 + nodeConst2 ) - ( nodeConst4 * 2.0 ) ) ) * 2.0 ) + ( abs( ( ( nodeConst7 + nodeConst8 ) - ( nodeConst1 * 2.0 ) ) ) + abs( ( ( nodeConst9 + nodeConst10 ) - ( nodeConst3 * 2.0 ) ) ) ) ) >= ( ( abs( ( ( nodeConst1 + nodeConst3 ) - ( nodeConst4 * 2.0 ) ) ) * 2.0 ) + ( abs( ( ( nodeConst7 + nodeConst9 ) - ( nodeConst0 * 2.0 ) ) ) + abs( ( ( nodeConst8 + nodeConst10 ) - ( nodeConst2 * 2.0 ) ) ) ) ) );\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tnodeVar6 = object.nodeUniform2.y;\n\n\t\t} else {\n\n\t\t\tnodeVar6 = object.nodeUniform2.x;\n\n\t\t}\n\n\t\tnodeVar11 = nodeVar6;\n\t\tnodeVar12 = 0.0;\n\t\tnodeVar13 = 0.0;\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tnodeVar14 = nodeConst0;\n\n\t\t} else {\n\n\t\t\tnodeVar14 = nodeConst1;\n\n\t\t}\n\n\t\tlet nodeConst12 = abs( ( nodeVar14 - nodeConst4 ) );\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tnodeVar15 = nodeConst2;\n\n\t\t} else {\n\n\t\t\tnodeVar15 = nodeConst3;\n\n\t\t}\n\n\t\tlet nodeConst13 = abs( ( nodeVar15 - nodeConst4 ) );\n\n\t\tif ( ( nodeConst12 < nodeConst13 ) ) {\n\n\t\t\tnodeVar11 = ( - nodeVar11 );\n\t\t\tnodeVar12 = nodeVar15;\n\t\t\tnodeVar13 = nodeConst13;\n\t\t\t\n\n\t\t} else {\n\n\t\t\tnodeVar12 = nodeVar14;\n\t\t\tnodeVar13 = nodeConst12;\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar16 = nodeVarying0;\n\t\tnodeVar17 = vec2<f32>( 0.0, 0.0 );\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tnodeVar16.y = ( nodeVar16.y + ( nodeVar11 * 0.5 ) );\n\t\t\tnodeVar17 = vec2<f32>( object.nodeUniform2.x, 0.0 );\n\t\t\t\n\n\t\t} else {\n\n\t\t\tnodeVar16.x = ( nodeVar16.x + ( nodeVar11 * 0.5 ) );\n\t\t\tnodeVar17 = vec2<f32>( 0.0, object.nodeUniform2.y );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar18 = ( nodeVar16 + ( nodeVar17 * vec2<f32>( nodeUniform3.value[ 0u ].x ) ) );\n\t\tnodeVar19 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVar18, 1.0 ) ).xy, -100.0 );\n\t\tlet nodeConst14 = ( ( nodeConst4 + nodeVar12 ) * 0.5 );\n\t\tnodeVar20 = ( dot( nodeVar19.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeConst14 );\n\t\tlet nodeConst15 = ( nodeVar13 * 0.25 );\n\t\tnodeVar21 = ( abs( nodeVar20 ) >= nodeConst15 );\n\n\t\tfor ( var i : i32 = 1; i < 6; i ++ ) {\n\n\n\t\t\tif ( nodeVar21 ) {\n\n\t\t\t\tbreak;\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\tnodeVar18 = ( nodeVar18 + ( nodeVar17 * vec2<f32>( nodeUniform3.value[ i ].x ) ) );\n\t\t\tnodeVar22 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVar18, 1.0 ) ).xy, -100.0 );\n\t\t\tnodeVar20 = ( dot( nodeVar22.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeConst14 );\n\t\t\tnodeVar21 = ( abs( nodeVar20 ) >= nodeConst15 );\n\n\t\t}\n\n\n\t\tif ( ( ! nodeVar21 ) ) {\n\n\t\t\tnodeVar18 = ( nodeVar18 + ( nodeVar17 * vec2<f32>( 8.0 ) ) );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar23 = ( nodeVar16 - ( nodeVar17 * vec2<f32>( nodeUniform3.value[ 0u ].x ) ) );\n\t\tnodeVar24 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVar23, 1.0 ) ).xy, -100.0 );\n\t\tnodeVar25 = ( dot( nodeVar24.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeConst14 );\n\t\tnodeVar26 = ( abs( nodeVar25 ) >= nodeConst15 );\n\n\t\tfor ( var i : i32 = 1; i < 6; i ++ ) {\n\n\n\t\t\tif ( nodeVar26 ) {\n\n\t\t\t\tbreak;\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\tnodeVar23 = ( nodeVar23 - ( nodeVar17 * vec2<f32>( nodeUniform3.value[ i ].x ) ) );\n\t\t\tnodeVar27 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVar23, 1.0 ) ).xy, -100.0 );\n\t\t\tnodeVar25 = ( dot( nodeVar27.xyz, vec3<f32>( 0.3, 0.59, 0.11 ) ) - nodeConst14 );\n\t\t\tnodeVar26 = ( abs( nodeVar25 ) >= nodeConst15 );\n\n\t\t}\n\n\n\t\tif ( ( ! nodeVar26 ) ) {\n\n\t\t\tnodeVar23 = ( nodeVar23 - ( nodeVar17 * vec2<f32>( 8.0 ) ) );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar28 = 0.0;\n\t\tnodeVar29 = 0.0;\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tnodeVar28 = ( nodeVar18.x - nodeVarying0.x );\n\t\t\tnodeVar29 = ( nodeVarying0.x - nodeVar23.x );\n\t\t\t\n\n\t\t} else {\n\n\t\t\tnodeVar28 = ( nodeVar18.y - nodeVarying0.y );\n\t\t\tnodeVar29 = ( nodeVarying0.y - nodeVar23.y );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar30 = 0.0;\n\t\tnodeVar31 = false;\n\n\t\tif ( ( nodeVar28 <= nodeVar29 ) ) {\n\n\t\t\tnodeVar30 = nodeVar28;\n\t\t\tnodeVar31 = ( nodeVar20 >= 0.0 );\n\t\t\t\n\n\t\t} else {\n\n\t\t\tnodeVar30 = nodeVar29;\n\t\t\tnodeVar31 = ( nodeVar25 >= 0.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar32 = 0.0;\n\n\t\tif ( ( nodeVar31 == ( ( nodeConst4 - nodeConst14 ) >= 0.0 ) ) ) {\n\n\t\t\tnodeVar32 = 0.0;\n\t\t\t\n\n\t\t} else {\n\n\t\t\tnodeVar32 = ( 0.5 - ( nodeVar30 / ( nodeVar28 + nodeVar29 ) ) );\n\t\t\t\n\n\t\t}\n\n\n\t\tif ( nodeConst11 ) {\n\n\t\t\tlet nodeConst16 = smoothstep( 0.0, 1.0, clamp( ( abs( ( ( ( ( 2.0 * ( ( ( nodeConst0 + nodeConst1 ) + nodeConst2 ) + nodeConst3 ) ) + ( ( ( nodeConst7 + nodeConst9 ) + nodeConst8 ) + nodeConst10 ) ) * 0.08333333333333333 ) - nodeConst4 ) ) / max( nodeConst6, 0.0 ) ), 0.0, 1.0 ) );\n\t\t\tlet nodeConst17 = max( ( ( nodeConst16 * nodeConst16 ) * 1.0 ), nodeVar32 );\n\t\t\tnodeVar0.y = ( nodeVar0.y + ( nodeVar11 * nodeConst17 ) );\n\t\t\t\n\n\t\t} else {\n\n\t\t\tlet nodeConst16 = smoothstep( 0.0, 1.0, clamp( ( abs( ( ( ( ( 2.0 * ( ( ( nodeConst0 + nodeConst1 ) + nodeConst2 ) + nodeConst3 ) ) + ( ( ( nodeConst7 + nodeConst9 ) + nodeConst8 ) + nodeConst10 ) ) * 0.08333333333333333 ) - nodeConst4 ) ) / max( nodeConst6, 0.0 ) ), 0.0, 1.0 ) );\n\t\t\tlet nodeConst17 = max( ( ( nodeConst16 * nodeConst16 ) * 1.0 ), nodeVar32 );\n\t\t\tnodeVar0.x = ( nodeVar0.x + ( nodeVar11 * nodeConst17 ) );\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\tnodeVar33 = textureSampleBias( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVar0, 1.0 ) ).xy, -100.0 );\n\n\t// result\n\n\toutput.color = nodeVar33;\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "uv",
+        "type": "vec2",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 64,
+            "access": null
+          },
+          {
+            "name": "UniformBuffer_2",
+            "kind": "uniform-buffer",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": 96,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 2,
+        "byteLength": 64,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "uniform.live",
+              "name": null,
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              },
+              "liveNodeId": 0,
+              "nodePath": [
+                "contextNode",
+                "value",
+                "renderPipeline",
+                "_quadMesh",
+                "material",
+                "fragmentNode",
+                "textureNode",
+                "_matrixUniform"
+              ]
+            }
+          },
+          {
+            "name": "nodeUniform2",
+            "offset": 48,
+            "size": 8,
+            "dtype": "vec2",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "vec2",
+                "data": [
+                  0.00078125,
+                  0.001388888888888889
+                ]
+              },
+              "liveNodeId": 1,
+              "nodePath": [
+                "contextNode",
+                "value",
+                "renderPipeline",
+                "_quadMesh",
+                "material",
+                "fragmentNode",
+                "_invSize"
+              ]
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform0_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "5d9d9be6-68a6-44a0-a9a5-a3644097c2e2",
+              "textureName": "postprocessing-debug-fxaa-color",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1280,
+              "imageHeight": 720,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 0
+                },
+                "target": {
+                  "topology": "single",
+                  "dimension": "2d",
+                  "mrtCount": 1
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1016,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "postprocessing-debug-fxaa-color",
+                  "extent": {
+                    "width": 1280,
+                    "height": 720,
+                    "depth": 1
+                  }
+                }
+              }
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "5d9d9be6-68a6-44a0-a9a5-a3644097c2e2",
+              "textureName": "postprocessing-debug-fxaa-color",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1280,
+              "imageHeight": 720,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 0
+                },
+                "target": {
+                  "topology": "single",
+                  "dimension": "2d",
+                  "mrtCount": 1
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1016,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "postprocessing-debug-fxaa-color",
+                  "extent": {
+                    "width": 1280,
+                    "height": 720,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform0_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "5d9d9be6-68a6-44a0-a9a5-a3644097c2e2",
+                "textureName": "postprocessing-debug-fxaa-color",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1280,
+                "imageHeight": 720,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 0
+                  },
+                  "target": {
+                    "topology": "single",
+                    "dimension": "2d",
+                    "mrtCount": 1
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1016,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "postprocessing-debug-fxaa-color",
+                    "extent": {
+                      "width": 1280,
+                      "height": 720,
+                      "depth": 1
+                    }
+                  }
+                }
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "5d9d9be6-68a6-44a0-a9a5-a3644097c2e2",
+                "textureName": "postprocessing-debug-fxaa-color",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1280,
+                "imageHeight": 720,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 0
+                  },
+                  "target": {
+                    "topology": "single",
+                    "dimension": "2d",
+                    "mrtCount": 1
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1016,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "postprocessing-debug-fxaa-color",
+                    "extent": {
+                      "width": 1280,
+                      "height": 720,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 64,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "uniform.live",
+                  "name": null,
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  },
+                  "liveNodeId": 0,
+                  "nodePath": [
+                    "contextNode",
+                    "value",
+                    "renderPipeline",
+                    "_quadMesh",
+                    "material",
+                    "fragmentNode",
+                    "textureNode",
+                    "_matrixUniform"
+                  ]
+                }
+              },
+              {
+                "name": "nodeUniform2",
+                "offset": 48,
+                "size": 8,
+                "dtype": "vec2",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "vec2",
+                    "data": [
+                      0.00078125,
+                      0.001388888888888889
+                    ]
+                  },
+                  "liveNodeId": 1,
+                  "nodePath": [
+                    "contextNode",
+                    "value",
+                    "renderPipeline",
+                    "_quadMesh",
+                    "material",
+                    "fragmentNode",
+                    "_invSize"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "type": "buffer-uniform",
+            "ref": {
+              "name": "UniformBuffer_2",
+              "byteLength": 96,
+              "arrayType": "Float32Array",
+              "visibility": 2,
+              "valueSnapshot": [
+                1,
+                0,
+                0,
+                0,
+                1.5,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                4,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": true,
+      "depthWrite": true,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 3,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[],\"depth\":true,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"default\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "6f62da76-1403-423a-8280-8ac73c1744eb",
+    "captureClock": 0.43069999998807934,
+    "replayConfig": {
+      "schema": "render-pipeline@1",
+      "outputColorTransform": false,
+      "toneMapping": 0,
+      "outputColorSpace": "srgb"
+    },
+    "sourceThreeVersion": "0.187.0-dev.ec2b745",
+    "sourceThreeRevision": "187dev",
+    "sourceThreeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

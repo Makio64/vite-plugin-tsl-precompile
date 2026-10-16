@@ -80,9 +80,16 @@ both; a shader captured for one backend is not a fallback for the other.
 
 The default release is r186 (`three@0.186.1`, `@types/three@0.186.0`).
 Experimental r187dev builds require the exact source snapshot pinned in
-[`slim-three-policy.js`](packages/contract/src/slim-three-policy.js); its nominal
-package version is `0.186.0`, so the version alone cannot identify it. Build with
-`TSLP_THREE_SOURCE_ROOT` and write candidate output with `TSLP_SLIM_OUTPUT_FILE`.
+[`slim-three-releases.js`](packages/contract/src/slim-three-releases.js): three dev
+`ec2b7458ea`, installed as the vendored package `0.187.0-dev.ec2b745`
+(`"three": "file:vendor/three-0.187.0-dev.ec2b745.tgz"`). Its `src/` and `build/`
+fingerprint is verified independently of the version string. Build a candidate slim
+bundle with `TSLP_SLIM_OUTPUT_FILE`. A Git checkout of that commit still says `0.186.0`
+in its package.json and has a stale checked-in `build/`: run
+`npm ci --ignore-scripts && npm run build` in it, then point `TSLP_THREE_SOURCE_ROOT`
+at it together with
+`TSLP_THREE_SOURCE_COMMIT=ec2b7458eae7bf3718b10a4d7b867fb746a2b70a`; the Vite plugin
+itself accepts only the vendored package.
 Development artifacts require the pinned revision/commit identity and real
 recapture. The pinned r187dev source build captures and replays native cube PMREM
 from scenes, equirectangular textures and cubemaps; r186 keeps its CubeUV atlas

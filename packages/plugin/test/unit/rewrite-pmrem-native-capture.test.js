@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { registerHooks } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
+import { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
+import { readSlimThreeReleaseProfile } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import { assertInternalPassFamily, validateInternalPassDescriptor } from '@tsl-precompile/contract/internal-pass';
 import { createPMREMCubeLayoutConfig, createPMREMCubeCaptureLayout, createPMREMLayoutConfig, pmremRequiredStages } from '@tsl-precompile/contract/pmrem-config';
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
@@ -18,7 +19,11 @@ const sourceRoot = process.env.TSLP_THREE_SOURCE_ROOT ? resolve( process.env.TSL
 const packageVersion = JSON.parse( readFileSync( resolve( sourceRoot, '../package.json' ), 'utf8' ) ).version;
 const revision = /export const REVISION\s*=\s*['"]([^'"]+)['"]/.exec( readFileSync( resolve( sourceRoot, 'constants.js' ), 'utf8' ) )[ 1 ];
 const sourceCommit = process.env.TSLP_THREE_SOURCE_ROOT ? execFileSync( 'git', [ '-C', process.env.TSLP_THREE_SOURCE_ROOT, 'rev-parse', 'HEAD' ], { encoding: 'utf8' } ).trim() : undefined;
-const release = resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
+// Development sources verify by their src/ + build/ fingerprint: the vendored tarball by its exact
+// package version, a Git checkout of the pinned commit (upstream's nominal 0.186.0) by that commit.
+const release = revision === THREE_RELEASE_PROFILES.development.revision
+	? await readSlimThreeReleaseProfile( resolve( sourceRoot, '..' ), { sourceCommit } )
+	: resolveSlimThreeRelease( { packageVersion, revision, sourceCommit } );
 assert.ok( release, 'native captures require a verified source release' );
 
 // Every compiler/extractor import resolves to this one native source graph.
@@ -39,7 +44,11 @@ const { extractMaterial } = await import( '../../src/node-harness.js' );
 const { validateAuxiliaryFamilyPayload } = await import( '../../src/dev-capture-server.js' );
 const emitter = { threeVersion: release.packageVersion, threeRevision: release.revision, threeCommit: release.gitCommit };
 
-test( `native emitter/${ release.id }: plugin defines only verified development axes`, async () => {
+// A Git checkout keeps upstream's nominal package version; the Vite plugin verifies consumer installs,
+// which need the exact vendored package version (build tooling asserts the commit instead).
+const consumerInstall = packageVersion === release.packageVersion || 'a Git checkout is not a consumer install (nominal package version)';
+
+test( `native emitter/${ release.id }: plugin defines only verified development axes`, { skip: consumerInstall !== true && consumerInstall }, async () => {
 
 	const { default: tslPrecompile } = await import( '../../src/index.js' );
 	const root = await mkdtemp( resolve( tmpdir(), 'tslp-native-emitter-' ) );

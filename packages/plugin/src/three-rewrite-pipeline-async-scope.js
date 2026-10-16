@@ -23,7 +23,10 @@ export function rewritePipelineAsyncScopes( ast, threeVersion ) {
 			const [ variable ] = declaration.node.declarations;
 			if ( declaration.node.declarations.length !== 1 || ! t.isIdentifier( variable.id, { name: 'errorScope' } ) ) return;
 			const expectedPop = parse( 'const errorScope = await device.popErrorScope();', { allowAwaitOutsideFunction: true } ).program.body[ 0 ];
-			if ( compact( declaration.node ) !== compact( expectedPop ) || ! declaration.parentPath.isBlockStatement() ) throw new Error( 'WebGPUPipelineUtils: async validation scope shape changed' );
+			// three dev ec2b745 (#34816) already pops the scope before awaiting the pipeline.
+			const nativeOrderedPop = parse( 'const errorScope = await errorScopePromise;', { allowAwaitOutsideFunction: true } ).program.body[ 0 ];
+			const ordered = compact( declaration.node ) === compact( nativeOrderedPop );
+			if ( ( ! ordered && compact( declaration.node ) !== compact( expectedPop ) ) || ! declaration.parentPath.isBlockStatement() ) throw new Error( 'WebGPUPipelineUtils: async validation scope shape changed' );
 			const statements = declaration.parentPath.node.body, index = statements.indexOf( declaration.node );
 			const descriptor = render ? '_renderPipelineDescriptor' : '_computePipelineDescriptor';
 			const data = render ? 'pipelineData' : 'pipelineGPU';
@@ -34,9 +37,16 @@ export function rewritePipelineAsyncScopes( ast, threeVersion ) {
 				}
 			}` ).program.body[ 0 ].body.body[ 0 ];
 			const expectedReset = parse( `${ descriptor }.reset();` ).program.body[ 0 ];
-			if ( index < 2 || compact( statements[ index - 1 ] ) !== compact( expectedWait ) || compact( statements[ index - 2 ] ) !== compact( expectedReset ) ) throw new Error( 'WebGPUPipelineUtils: async pipeline completion shape changed' );
-			statements.splice( index - 1, 0, parse( 'const errorScopePromise = device.popErrorScope();' ).program.body[ 0 ] );
-			variable.init = t.awaitExpression( t.identifier( 'errorScopePromise' ) );
+			const expectedEarlyPop = parse( 'const errorScopePromise = device.popErrorScope();' ).program.body[ 0 ];
+			const resetIndex = ordered ? index - 3 : index - 2;
+			if ( resetIndex < 0 || compact( statements[ index - 1 ] ) !== compact( expectedWait ) || compact( statements[ resetIndex ] ) !== compact( expectedReset ) ||
+				( ordered && compact( statements[ index - 2 ] ) !== compact( expectedEarlyPop ) ) ) throw new Error( 'WebGPUPipelineUtils: async pipeline completion shape changed' );
+			if ( ! ordered ) {
+
+				statements.splice( index - 1, 0, expectedEarlyPop );
+				variable.init = t.awaitExpression( t.identifier( 'errorScopePromise' ) );
+
+			}
 			found ++;
 
 		} } );

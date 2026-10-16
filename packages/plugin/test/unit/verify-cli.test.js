@@ -49,7 +49,7 @@ test( 'verify accepts exact dev signatures and rejects old nominal-version signa
 			writeFileSync( join( dir, 'manifest.json' ), JSON.stringify( { same: { file: 'same.json', hash } } ) );
 			const result = runVerify( cwd, 'artifacts' );
 			assert.equal( result.status, current ? 0 : 1, result.stderr );
-			if ( ! current ) assert.match( result.stderr, /Nominal 0.186.0 lacks the pinned r187dev revision\/commit/ );
+			if ( ! current ) assert.match( result.stderr, /lacks the pinned r187dev revision\/commit/ );
 
 		}
 

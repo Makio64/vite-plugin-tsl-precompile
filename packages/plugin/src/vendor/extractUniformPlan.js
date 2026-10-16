@@ -672,6 +672,24 @@ function classifyTextureBinding( binding ) {
 }
 
 /**
+ * r185/r186 `lightViewPosition()` returns the memoised view-space UniformNode.
+ * r187dev returns a `.once()` Fn call (wrapped in a VarNode) whose single-camera
+ * branch returns the per-light memoised `viewPositionUniform` (ArrayCameras use
+ * cameraViewMatrix * lightPosition instead). Resolve that same uniform so it keeps
+ * its live `light.viewPosition` provenance instead of becoming a frozen snapshot.
+ */
+function resolveLightViewPositionUniform( node ) {
+
+	if ( node && node.isUniformNode && node.value ) return node;
+	const call = node && ( node.isShaderCallNodeInternal ? node : node.node );
+	const jsFunc = call && call.isShaderCallNodeInternal === true && call.shaderNode ? call.shaderNode.jsFunc : null;
+	if ( typeof jsFunc !== 'function' ) return null;
+	const uniform = jsFunc( { camera: { isArrayCamera: false } } );
+	return uniform && uniform.isUniformNode && uniform.value ? uniform : null;
+
+}
+
+/**
  * Walk `state.updateNodes` for `AnalyticLightNode` instances and harvest the
  * UniformNodes each one owns. Each entry maps a UniformNode to a `light.<prop>`
  * source descriptor tagged with the light's traversal index (0..N-1) so the
@@ -781,8 +799,8 @@ function collectLightUniformSources( state ) {
 
 			if ( typeof lightViewPosition === 'function' ) {
 
-				const u = lightViewPosition( light );
-				if ( u && u.value ) out.set( u, { kind: 'light.viewPosition', ...base } );
+				const u = resolveLightViewPositionUniform( lightViewPosition( light ) );
+				if ( u ) out.set( u, { kind: 'light.viewPosition', ...base } );
 
 			}
 

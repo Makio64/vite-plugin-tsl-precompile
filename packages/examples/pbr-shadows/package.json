@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "three": "0.186.1"
+    "three": "file:../../../vendor/three-0.187.0-dev.ec2b745.tgz"
   },
   "devDependencies": {
     "vite": "^8.0.16",

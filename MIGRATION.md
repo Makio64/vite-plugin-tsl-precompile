@@ -142,9 +142,9 @@ Captured artifacts are tied to one `three` revision. Pin to keep them valid:
    }
    ```
    The published slim bundle requires `three@0.186.1`. The plugin and runtime
-   also accept the nominal `0.186.0` package version used by the exact pinned
-   r187dev source snapshot; development support validates its revision, commit,
-   and source fingerprint independently. See the
+   also accept the exact pinned r187dev package `0.187.0-dev.ec2b745` (three dev
+   `ec2b7458ea`, vendored as a tarball); development support validates its
+   revision, commit, and source fingerprint independently. See the
    [development build policy](README.md#requirements) before using that path.
    `0.185.x` is outside the current supported release profile.
    r187dev artifacts must carry `sourceThreeRevision` and `sourceThreeCommit`;

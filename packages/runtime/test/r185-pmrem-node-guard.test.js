@@ -57,6 +57,8 @@ test( 'native r186 PMREMNode handles a pending source without the historical gua
 	const source = new THREE.CubeTexture();
 	source.image = [];
 	const generated = new THREE.Texture( { width: 48, height: 64 } );
+	// r187dev PMREMNode.updateFromTexture() reads the cube PMREM's mip chain; r186 ignores it.
+	generated.mipmaps = [ { width: 48, height: 48 } ];
 	const node = new THREE.PMREMNode( source, vec3( 0, 1, 0 ), float( 0 ) );
 	const placeholder = node._texture.value;
 	let generations = 0;

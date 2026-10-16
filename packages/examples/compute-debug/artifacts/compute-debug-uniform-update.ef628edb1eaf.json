@@ -1,0 +1,213 @@
+{
+  "__hash": "ef628edb1eaf1e03d3db0dcfbd8bbcc0a3111dc4f016482108bf726aa1ef480b",
+  "__name": "compute-debug-uniform-update",
+  "artifact": {
+    "version": 3,
+    "kind": "compute",
+    "cacheKey": 1,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:1",
+    "name": "compute-debug-uniform-update",
+    "computeShader": "// Three.js r187dev - Node System\n\n// directives\nenable subgroups;\n\n// system\nvar<private> instanceIndex : u32;\n\n// locals\n\n\n// structs\n\n\n// uniforms\n@binding( 0 ) @group( 0 ) var nodeUniform0 : texture_storage_2d<rgba8unorm, write>;\n\nstruct objectStruct {\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32\n};\n@binding( 1 ) @group( 0 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : f32;\n\n// codes\n\n\n@compute @workgroup_size( 8, 8, 1 )\nfn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\t@builtin( local_invocation_id ) localId : vec3<u32>,\n\t@builtin( num_workgroups ) numWorkgroups : vec3<u32>,\n\t@builtin( subgroup_size ) subgroupSize : u32 ) {\n\n\t// local vars\n\t\n\n\t// system\n\tinstanceIndex = globalId.x\n\t\t+ globalId.y * ( 8 * numWorkgroups.x )\n\t\t+ globalId.z * ( 8 * numWorkgroups.x ) * ( 8 * numWorkgroups.y );\n\n\t// flow\n\t// code\n\n\tlet nodeConst0 = ( f32( globalId.x ) / 63.0 );\n\tlet nodeConst1 = ( f32( globalId.y ) / 63.0 );\n\tlet nodeConst2 = ( ( nodeConst0 + ( nodeConst1 * 0.5 ) ) > object.nodeUniform1 );\n\n\tif ( nodeConst2 ) {\n\n\t\tnodeVar0 = object.nodeUniform2;\n\n\t} else {\n\n\t\tnodeVar0 = ( nodeConst0 * 0.25 );\n\n\t}\n\n\n\tif ( nodeConst2 ) {\n\n\t\tnodeVar1 = ( nodeConst1 * 0.45 );\n\n\t} else {\n\n\t\tnodeVar1 = ( object.nodeUniform2 * 0.7 );\n\n\t}\n\n\n\tif ( nodeConst2 ) {\n\n\t\tnodeVar2 = ( ( 1.0 - nodeConst0 ) * 0.8 );\n\n\t} else {\n\n\t\tnodeVar2 = ( ( 1.0 - nodeConst1 ) * 0.45 );\n\n\t}\n\n\ttextureStore( nodeUniform0, vec2<u32>( globalId.x, globalId.y ), vec4<f32>( nodeVar0, nodeVar1, nodeVar2, 1.0 ) );\n\n\t\n\n}\n",
+    "vertexShader": "",
+    "fragmentShader": "",
+    "attributes": [],
+    "transforms": [],
+    "bindings": [
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 4,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "writeOnly",
+            "store": true
+          },
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 16,
+            "access": null
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 4,
+        "byteLength": 16,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.42
+              }
+            }
+          },
+          {
+            "name": "nodeUniform2",
+            "offset": 4,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "uniform.live",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.72
+              }
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "2d",
+            "access": "writeOnly",
+            "visibility": 4,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "7fb83ab4-f0a3-4131-a5c2-fe472635f1a2",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": true,
+              "colorSpace": "",
+              "flipY": true,
+              "imageWidth": 64,
+              "imageHeight": 64
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "writeOnly",
+              "visibility": 4,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "7fb83ab4-f0a3-4131-a5c2-fe472635f1a2",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": true,
+                "colorSpace": "",
+                "flipY": true,
+                "imageWidth": 64,
+                "imageHeight": 64
+              }
+            }
+          },
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 16,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.42
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform2",
+                "offset": 4,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "uniform.live",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.72
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "dispatchSize": [
+      8,
+      8,
+      1
+    ],
+    "workgroupSize": [
+      8,
+      8,
+      1
+    ],
+    "meta": {
+      "updateNodes": 1,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "computeBindings": {
+      "version": "compute-bindings@1",
+      "entries": [
+        {
+          "key": "output",
+          "target": "storage-texture",
+          "group": 0,
+          "binding": 0,
+          "access": "writeOnly",
+          "textureType": "2d"
+        },
+        {
+          "key": "threshold",
+          "target": "uniform-slot",
+          "group": 0,
+          "slot": 0,
+          "dtype": "number"
+        },
+        {
+          "key": "tint",
+          "target": "uniform-slot",
+          "group": 0,
+          "slot": 1,
+          "dtype": "number"
+        }
+      ]
+    },
+    "sourceGraphHash": "4518b481175d9647edf8d63ded36fba1355ba673875ab6f50177a8b3d71dd459",
+    "sourceHashVersion": "0.1.0",
+    "sourceThreeVersion": "0.187.0-dev.ec2b745",
+    "sourceThreeRevision": "187dev",
+    "sourceThreeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+    "sourceValidationMode": "runtime-graph",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

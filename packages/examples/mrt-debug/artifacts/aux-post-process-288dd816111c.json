@@ -1,0 +1,614 @@
+{
+  "__materialShape": "post-process",
+  "__configHash": "288dd816111c5478b6520a220025c8a794290a8df100e6311f042ae0093f0915",
+  "__hash": "6d8ade03c87b4967d7660ea2ac37a6f697c51de8401a8fd7aea5a5b047e3e20c",
+  "__name": "mrt-pass-pipeline",
+  "threeVersion": "0.187.0-dev.ec2b745",
+  "threeRevision": "187dev",
+  "threeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+  "pluginVersion": "0.1.0",
+  "artifact": {
+    "version": 3,
+    "cacheKey": 15352134045507852,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:15352134045507852",
+    "materialShape": "post-process",
+    "vertexShader": "// Three.js r187dev - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying0 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\n\n\n// codes\n\n\n@vertex\nfn main( @builtin( vertex_index ) vertexIndex : u32,\n\t@location( 0 ) uv : vec2<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying0 = uv;\n\tlet nodeConst2 = vec4<f32>( array< f32, 3 >( -1.0, -1.0, 3.0 )[ vertexIndex ], array< f32, 3 >( 3.0, -1.0, -1.0 )[ vertexIndex ], 0.0, 1.0 );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeConst2;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r187dev - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 1 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n@binding( 2 ) @group( 1 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n\nstruct renderStruct {\n\tnodeUniform1 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec2<u32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec2<u32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec2<u32>;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec2<u32>;\n\n// codes\nfn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clampT_2d( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n\nfn fn4 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn fn2 ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn3 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying0 : vec2<f32>,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureDimensions( nodeUniform0, u32( 0 ) );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( nodeVarying0 ) * vec2<f32>( nodeVar1 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar1 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tlet nodeConst0 = nodeVar0;\n\tlet nodeConst1 = fn4( vec4<f32>( nodeConst0.xyz, clamp( nodeConst0.w, 0.0, 1.0 ) ) );\n\tnodeVar3 = textureDimensions( nodeUniform2, u32( 0 ) );\n\tnodeVar2 = textureLoad( nodeUniform2, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( nodeVarying0 ) * vec2<f32>( nodeVar3 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar3 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar5 = textureDimensions( nodeUniform3, u32( 0 ) );\n\tnodeVar4 = textureLoad( nodeUniform3, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( nodeVarying0 ) * vec2<f32>( nodeVar5 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar5 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\tnodeVar7 = textureDimensions( nodeUniform4, u32( 0 ) );\n\tnodeVar6 = textureLoad( nodeUniform4, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( nodeVarying0 ) * vec2<f32>( nodeVar7 ) ), vec2<f32>( 0 ), vec2<f32>( nodeVar7 - vec2<u32>( 1, 1 ) ) ) ), u32( 0 ) );\n\n\t// result\n\n\toutput.color = mix( mix( mix( mix( fn3( vec4<f32>( fn2( nodeConst1.xyz ), nodeConst1.w ) ), nodeConst0, step( 0.25, ( fragCoord.xy / render.nodeUniform1 ).x ) ), nodeVar2, step( 0.5, ( fragCoord.xy / render.nodeUniform1 ).x ) ), nodeVar4, step( 0.75, ( fragCoord.xy / render.nodeUniform1 ).x ) ), nodeVar6, step( 0.9, ( fragCoord.xy / render.nodeUniform1 ).x ) );\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "uv",
+        "type": "vec2",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 16,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "nodeUniform0",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "nodeUniform2",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "nodeUniform3",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "nodeUniform4",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 16,
+        "slots": [
+          {
+            "name": "nodeUniform1",
+            "offset": 0,
+            "size": 8,
+            "dtype": "vec2",
+            "source": {
+              "kind": "renderer.size",
+              "valueSnapshot": {
+                "type": "vec2",
+                "data": [
+                  1280,
+                  720
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 16,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform1",
+                "offset": 0,
+                "size": 8,
+                "dtype": "vec2",
+                "source": {
+                  "kind": "renderer.size",
+                  "valueSnapshot": {
+                    "type": "vec2",
+                    "data": [
+                      1280,
+                      720
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 2,
+        "byteLength": 0,
+        "slots": [],
+        "textures": [
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform0",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "2091cdaf-de08-4d06-9849-4fec22f13a34",
+              "textureName": "output",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1003,
+              "minFilter": 1003,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1,
+              "imageHeight": 1,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 0
+                },
+                "target": {
+                  "topology": "mrt",
+                  "dimension": "2d",
+                  "mrtCount": 4
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1016,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "output",
+                  "extent": {
+                    "width": 1,
+                    "height": 1,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform2",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "ed997752-cc6e-4f23-90b9-02b973cb505d",
+              "textureName": "normal",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1003,
+              "minFilter": 1003,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1,
+              "imageHeight": 1,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 1
+                },
+                "target": {
+                  "topology": "mrt",
+                  "dimension": "2d",
+                  "mrtCount": 4
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1009,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "normal",
+                  "extent": {
+                    "width": 1,
+                    "height": 1,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform3",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "7c92267a-358b-4cff-ae74-e46c4478cc50",
+              "textureName": "diffuse",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1003,
+              "minFilter": 1003,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1,
+              "imageHeight": 1,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 2
+                },
+                "target": {
+                  "topology": "mrt",
+                  "dimension": "2d",
+                  "mrtCount": 4
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1009,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "diffuse",
+                  "extent": {
+                    "width": 1,
+                    "height": 1,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform4",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "bfc4d948-2d4d-45d4-8c04-35d4a2ebd9d5",
+              "textureName": "emissive",
+              "mapping": 300,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1003,
+              "minFilter": 1003,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "",
+              "flipY": false,
+              "imageWidth": 1,
+              "imageHeight": 1,
+              "imageDepth": 1,
+              "renderTargetSelector": {
+                "schema": "renderer-render-target-texture@1",
+                "attachment": {
+                  "role": "color",
+                  "index": 3
+                },
+                "target": {
+                  "topology": "mrt",
+                  "dimension": "2d",
+                  "mrtCount": 4
+                },
+                "texture": {
+                  "dimension": "2d",
+                  "format": 1023,
+                  "type": 1009,
+                  "colorSpace": ""
+                },
+                "hints": {
+                  "name": "emissive",
+                  "extent": {
+                    "width": 1,
+                    "height": 1,
+                    "depth": 1
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform0",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "2091cdaf-de08-4d06-9849-4fec22f13a34",
+                "textureName": "output",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1,
+                "imageHeight": 1,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 0
+                  },
+                  "target": {
+                    "topology": "mrt",
+                    "dimension": "2d",
+                    "mrtCount": 4
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1016,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "output",
+                    "extent": {
+                      "width": 1,
+                      "height": 1,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform2",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "ed997752-cc6e-4f23-90b9-02b973cb505d",
+                "textureName": "normal",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1,
+                "imageHeight": 1,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 1
+                  },
+                  "target": {
+                    "topology": "mrt",
+                    "dimension": "2d",
+                    "mrtCount": 4
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1009,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "normal",
+                    "extent": {
+                      "width": 1,
+                      "height": 1,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform3",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "7c92267a-358b-4cff-ae74-e46c4478cc50",
+                "textureName": "diffuse",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1,
+                "imageHeight": 1,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 2
+                  },
+                  "target": {
+                    "topology": "mrt",
+                    "dimension": "2d",
+                    "mrtCount": 4
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1009,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "diffuse",
+                    "extent": {
+                      "width": 1,
+                      "height": 1,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform4",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "bfc4d948-2d4d-45d4-8c04-35d4a2ebd9d5",
+                "textureName": "emissive",
+                "mapping": 300,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1003,
+                "minFilter": 1003,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "",
+                "flipY": false,
+                "imageWidth": 1,
+                "imageHeight": 1,
+                "imageDepth": 1,
+                "renderTargetSelector": {
+                  "schema": "renderer-render-target-texture@1",
+                  "attachment": {
+                    "role": "color",
+                    "index": 3
+                  },
+                  "target": {
+                    "topology": "mrt",
+                    "dimension": "2d",
+                    "mrtCount": 4
+                  },
+                  "texture": {
+                    "dimension": "2d",
+                    "format": 1023,
+                    "type": 1009,
+                    "colorSpace": ""
+                  },
+                  "hints": {
+                    "name": "emissive",
+                    "extent": {
+                      "width": 1,
+                      "height": 1,
+                      "depth": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {},
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": true,
+      "depthWrite": true,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "fog": true,
+      "lights": false,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 2,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":false,\"maps\":[],\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":false,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":false,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":null,\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[],\"depth\":true,\"depthTexture\":null,\"multiview\":false,\"sampleCount\":1,\"stencil\":false,\"surface\":\"default\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "2b7cdb1f-1100-411c-8fe1-927b0ed84560",
+    "captureClock": 0.06340000000596047,
+    "replayConfig": {
+      "schema": "render-pipeline@1",
+      "outputColorTransform": false,
+      "toneMapping": 0,
+      "outputColorSpace": "srgb"
+    },
+    "sourceThreeVersion": "0.187.0-dev.ec2b745",
+    "sourceThreeRevision": "187dev",
+    "sourceThreeCommit": "ec2b7458eae7bf3718b10a4d7b867fb746a2b70a",
+    "sourceHashVersion": "0.1.0",
+    "artifactContentHashVersion": "artifact-content@3"
+  }
+}

@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  three: file:vendor/three-0.187.0-dev.ec2b745.tgz
   vite@8.0.16>postcss: 8.5.23
   postcss@8.5.23>nanoid: 3.3.17
   '@eslint/eslintrc@3.3.6>js-yaml': 4.3.1
@@ -37,8 +38,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -68,8 +69,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -84,8 +85,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -100,8 +101,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -122,8 +123,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -138,8 +139,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -157,8 +158,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -173,8 +174,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -189,8 +190,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       playwright:
         specifier: ^1.59.1
@@ -208,8 +209,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -224,8 +225,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -246,8 +247,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -262,8 +263,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       playwright:
         specifier: ^1.59.1
@@ -281,8 +282,8 @@ importers:
         specifier: workspace:*
         version: link:../runtime
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
 
   packages/plugin:
     dependencies:
@@ -308,8 +309,8 @@ importers:
         specifier: 0.186.0
         version: 0.186.0
       three:
-        specifier: 0.186.0 || 0.186.1
-        version: 0.186.1
+        specifier: file:../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
       vite:
         specifier: '>=6.4.3 <9'
         version: 8.0.16(@types/node@25.7.0)(terser@5.46.1)
@@ -323,8 +324,8 @@ importers:
         specifier: 0.186.0
         version: 0.186.0
       three:
-        specifier: 0.186.0 || 0.186.1
-        version: 0.186.1
+        specifier: file:../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       '@rollup/plugin-node-resolve':
         specifier: ^16.0.3
@@ -342,8 +343,8 @@ importers:
   packages/site:
     dependencies:
       three:
-        specifier: 0.186.1
-        version: 0.186.1
+        specifier: file:../../vendor/three-0.187.0-dev.ec2b745.tgz
+        version: file:vendor/three-0.187.0-dev.ec2b745.tgz
     devDependencies:
       sharp:
         specifier: ^0.34.5
@@ -1412,8 +1413,9 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  three@0.186.1:
-    resolution: {integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==}
+  three@file:vendor/three-0.187.0-dev.ec2b745.tgz:
+    resolution: {integrity: sha512-V3vBskdbBmz2iB3k9oZz761pNzFJbudYVTfTqCgbYpoVFgVntSS75t5WvRB0xz1PUgqbZddOzHwdkHM+k4uhwQ==, tarball: file:vendor/three-0.187.0-dev.ec2b745.tgz}
+    version: 0.187.0-dev.ec2b745
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -2406,7 +2408,7 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three@0.186.1: {}
+  three@file:vendor/three-0.187.0-dev.ec2b745.tgz: {}
 
   tinyglobby@0.2.17:
     dependencies:

@@ -14,9 +14,10 @@ export const SLIM_THREE_PACKAGE_VERSION = '0.186.1';
 /** Published declarations use the release's minor version, independently of package patches. */
 export const SLIM_THREE_TYPES_PACKAGE_VERSION = '0.186.0';
 
-// Three's development branch still carries the preceding package version.
-// Its revision and exact Git identity must accompany that nominal version.
-export const SLIM_THREE_PEER_RANGE = '0.186.0 || 0.186.1';
+// The pinned development build is the vendored prerelease package 0.187.0-dev.ec2b745. An exact
+// prerelease comparator matches only that version (no includePrerelease needed); its revision,
+// commit and source fingerprint are still verified independently of the version string.
+export const SLIM_THREE_PEER_RANGE = '0.186.1 || 0.187.0-dev.ec2b745';
 export { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from './slim-three-releases.js';
 
 /** Public runtime entries selected by the Vite plugin's slim modes. */
