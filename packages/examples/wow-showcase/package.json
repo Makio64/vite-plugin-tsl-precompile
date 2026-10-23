@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "playwright": "^1.59.1",
-    "vite": "^8.0.16",
+    "vite": "^8.1.6",
     "vite-plugin-tsl-precompile": "workspace:*"
   }
 }
