@@ -12,6 +12,20 @@ import {
 	createArtifactContentHashPayload,
 } from '@tsl-precompile/contract/artifact-content';
 import { fingerprintArtifactShape } from '@tsl-precompile/contract/artifact-shape';
+import { THREE_RELEASE_PROFILES as emitterProfiles } from '@tsl-precompile/contract/slim-three-releases';
+import {
+	createThreeEmitterHashFields,
+	createThreeEmitterSourceFields,
+	assertArtifactThreeEmitterIdentity,
+	threeEmitterIdentityHashLines,
+} from '@tsl-precompile/contract/three-emitter-identity';
+
+const emitterIdentity = { threeVersion: '0.186.0', threeRevision: '187dev', threeCommit: '3995acf2a9e79ebd2b02c0e9e7f820fa2a4838fb' };
+const emitterHashFields: { threeRevision?: string; threeCommit?: string } = createThreeEmitterHashFields( emitterIdentity );
+const emitterSourceFields: { sourceThreeRevision?: string; sourceThreeCommit?: string } = createThreeEmitterSourceFields( emitterIdentity );
+const emitterHashLines: string[] = threeEmitterIdentityHashLines( emitterIdentity );
+assertArtifactThreeEmitterIdentity( emitterSourceFields, emitterIdentity );
+void [ emitterHashFields, emitterHashLines, emitterProfiles.development.gitCommit ];
 import { forEachArtifactPayload } from '@tsl-precompile/contract/artifact-traversal';
 import {
 	ARTIFACT_VARIANT_FIELDS,
@@ -53,15 +67,18 @@ import {
 } from '@tsl-precompile/contract/shader-language';
 import {
 	INTERNAL_PASS_SCHEMA,
+	getInternalPassStageDefinition,
 	type InternalPassDescriptor,
 	validateInternalPassDescriptor,
 } from '@tsl-precompile/contract/internal-pass';
 import { MATERIAL_COMPUTE_VERSION } from '@tsl-precompile/contract/material-compute';
 import { createRendererOutputConfig } from '@tsl-precompile/contract/output-config';
+import { createPMREMLayoutConfig, createPMREMSupportConfig, getPMREMBlurConfig, PMREM_SPHERICAL_GAUSSIAN_BLUR } from '@tsl-precompile/contract/pmrem-config';
 import { describeRenderContext } from '@tsl-precompile/contract/render-context';
 import {
 	RENDER_BINDING_OWNER_KINDS,
 	createBackgroundCaptureTargetTopologyKey,
+	createProjectedRenderObjectContextSelector,
 	describeBackgroundCaptureTargetTopology,
 	describeSceneRenderTopology,
 	projectRenderObjectContextSelector,
@@ -81,6 +98,7 @@ import {
 } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import {
 	SLIM_THREE_PACKAGE_VERSION,
+	SLIM_THREE_TYPES_PACKAGE_VERSION,
 	SLIM_THREE_RUNTIME_ENTRIES,
 } from '@tsl-precompile/contract/slim-three-policy';
 import { MATERIAL_TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
@@ -94,6 +112,12 @@ const recipe = createRangeAttributeGenerator(
 	[ 0, 0, 0, 0 ],
 	[ 1, 1, 1, 1 ],
 );
+const pmremSupport = createPMREMSupportConfig( createPMREMLayoutConfig( 32 ), 'scene', null, { blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } );
+const threeTypesPackageVersion: '0.186.0' = SLIM_THREE_TYPES_PACKAGE_VERSION;
+void threeTypesPackageVersion;
+const pmremBlurAlgorithm: 'spherical-gaussian' | 'weighted-separable' = getPMREMBlurConfig( pmremSupport ).algorithm;
+const pmremUniformRoles: readonly string[] | undefined = getInternalPassStageDefinition( 'pmrem', 'blur', pmremSupport )?.requiredUniforms;
+void [ pmremBlurAlgorithm, pmremUniformRoles ];
 const generated: Float32Array = generateRangeAttributeArray( recipe, 2 );
 const signature: string = createRenderContextSignature();
 const payload: string = createArtifactContentHashPayload(
@@ -202,6 +226,7 @@ void [
 	bindingOwner,
 	materialOwner,
 	projectedSelector,
+	createProjectedRenderObjectContextSelector( null, null, 'background' ),
 	renderTargetTextureSelector,
 	sceneTopology,
 	slimSource,

@@ -26,6 +26,25 @@ function makeCountingResolver( result = { isTexture: true } ) {
 
 }
 
+test( 'memo forwards the hydration plan and does not reuse a different plan owner', () => {
+
+	const received = [];
+	const memoized = createFrameScopedResolutionMemo( ( _artifact, _group, _name, _material, _options, plan ) => {
+
+		received.push( plan );
+		return plan;
+
+	} );
+	const artifact = {}, material = {}, first = {}, second = {};
+	const options = { frame: { renderId: 1, frameId: 1 } };
+	assert.equal( memoized( artifact, 'render', 'map', material, options, first ), first );
+	assert.equal( memoized( artifact, 'render', 'map', material, options, first ), first );
+	assert.equal( memoized( artifact, 'render', 'map', material, options, second ), second );
+	assert.equal( memoized( artifact, 'render', 'map', material, null, first ), first );
+	assert.deepEqual( received, [ first, second, first ] );
+
+} );
+
 test( 'memo: resolution-call count is independent of instance count within one render', () => {
 
 	const { calls, resolve } = makeCountingResolver();
@@ -142,5 +161,74 @@ test( 'memo: null resolution results are memoized too (no per-instance retry sto
 
 	for ( let i = 0; i < 50; i ++ ) memoized( artifact, 'group', 'map', material, { frame } );
 	assert.equal( calls.length, 1 );
+
+} );
+
+test( 'memo: delimiter-bearing names and logical frame IDs remain distinct', () => {
+
+	const { calls, resolve } = makeCountingResolver();
+	const memoized = createFrameScopedResolutionMemo( resolve );
+	const artifact = {}, material = {};
+	const frame = { renderId: 'pass:1', frameId: '2' };
+	memoized( artifact, 'pass::color', 'map', material, { frame } );
+	memoized( artifact, 'pass', 'color::map', material, { frame } );
+	assert.equal( calls.length, 2, 'binding names must not alias across groups' );
+	frame.renderId = 'pass'; frame.frameId = '1:2';
+	memoized( artifact, 'pass', 'color::map', material, { frame } );
+	assert.equal( calls.length, 3, 'logical frame IDs must not alias after string concatenation' );
+	frame.renderId = 1; frame.frameId = 2;
+	memoized( artifact, 'pass', 'map', material, { frame } );
+	frame.renderId = '1';
+	memoized( artifact, 'pass', 'map', material, { frame } );
+	assert.equal( calls.length, 5, 'numeric and logical string IDs have distinct identity' );
+
+} );
+
+test( 'memo: renderers with matching counters never share resolved GPU resources', () => {
+
+	const artifact = {}, material = {};
+	const a = { texture: {} }, b = { texture: {} };
+	const caches = [];
+	const memoized = createFrameScopedResolutionMemo( ( _artifact, _group, _binding, _material, options ) => {
+
+		caches.push( options.materialNodeTextureCache );
+		return ( options.renderer || options.frame.renderer ).texture;
+
+	} );
+	for ( const renderer of [ a, b, a ] ) {
+
+		const frame = { renderer, renderId: 1, frameId: 1 };
+		assert.equal( memoized( artifact, 'pass', 'map', material, { frame } ), renderer.texture );
+		assert.equal( memoized( artifact, 'pass', 'map', material, { frame } ), renderer.texture );
+
+	}
+	const frame = { renderer: a, renderId: 1, frameId: 1 };
+	assert.equal( memoized( artifact, 'pass', 'map', material, { frame, renderer: b } ), b.texture );
+	assert.equal( memoized( artifact, 'pass', 'map', material, { frame, renderer: b } ), b.texture );
+	assert.equal( memoized( artifact, 'pass', 'map', material, { frame } ), a.texture );
+	assert.equal( caches.length, 2, 'each renderer keeps its own reusable discovery cache' );
+	assert.equal( new Set( caches ).size, 2 );
+
+} );
+
+test( 'memo: nested resolution cannot label an outer result with the inner render stamp', () => {
+
+	const artifact = {}, material = {};
+	let nested = false;
+	const outer = { renderId: 1, frameId: 1 }, inner = { renderId: 2, frameId: 1 };
+	const memoized = createFrameScopedResolutionMemo( ( _artifact, _group, _binding, _material, options ) => {
+
+		if ( ! nested ) {
+
+			nested = true;
+			memoized( artifact, 'group', 'map', material, { frame: inner } );
+
+		}
+		return options.frame.renderId;
+
+	} );
+	assert.equal( memoized( artifact, 'group', 'map', material, { frame: outer } ), 1 );
+	assert.equal( memoized( artifact, 'group', 'map', material, { frame: inner } ), 2 );
+	assert.equal( memoized( artifact, 'group', 'map', material, { frame: outer } ), 1 );
 
 } );

@@ -4,6 +4,22 @@ import {
 	validateComputeBindingsDescriptor,
 } from '@tsl-precompile/contract/compute-bindings';
 
+/** Slots supplied by the compute runner must not be overwritten by its updater. */
+export function collectCallerOwnedComputeUniformSlots( artifact ) {
+
+	const slots = new Set();
+	if ( artifact.kind !== 'compute' || ! artifact.computeBindings ) return slots;
+	const issues = validateComputeBindingsDescriptor( artifact.computeBindings, { artifact } );
+	if ( issues.length > 0 ) throw new Error( `[tsl-precompile] invalid computeBindings: ${ issues.map( issue => issue.message ).join( '; ' ) }` );
+	for ( const entry of artifact.computeBindings.entries ) {
+
+		if ( entry.target === 'uniform-slot' ) slots.add( artifact.uniformPlan?.[ entry.group ]?.slots?.[ entry.slot ] );
+
+	}
+	return slots;
+
+}
+
 /**
  * Derive the public binding bag for one already-extracted compute artifact.
  *
@@ -59,6 +75,7 @@ function bindingEntry( key, group, binding, descriptor, ordered ) {
 			count: ref.count,
 			itemSize: ref.itemSize,
 			byteLength: descriptor.byteLength,
+			...( descriptor.runtimeSized === true && ref.runtimeSized === true ? { runtimeSized: true } : {} ),
 		};
 
 	}

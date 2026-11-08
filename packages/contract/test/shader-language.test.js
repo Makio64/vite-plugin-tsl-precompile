@@ -34,3 +34,22 @@ test( 'backend-aware variant keys preserve the raw cache key as legacy metadata'
 	assert.throws( () => createBackendAwareVariantKey( 'private', 'spirv' ), /shaderLanguage/ );
 
 } );
+
+
+test( 'MRT variant identity includes fragment component widths and ignores input varyings', () => {
+
+	const layout = { mrtOutputCount: 2, mrtOutputNames: [ 'output', 'metalrough' ] };
+	const wgsl = ( outputType, inputType = 'vec2<f32>' ) => `
+struct Input { @location(0) uv: ${ inputType }, };
+struct Result { @location(0) output: vec4<f32>, @location(1) metalrough: ${ outputType }, };
+@fragment fn main(input: Input) -> Result { return Result(); }`;
+	const key = source => createBackendAwareVariantKey( 42, 'wgsl', { ...layout, fragmentShader: source } );
+	assert.notEqual( key( wgsl( 'vec2<f32>' ) ), key( wgsl( 'vec4<f32>' ) ) );
+	assert.equal( key( wgsl( 'vec2<f32>' ) ), key( wgsl( 'vec2<f32>', 'vec4<f32>' ) ) );
+	const glsl = type => `#version 300 es\nlayout(location=0) out highp vec4 color;\nlayout(location=1) out ${ type } metalrough;`;
+	assert.notEqual(
+		createBackendAwareVariantKey( 42, 'glsl', { ...layout, fragmentShader: glsl( 'vec2' ) } ),
+		createBackendAwareVariantKey( 42, 'glsl', { ...layout, fragmentShader: glsl( 'vec4' ) } ),
+	);
+
+} );

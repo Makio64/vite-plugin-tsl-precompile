@@ -125,7 +125,14 @@ export function createReplaySceneNodeCompatibility( manager ) {
 				fogNode: scene && scene.fogNode,
 				overrideMaterial: scene && scene.overrideMaterial,
 			};
-			cacheKeyValues.push( hashString( createSceneRenderTopologySelector( topologyScene ) ) );
+			const topology = createSceneRenderTopologySelector( topologyScene );
+			if ( cacheKeyData.topology !== topology ) {
+
+				cacheKeyData.topology = topology;
+				cacheKeyData.topologyHash = hashString( topology );
+
+			}
+			cacheKeyValues.push( cacheKeyData.topologyHash );
 			cacheKeyData.callId = callId;
 			cacheKeyData.cacheKey = hashArray( cacheKeyValues );
 			byLights.set( lightsKey, cacheKeyData );

@@ -1,10 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import tslPrecompile from '../../src/index.js';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { THREE_SRC } from '../_three-src.js';
+
+// `threeVersion` must equal the installed emitter (stable 0.186.1 or the pinned r187dev package).
+const INSTALLED_THREE_VERSION = JSON.parse( readFileSync( resolve( THREE_SRC, '../package.json' ), 'utf8' ) ).version;
 
 test( 'tslPrecompile — accepts zero-config (no opts)', () => {
 
@@ -38,7 +44,7 @@ test( 'tslPrecompile — accepts every known option', () => {
 		autoMark: true,
 		autoMarkPrefix: 'demo',
 		slim: true,
-		threeVersion: '0.185.1',
+		threeVersion: SLIM_THREE_PACKAGE_VERSION,
 		minifyWgsl: false,
 		dedupeWgsl: false,
 	} );
@@ -50,6 +56,15 @@ test( 'tslPrecompile — accepts the guarded source slim mode', () => {
 
 	const plugin = tslPrecompile( { slim: 'source' } );
 	assert.equal( plugin.name, 'vite-plugin-tsl-precompile' );
+
+} );
+
+test( 'tslPrecompile — WebGPU-only specialization is explicit and source-only', () => {
+
+	assert.equal( tslPrecompile( { slim: 'source', webgpuOnly: true } ).name, 'vite-plugin-tsl-precompile' );
+	assert.equal( tslPrecompile( { slim: true, webgpuOnly: false } ).name, 'vite-plugin-tsl-precompile' );
+	for ( const slim of [ undefined, false, true ] ) assert.throws( () => tslPrecompile( { slim, webgpuOnly: true } ), /requires.*slim.*source/ );
+	assert.throws( () => tslPrecompile( { slim: 'source', webgpuOnly: 'yes' } ), /webgpuOnly.*must be a boolean/ );
 
 } );
 
@@ -134,10 +149,10 @@ test( 'tslPrecompile — warns when app package.json ranges three', async () => 
 	try {
 
 		await writeFile( join( root, 'package.json' ), JSON.stringify( {
-			dependencies: { three: '^0.185.1' },
+			dependencies: { three: `^${ INSTALLED_THREE_VERSION }` },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '0.185.1' } );
+		const plugin = tslPrecompile( { threeVersion: INSTALLED_THREE_VERSION } );
 		await plugin.configResolved( {
 			root,
 			command: 'serve',
@@ -145,7 +160,7 @@ test( 'tslPrecompile — warns when app package.json ranges three', async () => 
 		} );
 
 		assert.equal( warnings.length, 1 );
-		assert.match( warnings[ 0 ], /dependencies\.three is "\^0\.185\.1"/ );
+		assert.ok( warnings[ 0 ].includes( `dependencies.three is "^${ INSTALLED_THREE_VERSION }"` ) );
 		assert.match( warnings[ 0 ], /pin three to an exact patch version/ );
 
 	} finally {
@@ -162,10 +177,10 @@ test( 'tslPrecompile — accepts exact pinned three package specs without warnin
 	try {
 
 		await writeFile( join( root, 'package.json' ), JSON.stringify( {
-			dependencies: { three: '0.185.1' },
+			dependencies: { three: INSTALLED_THREE_VERSION },
 		} ) );
 		const warnings = [];
-		const plugin = tslPrecompile( { threeVersion: '0.185.1' } );
+		const plugin = tslPrecompile( { threeVersion: INSTALLED_THREE_VERSION } );
 		await plugin.configResolved( {
 			root,
 			command: 'build',

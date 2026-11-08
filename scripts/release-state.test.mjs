@@ -17,6 +17,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { ESLint } from 'eslint';
+import { THREE_RELEASE_PROFILES } from '../packages/contract/src/slim-three-policy.js';
 
 import {
 	CORRECTNESS_LINT_FILES,
@@ -61,6 +62,27 @@ import {
 } from './release-pack.mjs';
 
 const TEST_REPO_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
+
+const PINNED_PROFILE_COMMANDS = new Map( [
+	[ 'node --input-type=module -e "import { THREE_RELEASE_PROFILES } from \'./packages/contract/src/slim-three-policy.js\'; console.log(\'commit=\' + THREE_RELEASE_PROFILES.stable.gitCommit);" >> "$GITHUB_OUTPUT"', THREE_RELEASE_PROFILES.stable ],
+	[ 'node --input-type=module -e \'import { THREE_RELEASE_PROFILES } from "@tsl-precompile/contract/slim-three-policy"; process.stdout.write("commit=" + THREE_RELEASE_PROFILES.development.gitCommit + "\\n");\' >> "$GITHUB_OUTPUT"', THREE_RELEASE_PROFILES.development ],
+] );
+
+function assertPinnedExternalCheckout( repository, ref, priorSteps, label ) {
+
+	if ( /^[0-9a-f]{40}$/.test( ref ) ) return ref;
+	assert.equal( repository, 'mrdoob/three.js', `${ label } derived refs are limited to the primary Three source repository` );
+	const output = /^\$\{\{\s*steps\.([a-z][a-z0-9-]*)\.outputs\.commit\s*\}\}$/.exec( ref );
+	assert.ok( output, `${ label } external checkout must use an immutable commit SHA or exact shared profile commit output` );
+	const producer = priorSteps.find( step => /^\s*id:\s*([^\s#]+)/m.exec( step )?.[ 1 ] === output[ 1 ] );
+	assert.ok( producer, `${ label } profile producer must precede checkout in the same job` );
+	const command = /\brun:\s*[|>]-?\n([\s\S]*)/.exec( producer )?.[ 1 ].replace( /\s+/g, ' ' ).trim();
+	const profile = PINNED_PROFILE_COMMANDS.get( command );
+	assert.ok( profile, `${ label } profile producer must read the exact immutable shared gitCommit without arbitrary shell or network code` );
+	assert.match( profile.gitCommit, /^[0-9a-f]{40}$/ );
+	return profile.gitCommit;
+
+}
 
 function git( root, ...args ) {
 
@@ -726,7 +748,14 @@ test( 'declared Vite 6, 7, and 8 support has exact Node 24 packed-consumer lanes
 		);
 
 	}
-	assert.match( ci, /Package checks \(Node 24 LTS\)[\s\S]*?node-version: 24\.18\.0/ );
+	const unitJob = ci.match( /\n {2}unit:[\s\S]*?(?=\n {2}[a-z])/ )[ 0 ];
+	const minimumJob = ci.match( /\n {2}minimum-node:[\s\S]*?(?=\n {2}[a-z])/ )[ 0 ];
+	assert.match( unitJob, /node-version: 24\.18\.0/ );
+	assert.match( unitJob, /pnpm test:full/ );
+	assert.match( minimumJob, /name: Package checks \(Node 24 LTS\)/ );
+	assert.match( minimumJob, /needs: unit/ );
+	assert.match( minimumJob, /if: always\(\)/ );
+	assert.match( minimumJob, /run: test "\$PACKAGE_RESULT" = success/ );
 	assert.equal( [ ...ci.matchAll( /^\s+node:\s+24\.18\.0$/gm ) ].length, 3 );
 	assert.doesNotMatch( ci, /^\s+node:\s+(?:20|22)\./m );
 	assert.equal( rootPackage.engines.node, '>=24.0.0' );
@@ -1820,6 +1849,23 @@ test( 'publication preflights all packages and sends the exact checked tarballs'
 
 } );
 
+test( 'workflow shared profile refs reject moving refs, arbitrary producers and cross-job outputs', () => {
+
+	const command = [ ...PINNED_PROFILE_COMMANDS.keys() ][ 0 ];
+	const producer = `      - name: Select stable profile\n        id: three-release\n        run: >-\n          ${ command }\n`;
+	const ref = '${{ steps.three-release.outputs.commit }}';
+	assert.equal( assertPinnedExternalCheckout( 'mrdoob/three.js', ref, [ producer ], 'fixture' ), THREE_RELEASE_PROFILES.stable.gitCommit );
+	assert.throws( () => assertPinnedExternalCheckout( 'mrdoob/three.js', 'r186', [ producer ], 'fixture' ), /immutable commit/ );
+	assert.throws( () => assertPinnedExternalCheckout( 'other/three.js', ref, [ producer ], 'fixture' ), /primary Three source/ );
+	assert.throws( () => assertPinnedExternalCheckout( 'mrdoob/three.js', ref, [], 'fixture' ), /same job/ );
+	for ( const unsafe of [ producer.replace( '.gitCommit', '.ref' ), producer.replace( '"$GITHUB_OUTPUT"', '"$GITHUB_OUTPUT"; curl example.invalid' ) ] ) {
+
+		assert.throws( () => assertPinnedExternalCheckout( 'mrdoob/three.js', ref, [ unsafe ], 'fixture' ), /exact immutable shared gitCommit/ );
+
+	}
+
+} );
+
 test( 'workflow executables use immutable action SHAs and fixed runtime baselines', () => {
 
 	const workflowsDirectory = join( TEST_REPO_ROOT, '.github/workflows' );
@@ -1837,16 +1883,21 @@ test( 'workflow executables use immutable action SHAs and fixed runtime baseline
 			);
 
 		}
-		for ( const step of source.split( /(?=^\s*-\s+(?:name|uses):)/m ) ) {
+		for ( const job of source.slice( source.indexOf( '\njobs:\n' ) + 7 ).split( /^ {2}[\w-]+:\s*$/m ) ) {
+
+		const priorSteps = [];
+		for ( const step of job.split( /(?=^ {6}-\s+(?:name|uses):)/m ) ) {
 
 			const externalRepository = /\brepository:\s*([^\s#]+)/.exec( step )?.[ 1 ];
-			if ( ! externalRepository ) continue;
-			const ref = /\bref:\s*([^\s#]+)/.exec( step )?.[ 1 ];
-			assert.match(
-				ref || '',
-				/^[0-9a-f]{40}$/,
-				`${ file } external checkout ${ externalRepository } must use an immutable commit SHA`,
-			);
+			if ( externalRepository ) {
+
+				const ref = /\bref:\s*([^\n#]+)/.exec( step )?.[ 1 ].trim() || '';
+				assertPinnedExternalCheckout( externalRepository, ref, priorSteps, `${ file } external checkout ${ externalRepository }` );
+
+			}
+			priorSteps.push( step );
+
+		}
 
 		}
 		for ( const line of source.split( '\n' ) ) {

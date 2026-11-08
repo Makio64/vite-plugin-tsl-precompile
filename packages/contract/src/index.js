@@ -23,6 +23,7 @@ export * from './compute-bindings.js';
 export * from './material-compute.js';
 export * from './internal-pass.js';
 export * from './pmrem-config.js';
+export * from './three-emitter-identity.js';
 export * from './vsm-config.js';
 export * from './stable-json.js';
 export * from './virtual-modules.js';

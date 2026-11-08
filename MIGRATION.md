@@ -78,6 +78,13 @@ emission rules between releases. Bumping three requires a fresh capture; the
 runtime will refuse to load a stale artifact rather than silently render the
 wrong shader.
 
+Three r186 removes `PCFSoftShadowMap`; native rendering replaces it with
+`PCFShadowMap`. Replay applies the same normalization before choosing captured
+shadow shaders. Existing PCF-soft controls can stay available, but their
+recaptured artifacts now share PCF identities. See the
+[shadow example migration](packages/examples/shadow-debug/README.md)
+for the reviewed inventory change.
+
 ### What to do when renderer backend coverage changes
 
 The supported renderer remains `WebGPURenderer`. Its WebGPU and WebGL 2
@@ -130,16 +137,19 @@ Captured artifacts are tied to one `three` revision. Pin to keep them valid:
    ```json
    {
      "dependencies": {
-       "three": "0.185.1"
+       "three": "0.186.1"
      }
    }
    ```
-   The alpha plugin and runtime peer dependencies require exactly
-   `three@0.185.1` (see [`packages/plugin/package.json`](./packages/plugin/package.json)
-   and [`packages/runtime/package.json`](./packages/runtime/package.json)).
-   `0.185.x` changes private renderer/rewrite surfaces and remains unsupported
-   until the complete upgrade, re-vendoring, artifact re-capture, and visual
-   verification workflow below has passed.
+   The published slim bundle requires `three@0.186.1`. The plugin and runtime
+   also accept the nominal `0.186.0` package version used by the exact pinned
+   r187dev source snapshot; development support validates its revision, commit,
+   and source fingerprint independently. See the
+   [development build policy](README.md#requirements) before using that path.
+   `0.185.x` is outside the current supported release profile.
+   r187dev artifacts must carry `sourceThreeRevision` and `sourceThreeCommit`;
+   recapture old version-only artifacts instead of relabeling their metadata.
+   Capture all native PMREM stages for each shipped input/layout and backend.
 2. **Use a lockfile** (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`) and commit it. Lockfile + exact version means the same `three` resolves on every machine.
 3. **Add a CI gate** that runs `pnpm verify` and (optionally) `pnpm test:batch` so any drift between source and committed artifacts fails the build before it merges.
 4. **Treat `three`, `vite-plugin-tsl-precompile`, and `@tsl-precompile/runtime` bumps as a coordinated change.** Bump together, recapture together, commit the new artifacts in the same PR. Never let the lockfile and the artifacts diverge.
@@ -222,7 +232,7 @@ The plugin is opt-in per material. To start small, mark just one expensive mater
 
 1. Install the prerelease packages with
    `pnpm add -D vite-plugin-tsl-precompile@alpha`, then
-   `pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact`.
+   `pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact`.
 2. Add the plugin to `vite.config.js` (see [README.md](./README.md)).
 3. In your code, after creating the renderer:
    ```js

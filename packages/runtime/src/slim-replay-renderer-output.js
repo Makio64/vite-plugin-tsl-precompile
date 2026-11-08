@@ -37,6 +37,7 @@ export function getReplayRenderOutputCacheKey( renderer, outputTexture ) {
 		config.logarithmicDepthBuffer ? 1 : 0,
 		config.sampledTexture,
 		config.multiview ? 1 : 0,
+		config.sampledTextureDataType ?? '',
 	].join( ',' );
 
 }

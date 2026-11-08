@@ -6,6 +6,7 @@ import {
 	remapArtifactEphemeralIdentities,
 } from './artifact-variants.js';
 import { detectArtifactShaderLanguage } from './shader-language.js';
+import { threeEmitterIdentityHashLines } from './three-emitter-identity.js';
 
 const ROOT_METADATA_FIELDS = new Set( [
 	'__hash',
@@ -16,6 +17,7 @@ const ROOT_METADATA_FIELDS = new Set( [
 	'sourceHashVersion',
 	'sourceMaterial',
 	'sourceThreeVersion',
+	'sourceThreeRevision', 'sourceThreeCommit',
 	'userMaterialUuid',
 ] );
 
@@ -171,6 +173,7 @@ export function createArtifactContentHashPayload( artifact, opts = {} ) {
 		ARTIFACT_CONTENT_HASH_VERSION,
 		`shape=${ JSON.stringify( shape ) }`,
 		`three=${ JSON.stringify( threeVersion ) }`,
+		...threeEmitterIdentityHashLines( opts ),
 		`toolchain=${ JSON.stringify( toolchainVersion ) }`,
 		stableArtifactValue( canonicalArtifactContent( artifact ), new Set() ),
 	].join( '\n' );

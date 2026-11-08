@@ -6,7 +6,7 @@ import {
 	createRendererRenderTargetTextureRegistry,
 	createRendererRenderTargetTextureSelector,
 } from '../src/slim-support/render-target-texture-registry.js';
-import { RENDER_TARGET_TEXTURE_RESOLUTION_ERROR_CODE } from '../src/hydrate/artifact-texture-resolver.js';
+import { dispatchTextureBinding, setTextureResolutionDebugHook, RENDER_TARGET_TEXTURE_RESOLUTION_ERROR_CODE } from '../src/hydrate/artifact-texture-resolver.js';
 
 let nextTextureId = 1;
 
@@ -145,6 +145,51 @@ function hydratedTextureBinding( artifact, renderer ) {
 
 }
 
+test( 'selector dispatch defers fallbacks until a retryable miss and preserves optional diagnostics', () => {
+
+	const renderer = makeRendererWithRegistry();
+	const target = makeTarget();
+	const selector = createRendererRenderTargetTextureSelector( target );
+	const artifact = artifactForSelector( selector );
+	const fallback = { isTexture: true };
+	let fallbackReads = 0;
+	const fallbacks = { get pendingRenderTargetColor() { fallbackReads ++; return fallback; } };
+	const context = { artifact, groupName: 'object', bindingName: 'nodeTexture0', options: { renderer, deferRenderTargetPending: true }, deps: { fallbacks } };
+	const previous = setTextureResolutionDebugHook( null );
+	try {
+
+		assert.equal( dispatchTextureBinding( context ), fallback );
+		assert.equal( fallbackReads, 1 );
+		assert.equal( artifact._textureResolutionStrategies.get( 'object:nodeTexture0' ), 'render-target-selector-pending' );
+		observe( renderer, target );
+		assert.equal( dispatchTextureBinding( context ), target.texture );
+		assert.equal( fallbackReads, 1, 'resolved targets do not prepare fallback textures' );
+		const events = [];
+		setTextureResolutionDebugHook( event => events.push( event ) );
+		assert.equal( dispatchTextureBinding( context ), target.texture );
+		assert.equal( events[ 0 ].renderTargetResolutionStatus, 'resolved' );
+		assert.equal( events[ 0 ].candidateCount, 1 );
+		assert.equal( events[ 0 ].resolvedTextureUuid, target.texture.uuid );
+		assert.equal( events[ 0 ].textureTypeHint, '2d' );
+		renderer.setRenderTarget( target );
+		assert.throws( () => dispatchTextureBinding( context ), error => error.reason === 'active-write-attachment' );
+		assert.equal( fallbackReads, 1, 'write hazards must fail without preparing a fallback' );
+		context.options.renderer = makeRendererWithRegistry();
+		assert.equal( dispatchTextureBinding( context ), fallback );
+		assert.equal( events.at( - 1 ).strategy, 'render-target-selector-pending' );
+		assert.equal( events.at( - 1 ).renderTargetResolutionStatus, 'pending' );
+		assert.equal( events.at( - 1 ).resolvedTextureUuid, null );
+		context.deps.fallbacks = {};
+		assert.throws( () => dispatchTextureBinding( context ), error => error.status === 'pending' && error.retryable === true );
+
+	} finally {
+
+		setTextureResolutionDebugHook( previous );
+
+	}
+
+} );
+
 test( 'hydration resolves an exact render-target selector before legacy refs and follows attachment replacement', () => {
 
 	const renderer = makeRenderer();
@@ -248,6 +293,48 @@ test( 'reflector depth selectors defer until the owner creates its target, then 
 		artifact._textureResolutionStrategies.get( 'object:nodeTexture0' ),
 		'render-target-selector',
 	);
+
+} );
+
+for ( const sourceKind of [ 'artifact.texture', 'depth.texture' ] ) test( `first ${ sourceKind } consumer resolves its target after a live pass publishes it`, () => {
+
+	const renderer = makeRendererWithRegistry();
+	const texture = makeTexture( 'first-pass-output' );
+	const target = makeTarget();
+	if ( sourceKind === 'depth.texture' ) {
+
+		texture.isDepthTexture = true;
+		texture.format = 1026;
+		texture.type = 1014;
+		texture.colorSpace = '';
+		target.depthTexture = texture;
+
+	} else {
+
+		target.texture = texture;
+		target.textures = [ texture ];
+
+	}
+	texture.renderTarget = target;
+	const selector = createRendererRenderTargetTextureSelector( target, { texture } );
+	const artifact = artifactForSelector( selector, texture, sourceKind, sourceKind === 'artifact.texture' );
+	for ( const entry of artifact.uniformPlan[ 0 ].textures ) entry.source.fromMaterialGraph = false;
+	let producerCalls = 0;
+	artifact._liveUpdateBeforeNodes = [ {
+		updateBefore() {
+
+			producerCalls ++;
+			observe( renderer, target );
+
+		},
+	} ];
+	const { state, binding, sampler } = hydratedTextureBinding( artifact, renderer );
+	assert.notEqual( binding.texture, texture, 'hydration precedes the live target observation' );
+	for ( const node of state.updateBeforeNodes ) node.updateBefore( { renderer, frameId: 1, renderId: 1 } );
+	assert.equal( producerCalls, 1, 'preparation must not repeat the producer to repair the first draw' );
+	assert.equal( binding.texture, texture, 'the first consumer samples the actual producer output' );
+	if ( sampler ) assert.equal( sampler.texture, texture, 'its sampler leaves the same pending fallback before drawing' );
+	assert.equal( artifact._textureResolutionStrategies.get( 'object:nodeTexture0' ), 'render-target-selector' );
 
 } );
 

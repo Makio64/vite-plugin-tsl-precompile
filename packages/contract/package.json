@@ -44,7 +44,9 @@
     "./stable-json": "./src/stable-json.js",
     "./slim-bundle-provenance-node": "./src/slim-bundle-provenance-node.js",
     "./slim-three-policy": "./src/slim-three-policy.js",
+    "./slim-three-releases": "./src/slim-three-releases.js",
     "./texture-props": "./src/texture-props.js",
+	"./three-emitter-identity": "./src/three-emitter-identity.js",
 		"./variant-selector-adapter": "./src/variant-selector-adapter.js",
 		"./variant-selector-sidecar": "./src/variant-selector-sidecar.js",
     "./virtual-modules": "./src/virtual-modules.js",
@@ -54,8 +56,8 @@
     "src"
   ],
   "scripts": {
-	"test": "pnpm run test:unit && pnpm run test:types",
-	"test:full": "pnpm run test:unit && pnpm run test:types",
+	"test": "node ../../scripts/test.mjs quick --scope=contract",
+	"test:full": "node ../../scripts/test.mjs full --scope=contract",
 	"test:unit": "node --test --test-concurrency=2 test/*.test.js",
 	"test:types": "tsc --project test/tsconfig.json",
     "prepublishOnly": "pnpm run test:full"

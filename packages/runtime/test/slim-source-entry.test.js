@@ -6,10 +6,13 @@ import {
 	RUNTIME_SLIM_THREE_PACKAGE_VERSION,
 	RUNTIME_SLIM_THREE_POLICY_VERSION,
 	assertSlimSourcePolicyCompatibility,
+	createRuntimeSlimHashOptions,
+	getRuntimeSlimThreePackageVersion,
 } from '../src/slim-source-policy.js';
 import {
 	SLIM_THREE_PACKAGE_VERSION,
 	SLIM_THREE_POLICY_VERSION,
+	THREE_RELEASE_PROFILES,
 } from '@tsl-precompile/contract/slim-three-policy';
 
 const require = createRequire( import.meta.url );
@@ -50,14 +53,14 @@ test( 'guarded and prebuilt slim entries share one exact source surface', () => 
 
 test( 'source entry fails closed when plugin and runtime policy revisions differ', () => {
 
-	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, 'slim-three-policy@12' );
 	assert.equal( RUNTIME_SLIM_THREE_POLICY_VERSION, SLIM_THREE_POLICY_VERSION, 'bump the runtime-owned handshake with the shared policy' );
-	assert.equal( RUNTIME_SLIM_THREE_PACKAGE_VERSION, '0.185.1' );
 	assert.equal( RUNTIME_SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_PACKAGE_VERSION, 'bump the runtime-owned package identity with the shared policy' );
-	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( 'slim-three-policy@12' ) );
+	assert.doesNotThrow( () => assertSlimSourcePolicyCompatibility( SLIM_THREE_POLICY_VERSION ) );
 	assert.throws(
-		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@11' ),
-		/slim source policy mismatch[\s\S]*runtime expects slim-three-policy@12[\s\S]*plugin provided slim-three-policy@11/,
+		() => assertSlimSourcePolicyCompatibility( 'slim-three-policy@0' ),
+		( error ) => /slim source policy mismatch/.test( error.message )
+			&& error.message.includes( `runtime expects ${ SLIM_THREE_POLICY_VERSION }` )
+			&& error.message.includes( 'plugin provided slim-three-policy@0' ),
 	);
 
 } );
@@ -65,16 +68,42 @@ test( 'source entry fails closed when plugin and runtime policy revisions differ
 test( 'slim source surface preserves the prebuilt named compatibility allowlist', () => {
 
 	const exports = namedExports( common );
-	assert.equal( exports.size, 292 );
+	assert.equal( exports.size, 306 );
+	assert.equal( exports.has( '__applyPrecompiledCallsite' ), true );
 	for ( const name of [
 		'WebGPURenderer', 'WebGLBackend', 'Scene', 'PerspectiveCamera', 'Mesh', 'BoxGeometry',
 		'MeshStandardMaterial', 'PrecompiledMaterial', 'PrecompiledComputeNode',
 		'PostProcessing', 'RenderPipeline', 'TSL', 'NodeAccess', 'NodeUtils', 'hydrateNodeBuilderState',
-		'registerAuxArtifacts', '__TSLP_SLIM__',
+		'registerAuxArtifacts', '__registerAuxArtifactsOnly', '__TSLP_SLIM__', 'createPrecompiledShadowSupport',
 		'linkGeneratedLightIdentitySource', 'writeGeneratedLightValue',
 		'attachLiveNodeDependency', 'getLiveNodeDependencies',
 		'registerLiveUniformNode',
+		'WebGPUBackend', 'RGBFormat', 'RGBA_ASTC_4x4_Format', 'RGBA_BPTC_Format',
+		'UnsignedInt101111Type', 'Uint16BufferAttribute', 'ExtrudeGeometry', 'Shape', 'Source', 'TextureSource', 'PMREMNode',
+		'WebGPUBackend', 'ExtrudeGeometry', 'Shape', 'Source', 'Uint16BufferAttribute',
+		'RGBFormat', 'RGBA_ASTC_4x4_Format', 'RGBA_BPTC_Format', 'UnsignedInt101111Type', 'PMREMNode',
 	] ) assert.equal( exports.has( name ), true, name );
+
+} );
+
+test( 'source-mode hash options use injected development package identity and keep the prebuilt pin as fallback', ( t ) => {
+
+	const previous = globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	t.after( () => {
+
+		if ( previous === undefined ) delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+		else globalThis.__TSLP_THREE_PACKAGE_VERSION__ = previous;
+
+	} );
+	delete globalThis.__TSLP_THREE_PACKAGE_VERSION__;
+	const options = createRuntimeSlimHashOptions();
+	assert.equal( getRuntimeSlimThreePackageVersion(), SLIM_THREE_PACKAGE_VERSION );
+	assert.equal( options.threeVersion, SLIM_THREE_PACKAGE_VERSION );
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = THREE_RELEASE_PROFILES.development.packageVersion;
+	assert.equal( options.threeVersion, THREE_RELEASE_PROFILES.development.packageVersion );
+	assert.equal( Object.isFrozen( options ), true );
+	globalThis.__TSLP_THREE_PACKAGE_VERSION__ = '';
+	assert.equal( options.threeVersion, SLIM_THREE_PACKAGE_VERSION );
 
 } );
 

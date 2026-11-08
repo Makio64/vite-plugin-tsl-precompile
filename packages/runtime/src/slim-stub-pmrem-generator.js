@@ -1,7 +1,7 @@
 /**
  * Compiler-free PMREMGenerator for the slim bundle.
  *
- * The scheduling and atlas geometry mirror Three r185's PMREMGenerator, but
+ * The scheduling and atlas geometry mirror Three r186's PMREMGenerator, but
  * every private NodeMaterial is replaced by an `internal-pass@1` artifact.
  * This keeps PMREM in the slim renderer without retaining NodeMaterial, TSL
  * graph construction, or a second full WebGPU renderer.
@@ -18,38 +18,34 @@ import { Mesh } from 'three/src/objects/Mesh.js';
 import {
 	CubeReflectionMapping,
 	CubeRefractionMapping,
-	CubeUVReflectionMapping,
 	HalfFloatType,
 	LinearFilter,
 	LinearSRGBColorSpace,
 	RGBAFormat,
+	REVISION,
 } from 'three/src/constants.js';
-import { warn } from 'three/src/utils.js';
+import CubePMREMGenerator from './slim-stub-cube-pmrem-generator.js';
 
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import {
+	PMREM_CUBE_UV_MAPPING,
 	createPMREMLayoutConfig,
 	createPMREMSupportConfig,
+	PMREM_SPHERICAL_GAUSSIAN_BLUR,
 	pmremProfileForSource,
 	samePMREMConfig,
 } from '@tsl-precompile/contract/pmrem-config';
 import { resolveAuxArtifactForInput } from './aux-loader.js';
 import { hashPlainConfigSync } from './graph-hash.js';
-import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from './slim-source-policy.js';
+import { createRuntimeSlimHashOptions } from './slim-source-policy.js';
 import { createInternalPassMaterial } from './slim-support/internal-pass.js';
 
 const LOD_MIN = 4;
-const EXTRA_LOD_SIGMA = Object.freeze( [ 0.125, 0.215, 0.35, 0.446, 0.526, 0.582 ] );
-const MAX_SAMPLES = 20;
+const EXTRA_LODS = 6;
 const FACE_LIBRARY = Object.freeze( [ 3, 1, 5, 0, 4, 2 ] );
 const ORIGIN = new Vector3();
-const DEFAULT_POLE_AXIS = new Vector3( 0, 1, 0 );
 const FLAT_CAMERA = new OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
 const CUBE_CAMERA = new PerspectiveCamera( 90, 1 );
-const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
-	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
-} );
+const DEFAULT_HASH_OPTIONS = /*@__PURE__*/ createRuntimeSlimHashOptions();
 
 function pmremError( code, message, detail = null ) {
 
@@ -84,7 +80,7 @@ function createPMREMTarget( width, height, depthBuffer = false ) {
 		colorSpace: LinearSRGBColorSpace,
 		depthBuffer,
 	} );
-	target.texture.mapping = CubeUVReflectionMapping;
+	target.texture.mapping = PMREM_CUBE_UV_MAPPING;
 	target.texture.name = 'PMREM.cubeUv';
 	target.texture.isPMREMTexture = true;
 	target.scissorTest = true;
@@ -95,27 +91,21 @@ function createPMREMTarget( width, height, depthBuffer = false ) {
 function createLodMeshes( lodMax ) {
 
 	const sizeLods = [];
-	const sigmas = [];
 	const lodMeshes = [];
+	const direction = new Vector3();
 	let lod = lodMax;
-	const totalLods = lodMax - LOD_MIN + 1 + EXTRA_LOD_SIGMA.length;
+	const totalLods = lodMax - LOD_MIN + 1 + EXTRA_LODS;
 
 	for ( let index = 0; index < totalLods; index ++ ) {
 
 		const sizeLod = 2 ** lod;
 		sizeLods.push( sizeLod );
-		let sigma = 1 / sizeLod;
-		if ( index > lodMax - LOD_MIN ) sigma = EXTRA_LOD_SIGMA[ index - lodMax + LOD_MIN - 1 ];
-		else if ( index === 0 ) sigma = 0;
-		sigmas.push( sigma );
-
 		const texelSize = 1 / ( sizeLod - 2 );
 		const min = - texelSize;
 		const max = 1 + texelSize;
 		const faceUv = [ min, min, max, min, max, max, min, min, max, max, min, max ];
 		const position = new Float32Array( 3 * 6 * 6 );
-		const uv = new Float32Array( 2 * 6 * 6 );
-		const faceIndex = new Float32Array( 6 * 6 );
+		const outputDirection = new Float32Array( 3 * 6 * 6 );
 
 		for ( let face = 0; face < 6; face ++ ) {
 
@@ -131,21 +121,32 @@ function createLodMeshes( lodMax ) {
 			];
 			const faceSlot = FACE_LIBRARY[ face ];
 			position.set( coordinates, 3 * 6 * faceSlot );
-			uv.set( faceUv, 2 * 6 * faceSlot );
-			faceIndex.set( [ faceSlot, faceSlot, faceSlot, faceSlot, faceSlot, faceSlot ], 6 * faceSlot );
+			for ( let vertex = 0; vertex < 6; vertex ++ ) {
+
+				const u = faceUv[ vertex * 2 ] * 2 - 1;
+				const v = faceUv[ vertex * 2 + 1 ] * 2 - 1;
+				// Native r186 bakes the one-texel CubeUV border into directions.
+				if ( faceSlot === 0 ) direction.set( 1, v, u );
+				else if ( faceSlot === 1 ) direction.set( - u, 1, - v );
+				else if ( faceSlot === 2 ) direction.set( - u, v, 1 );
+				else if ( faceSlot === 3 ) direction.set( - 1, v, - u );
+				else if ( faceSlot === 4 ) direction.set( - u, - 1, v );
+				else direction.set( u, v, - 1 );
+				direction.toArray( outputDirection, ( faceSlot * 6 + vertex ) * 3 );
+
+			}
 
 		}
 
 		const geometry = new BufferGeometry();
 		geometry.setAttribute( 'position', new BufferAttribute( position, 3 ) );
-		geometry.setAttribute( 'uv', new BufferAttribute( uv, 2 ) );
-		geometry.setAttribute( 'faceIndex', new BufferAttribute( faceIndex, 1 ) );
+		geometry.setAttribute( 'outputDirection', new BufferAttribute( outputDirection, 3 ) );
 		lodMeshes.push( new Mesh( geometry, null ) );
 		if ( lod > LOD_MIN ) lod --;
 
 	}
 
-	return { lodMeshes, sizeLods, sigmas };
+	return { lodMeshes, sizeLods };
 
 }
 
@@ -170,7 +171,7 @@ function sourceCubeSize( texture ) {
 
 		throw pmremError(
 			'PMREM_SOURCE_SIZE_UNSUPPORTED',
-			`PMREM source resolves to a ${ size || 0 }px cube face; Three r185 requires at least 16px.`,
+			`PMREM source resolves to a ${ size || 0 }px cube face; Three's CubeUV atlas requires at least 16px.`,
 		);
 
 	}
@@ -188,7 +189,6 @@ class PMREMGenerator {
 		this._lodMax = 0;
 		this._cubeSize = 0;
 		this._sizeLods = [];
-		this._sigmas = [];
 		this._lodMeshes = [];
 		this._passControllers = new Map();
 		this._blurMaterial = null;
@@ -389,7 +389,6 @@ class PMREMGenerator {
 			const planes = createLodMeshes( this._lodMax );
 			this._lodMeshes = planes.lodMeshes;
 			this._sizeLods = planes.sizeLods;
-			this._sigmas = planes.sigmas;
 			this._ggxMaterial = this._getPassController( 'ggx' ).material;
 
 		}
@@ -403,7 +402,6 @@ class PMREMGenerator {
 		for ( const mesh of this._lodMeshes ) mesh.geometry.dispose();
 		this._lodMeshes = [];
 		this._sizeLods = [];
-		this._sigmas = [];
 		this._blurMaterial = null;
 		this._ggxMaterial = null;
 
@@ -425,7 +423,9 @@ class PMREMGenerator {
 			return createPMREMSupportConfig( layout, profile, owner, { renderer: this._renderer } );
 
 		}
-		if ( owner && owner.isScene === true ) return createPMREMSupportConfig( layout, 'scene' );
+		if ( owner && owner.isScene === true ) return createPMREMSupportConfig( layout, 'scene', null, {
+			blur: PMREM_SPHERICAL_GAUSSIAN_BLUR,
+		} );
 		throw pmremError(
 			'PMREM_OPERATION_CONTEXT_MISSING',
 			'An active source texture or scene is required to select a precompiled PMREM family.',
@@ -483,7 +483,7 @@ class PMREMGenerator {
 		const camera = CUBE_CAMERA;
 		camera.near = near;
 		camera.far = far;
-		// Three r185 face order: px, py, pz, nx, ny, nz.
+		// Three CubeUV atlas face order: px, py, pz, nx, ny, nz.
 		const upSign = [ 1, 1, 1, 1, - 1, 1 ];
 		const forwardSign = [ 1, - 1, 1, - 1, 1, - 1 ];
 		const originalAutoClear = renderer.autoClear;
@@ -619,40 +619,17 @@ class PMREMGenerator {
 
 	}
 
-	_blur( target, lodIn, lodOut, sigma, poleAxis ) {
+	_blur( target, lodIn, lodOut, sigma ) {
 
-		this._halfBlur( target, this._pingPongRenderTarget, lodIn, lodOut, sigma, true, poleAxis );
-		this._halfBlur( this._pingPongRenderTarget, target, lodOut, lodOut, sigma, false, poleAxis );
+		// Native r186 uses two spherical Gaussian draws. Clamping also keeps
+		// infinite requested radii finite in the captured shader's math.
+		const blurSigma = Math.min( sigma, Math.PI ) / Math.SQRT2;
+		this._blurPass( target, this._pingPongRenderTarget, lodIn, lodOut, blurSigma );
+		this._blurPass( this._pingPongRenderTarget, target, lodOut, lodOut, blurSigma );
 
 	}
 
-	_halfBlur( targetIn, targetOut, lodIn, lodOut, sigmaRadians, latitudinal, poleAxis ) {
-
-		const pixels = this._sizeLods[ lodIn ] - 1;
-		const radiansPerPixel = Number.isFinite( sigmaRadians )
-			? Math.PI / ( 2 * pixels )
-			: 2 * Math.PI / ( 2 * MAX_SAMPLES - 1 );
-		const sigmaPixels = sigmaRadians / radiansPerPixel;
-		const samples = Number.isFinite( sigmaRadians )
-			? 1 + Math.floor( 3 * sigmaPixels )
-			: MAX_SAMPLES;
-		if ( samples > MAX_SAMPLES ) {
-
-			warn( `sigmaRadians, ${ sigmaRadians }, is too large and will clip, as it requested ${ samples } samples when the maximum is set to ${ MAX_SAMPLES }` );
-
-		}
-		const weights = new Float32Array( MAX_SAMPLES );
-		let sum = 0;
-		for ( let index = 0; index < MAX_SAMPLES; index ++ ) {
-
-			const x = index / sigmaPixels;
-			const weight = Math.exp( - x * x / 2 );
-			weights[ index ] = weight;
-			if ( index === 0 ) sum += weight;
-			else if ( index < samples ) sum += 2 * weight;
-
-		}
-		for ( let index = 0; index < weights.length; index ++ ) weights[ index ] /= sum;
+	_blurPass( targetIn, targetOut, lodIn, lodOut, sigmaRadians ) {
 
 		const controller = this._getPassController( 'blur' );
 		this._blurMaterial = controller.material;
@@ -660,12 +637,8 @@ class PMREMGenerator {
 		mesh.material = controller.material;
 		targetIn.texture.frame = ( targetIn.texture.frame || 0 ) + 1;
 		controller.setTexture( 'env-map', targetIn.texture );
-		controller.setUniform( 'samples', samples );
-		controller.setUniform( 'latitudinal', latitudinal ? 1 : 0 );
-		controller.setUniform( 'pole-axis', poleAxis || DEFAULT_POLE_AXIS );
-		controller.setUniform( 'd-theta', radiansPerPixel );
+		controller.setUniform( 'sigma', sigmaRadians );
 		controller.setUniform( 'mip-int', this._lodMax - lodIn );
-		controller.setBuffer( 'weights', weights );
 
 		const outputSize = this._sizeLods[ lodOut ];
 		const x = 3 * outputSize * ( lodOut > this._lodMax - LOD_MIN ? lodOut - this._lodMax + LOD_MIN : 0 );
@@ -695,4 +668,4 @@ class PMREMGenerator {
 }
 
 export { replayConfigForLayout as createPMREMReplayConfig };
-export default PMREMGenerator;
+export default ( REVISION === '187dev' || REVISION === '187' ? CubePMREMGenerator : PMREMGenerator );

@@ -62,6 +62,16 @@ test( 'renderer output config distinguishes array sampling and multiview', () =>
 
 } );
 
+test( 'renderer output config distinguishes sampled component types while dimensions stay live', () => {
+
+	const renderer = { toneMapping: 0, outputColorSpace: 'srgb' };
+	const byte = createRendererOutputConfig( renderer, { type: 1009, image: { width: 64 } } );
+	const half = createRendererOutputConfig( renderer, { type: 1016, image: { width: 64 } } );
+	assert.notDeepEqual( byte, half );
+	assert.deepEqual( byte, createRendererOutputConfig( renderer, { type: 1009, image: { width: 1024 } } ) );
+
+} );
+
 test( 'render pipeline config keeps the graph and static output transform only', () => {
 
 	const outputNode = { isNode: true, type: 'PassTextureNode' };

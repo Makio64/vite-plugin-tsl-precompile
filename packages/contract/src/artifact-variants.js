@@ -2,6 +2,8 @@ import { stableJsonStringify } from './stable-json.js';
 import { detectArtifactShaderLanguage, resolveArtifactVariantKey } from './shader-language.js';
 import { RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA } from './render-target-texture.js';
 import { GENERATED_VARIANT_SELECTOR_ADAPTER_SIDECAR } from './variant-selector-sidecar.js';
+import { hasExactLiveUniformOverlayAddress, MATERIAL_UNIFORM_TYPES } from './dynamic-bindings.js';
+import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 
 const EPHEMERAL_IDENTITY_FIELDS = Object.freeze( {
 	captureUuid: 'light',
@@ -33,13 +35,23 @@ const VARIANT_COLLISION_DIFFERENCE_PATH_LIMIT = 12;
 const VARIANT_COLLISION_STRING_DETAIL_LIMIT = 2;
 const VARIANT_COLLISION_STRING_EXCERPT_RADIUS = 32;
 const SHADER_SOURCE_FIELDS = new Set( [ 'vertexShader', 'fragmentShader', 'computeShader' ] );
-const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b)/g;
+const CAPTURE_GENERATED_IDENTIFIER_PATTERN = /\b(?:NodeBuffer_\d+(?=\b|Struct\b)|buffer\d+\b|fn\d+\b)/g;
+// r187dev names compact Fn layouts ( `{ a: 'vec2', return: 'vec2' }` ) 'fn' + a module-global counter.
+const CAPTURE_GENERATED_FUNCTION_NAME_PATTERN = /\bfn(\d+)\b/g;
 const CAPTURE_GENERATED_SHADER_NODE_BUFFER_ID_PATTERN = /\bNodeBuffer_(\d+)(?=\b|Struct\b)/g;
 const CAPTURE_GENERATED_SHADER_NODE_ID_PATTERN = /\b(?:(NodeBuffer_)(\d+)(?=\b|Struct\b)|(buffer)(\d+)\b)/g;
 const CAPTURE_GENERATED_WEBGL_BUFFER_NAME_PATTERN = /^NodeBuffer_(\d+)$/;
 const CAPTURE_GENERATED_UNIFORM_BUFFER_NAME_PATTERN = /^UniformBuffer_(\d+)$/;
 const CAPTURE_GENERATED_STORAGE_BUFFER_NAME_PATTERN = /^StorageBuffer_(\d+)$/;
 const CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN = /^nodeUniform\d+$/;
+const LIVE_MATERIAL_TEXTURE_KINDS = new Set( MATERIAL_TEXTURE_PROPS.map( property => `material.${ property }` ) );
+
+/** Shapes routed to the renderer-owned artifact registry by generated and manual registration. */
+export function isRendererRegistryShape( shape ) {
+
+	return shape === 'shadow-depth' || shape === 'render-pipeline' || shape === 'output-transform';
+
+}
 
 /**
  * Runtime fields that may differ between members of one captured material
@@ -110,7 +122,7 @@ export function createArtifactVariantPayloadFingerprint( artifact ) {
 	delete payload.cacheKey;
 	delete payload.variantKey;
 	delete payload.renderContextSelectors;
-	return stableJsonStringify( normalizeVariantFingerprintPayload( payload ), 'artifactVariant' );
+	return stableJsonStringify( normalizeVariantFingerprintPayload( payload, artifact?.renderContextSelectors ), 'artifactVariant' );
 
 }
 
@@ -668,7 +680,7 @@ function createArtifactVariantSemanticPayload( artifact ) {
 	delete payload.cacheKey;
 	delete payload.variantKey;
 	delete payload.renderContextSelectors;
-	return remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload ) );
+	return remapArtifactEphemeralIdentities( normalizeVariantFingerprintPayload( payload, artifact?.renderContextSelectors ) );
 
 }
 
@@ -680,11 +692,36 @@ function createArtifactVariantSemanticPayload( artifact ) {
  * representation while preserving legitimate live defaults such as
  * attenuationDistance=Infinity on the authoritative in-process artifact.
  */
-function normalizeVariantFingerprintPayload( value ) {
+function normalizeVariantFingerprintPayload( value, renderContextSelectors = [] ) {
+
+	const selectorLights = renderContextSelectors.map( selector => {
+
+		try { return JSON.parse( selector ).lights; } catch ( _ ) { return null; }
+
+	} );
+	const uniquelyTypedLights = new Set( ( value?.lightIdentities || [] ).filter( record =>
+		record?.schema === 'light-identity@1' && typeof record.type === 'string' &&
+		selectorLights.length > 0 && selectorLights.every( lights => Array.isArray( lights ) &&
+			lights.filter( light => light?.type === record.type ).length === 1 )
+	) );
+	const explicitlyAddressedLights = new Set( ( value?.lightIdentities || [] ).filter( record =>
+		record?.schema === 'light-identity@1' && typeof record.explicitKey === 'string' && record.explicitKey.length > 0 &&
+		value.lightIdentities.filter( candidate => candidate.explicitKey === record.explicitKey ).length === 1
+	) );
+
+	const liveMaterialDefaults = new Set();
+	for ( const group of value?.uniformPlan || [] ) for ( const slot of group?.slots || [] ) {
+
+		const source = slot?.source;
+		if ( ! Object.hasOwn( MATERIAL_UNIFORM_TYPES, source?.kind ) ) continue;
+		liveMaterialDefaults.add( source.kind === 'material.scalar' ? source.property : source.kind.slice( 'material.'.length ) );
+
+	}
 
 	const vsmInternalPass = !! value && VSM_INTERNAL_PASS_SHAPES.has( value.materialShape );
 	const rendererOutput = value?.materialShape === 'render-output';
 	const generatedShaderNodeIds = new Map();
+	const generatedFunctionNames = new Map();
 	const generatedUniformBufferIds = new Map();
 	const generatedStorageBufferIds = new Map();
 	const seen = new Map();
@@ -703,16 +740,19 @@ function normalizeVariantFingerprintPayload( value ) {
 		}
 		if ( role === 'artifact' ) for ( const field of SHADER_SOURCE_FIELDS ) {
 
-			if ( typeof current[ field ] === 'string' ) collectCaptureGeneratedShaderNodeIds(
-				current[ field ],
-				generatedShaderNodeIds,
-			);
+			if ( typeof current[ field ] === 'string' ) {
+
+				collectCaptureGeneratedShaderNodeIds( current[ field ], generatedShaderNodeIds );
+				collectCaptureGeneratedFunctionNames( current[ field ], generatedFunctionNames );
+
+			}
 
 		}
 		const liveFrameSource = typeof current.kind === 'string' && (
 			current.kind.startsWith( 'camera.' ) ||
 			current.kind.startsWith( 'environment.' ) ||
 			current.kind.startsWith( 'frame.' ) ||
+			current.kind.startsWith( 'light.' ) ||
 			current.kind.startsWith( 'object.' ) ||
 			current.kind.startsWith( 'pmrem.' ) ||
 			current.kind.startsWith( 'renderer.' )
@@ -724,7 +764,46 @@ function normalizeVariantFingerprintPayload( value ) {
 		const liveRendererTargetTextureSource = current.kind === 'artifact.texture' &&
 			current.renderTargetSelector?.schema === RENDERER_RENDER_TARGET_TEXTURE_SELECTOR_SCHEMA;
 		const internalPassRoleSource = vsmInternalPass && VSM_INTERNAL_PASS_ROLE_SOURCE_KINDS.has( current.kind );
+		const exactLiveUniform = current.kind === 'uniform.live' && Array.isArray( current.nodePath ) && hasExactLiveUniformOverlayAddress( current );
 		for ( const key of Object.keys( current ) ) {
+
+			// Explicit unique light keys resolve before snapshot scoring. Intensity,
+			// position and other live controls cannot split an addressed family.
+			if ( key === 'snapshot' && explicitlyAddressedLights.has( current ) ) continue;
+
+			// An addressed light with a unique captured type resolves by identity
+			// even if filtered scene traversal assigned it another capture index.
+			// Keep indices strict for legacy or ambiguous same-type light sets.
+			if ( key === 'captureIndex' && uniquelyTypedLights.has( current ) ) continue;
+			if ( key === 'lightIndex' && typeof current.kind === 'string' && current.kind.startsWith( 'light.' ) &&
+				Number.isInteger( current.lightIdentity ) &&
+				uniquelyTypedLights.has( value.lightIdentities?.[ current.lightIdentity ] ) ) continue;
+
+			// r185 Renderer.renderObject overwrites these shared shadow-override
+			// properties for every caster. Exact draw selectors retain their
+			// topology; a later capture-time snapshot cannot distinguish programs.
+			if ( value?.materialShape === 'shadow-depth' && current === value.renderState &&
+				( key === 'transparent' || key === 'alphaTest' || key === 'side' ) ) continue;
+			if ( current === value?.defaults && liveMaterialDefaults.has( key ) ) continue;
+			// Opacity is also stored among render defaults, but an explicit live
+			// material.opacity uniform supplies its value for every instance.
+			// Fixed opacity and all actual pipeline state remain strict.
+			if ( current === value?.renderState && key === 'opacity' && liveMaterialDefaults.has( key ) ) continue;
+			if ( Object.hasOwn( MATERIAL_UNIFORM_TYPES, current.kind ) && key === 'valueSnapshot' ) continue;
+
+			// Material-relative addresses bind each instance's live value. Initial
+			// snapshots and global construction order do not distinguish shaders.
+			if ( exactLiveUniform && ( key === 'valueSnapshot' || key === 'liveNodeIdentity' ) ) continue;
+			if ( LIVE_MATERIAL_TEXTURE_KINDS.has( current.kind ) &&
+				( key === 'imageWidth' || key === 'imageHeight' || key === 'imageDepth' ||
+					key === 'imageSrc' || key === 'textureName' || key === 'textureUuid' ||
+					// Live owners may replace generated mips with an uploaded chain.
+					// Shader bytes and sampler settings still describe the same draw.
+					key === 'generateMipmaps' ) ) continue;
+			if ( current.runtimeSized === true &&
+				( role === 'storage-buffer-entry' || role === 'storage-buffer-ref' ||
+					( role === 'binding-descriptors' && current.kind === 'storage-buffer' ) ) &&
+				( key === 'count' || key === 'byteLength' ) ) continue;
 
 			// VSM's private blur programs are shared by every non-point light.
 			// The internal-pass descriptor addresses these values and textures by
@@ -742,13 +821,36 @@ function normalizeVariantFingerprintPayload( value ) {
 			// shared-vs-distinct node topology in one namespace, but remove the
 			// capture-order number from fingerprints. Durable shader bytes remain
 			// untouched because this visitor always writes into its clone.
+			// r187dev compact Fn layouts are named the same way ('fn' + a global
+			// counter), and Fns declared inside a node builder receive new numbers
+			// on every build of an identical graph. Fingerprints keep the
+			// first-appearance order of those names, never the counter value.
 			if ( role === 'artifact' && SHADER_SOURCE_FIELDS.has( key ) && typeof current[ key ] === 'string' ) {
 
-				clone[ key ] = normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds );
+				clone[ key ] = normalizeCaptureGeneratedFunctionNames(
+					normalizeCaptureGeneratedShaderNodeIds( current[ key ], generatedShaderNodeIds ),
+					generatedFunctionNames,
+				);
 				continue;
 
 			}
 			if ( key === 'name' && typeof current[ key ] === 'string' ) {
+
+				// Shared light nodes can retain a cached shader's uniform block
+				// while their current builder label changes between page sessions.
+				// The writer uses the exact light identity and byte offset. Shader
+				// bytes, source identity, type, size and offset remain strict.
+				if ( role === 'uniform-plan-slots' &&
+					current.source?.kind?.startsWith( 'light.' ) &&
+					Number.isInteger( current.source.lightIdentity ) &&
+					value.lightIdentities?.[ current.source.lightIdentity ] &&
+					Number.isFinite( current.offset ) && Number.isFinite( current.size ) &&
+					CAPTURE_GENERATED_UNIFORM_SLOT_NAME_PATTERN.test( current[ key ] ) ) {
+
+					clone[ key ] = '<capture-generated-addressed-light-slot>';
+					continue;
+
+				}
 
 				// RenderPipeline can reuse a compiled render-output shader while the
 				// current builder's generated nodeUniform ordinal has moved. The
@@ -896,6 +998,24 @@ function collectCaptureGeneratedShaderNodeIds( shader, identities ) {
 		captureGeneratedIdentityId( identities, match[ 1 ] );
 
 	}
+
+}
+
+function collectCaptureGeneratedFunctionNames( shader, identities ) {
+
+	CAPTURE_GENERATED_FUNCTION_NAME_PATTERN.lastIndex = 0;
+	for ( const match of shader.matchAll( CAPTURE_GENERATED_FUNCTION_NAME_PATTERN ) ) captureGeneratedIdentityId( identities, match[ 1 ] );
+
+}
+
+function normalizeCaptureGeneratedFunctionNames( shader, identities ) {
+
+	return shader.replace( CAPTURE_GENERATED_FUNCTION_NAME_PATTERN, ( name, id ) => {
+
+		const canonicalId = identities.get( id );
+		return canonicalId === undefined ? name : `fn<capture-fn-id:${ canonicalId }>`;
+
+	} );
 
 }
 
@@ -1084,7 +1204,10 @@ function comparableVariantPayload( artifact ) {
 	delete payload.cacheKey;
 	delete payload.variantKey;
 	delete payload.renderContextSelectors;
-	return payload;
+	// Alias only identities that participate in runnable family identity.
+	// Material-owned textures can be shared in one draw and distinct in another;
+	// their live property address, not their capture UUID, supplies the binding.
+	return normalizeVariantFingerprintPayload( payload, artifact?.renderContextSelectors );
 
 }
 

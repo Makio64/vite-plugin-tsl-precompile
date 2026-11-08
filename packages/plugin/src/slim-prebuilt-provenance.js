@@ -41,22 +41,16 @@ export async function verifySlimPrebuiltBundle( { root, threeInstallation } ) {
 
 	}
 
-	let bundleSource;
-	let metadataSource;
+	const bundlePromise = readRequiredFile( installation.bundleFile, 'prebuilt slim bundle' );
+	const metadataPromise = readRequiredFile( installation.metadataFile, 'prebuilt slim provenance sidecar' );
+	bundlePromise.catch( () => {} );
+	metadataPromise.catch( () => {} );
+
+	let versions;
+	let sourcePromise;
 	try {
 
-		bundleSource = await readRequiredFile( installation.bundleFile, 'prebuilt slim bundle' );
-		metadataSource = await readRequiredFile( installation.metadataFile, 'prebuilt slim provenance sidecar' );
-
-	} catch ( error ) {
-
-		throw wrapSlimBuildRefusal( error, installation );
-
-	}
-
-	try {
-
-		const versions = createSlimBundleVersionIdentity( {
+		versions = createSlimBundleVersionIdentity( {
 			threeVersion: threeInstallation.version,
 			policyVersion: SLIM_THREE_POLICY_VERSION,
 			artifactToolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
@@ -67,7 +61,30 @@ export async function verifySlimPrebuiltBundle( { root, threeInstallation } ) {
 			contractPackageRoot: installation.contractPackageRoot,
 			pluginPackageRoot: PLUGIN_PACKAGE_ROOT,
 		} );
-		const expectedSource = await computeSlimBundleSourceFingerprint( inputs, versions );
+		sourcePromise = computeSlimBundleSourceFingerprint( inputs, versions );
+		sourcePromise.catch( () => {} );
+
+	} catch ( error ) {
+
+		try {
+
+			await bundlePromise;
+			await metadataPromise;
+
+		} catch ( readError ) {
+
+			throw wrapSlimBuildRefusal( readError, installation );
+
+		}
+		throw wrapSlimBuildRefusal( error, installation );
+
+	}
+
+	try {
+
+		const bundleSource = await bundlePromise;
+		const metadataSource = await metadataPromise;
+		const expectedSource = await sourcePromise;
 		return verifySlimBundleProvenance( {
 			bundleSource,
 			metadata: metadataSource,

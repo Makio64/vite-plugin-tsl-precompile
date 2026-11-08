@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
-import { __applyPrecompiled } from '../src/apply-precompiled.js';
+import { __applyPrecompiled, __applyPrecompiledCallsite } from '../src/apply-precompiled.js';
 import { hashMaterialSync } from '../src/graph-hash.js';
 
 const THREE_VERSION = '0.184.0';
@@ -100,6 +100,40 @@ test( '__applyPrecompiled rejects an artifact captured with a different exact th
 		const material = fakeMaterial();
 		const module = capturedModule( material, 'three-mismatch' );
 		assert.throws( () => __applyPrecompiled( material, module, module.__hash ), /captured with three 0\.184\.0.*uses three 0\.185\.0/ );
+
+	} );
+
+} );
+
+test( 'call-site apply requires the generated marker and retains metadata and shipped-hash gates', () => {
+
+	withDetectedThreeVersion( THREE_VERSION, () => {
+
+		const failures = [
+			[ module => delete module.__sourceValidationMode, /requires runtime source-graph validation/ ],
+			[ module => { module.__sourceValidationMode = 'runtime-graph'; }, /requires runtime source-graph validation/ ],
+			[ module => { module.__hash = 'different'; }, /stale artifact detected/ ],
+			[ module => delete module.artifact.sourceGraphHash, /incomplete source-hash metadata/ ],
+			[ module => { module.artifact.sourceHashVersion = 'old'; }, /source-hash\/toolchain version/ ],
+			[ module => { module.artifact.sourceThreeVersion = 'different'; }, /captured with three/ ],
+		];
+		for ( const [ mutate, expected ] of failures ) {
+
+			const material = fakeMaterial();
+			const module = capturedModule( material, 'callsite-invalid' );
+			module.__sourceValidationMode = 'callsite';
+			const hash = module.__hash;
+			mutate( module );
+			assert.throws( () => __applyPrecompiledCallsite( material, module, hash ), expected );
+			assert.equal( material.isPrecompiledMaterial, undefined, 'rejection precedes material adoption' );
+
+		}
+
+		const material = fakeMaterial();
+		const module = capturedModule( material, 'callsite-valid' );
+		module.__sourceValidationMode = 'callsite';
+		material.colorNode = { isNode: true, constructor: { type: 'SlimInertNode' } };
+		assert.equal( __applyPrecompiledCallsite( material, module, module.__hash ).isPrecompiledMaterial, true );
 
 	} );
 

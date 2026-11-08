@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>TSL performance sample</title>
+<style>html,body{margin:0;background:#101418;overflow:hidden}canvas{display:block}#status{display:none}</style>
+<span id="status"></span>
+<script type="module">
+import { WebGPURenderer } from 'three/webgpu';
+
+// Instrument the existing demo without changing its captured source or shaders.
+const profile = { compilerFree: WebGPURenderer.__TSLP_SLIM__ === true, shaderNodes: 0, builderCalls: 0, firstRenderCpuMs: null };
+const seenNodes = new WeakSet();
+let renderer, scene, camera;
+const init = WebGPURenderer.prototype.init;
+WebGPURenderer.prototype.init = async function ( ...args ) {
+	this.backend.trackTimestamp = true;
+	const createBuilder = this.backend.createNodeBuilder;
+	this.backend.createNodeBuilder = function ( ...inputs ) {
+		profile.builderCalls ++;
+		const builder = createBuilder.apply( this, inputs );
+		const record = () => {
+			for ( const node of builder.nodes || [] ) if ( ! seenNodes.has( node ) ) {
+				seenNodes.add( node );
+				profile.shaderNodes ++;
+			}
+		};
+		for ( const name of [ 'build', 'buildAsync' ] ) if ( typeof builder[ name ] === 'function' ) {
+			const build = builder[ name ];
+			builder[ name ] = function ( ...parameters ) {
+				const result = build.apply( this, parameters );
+				if ( result?.then ) return result.then( value => { record(); return value; } );
+				record();
+				return result;
+			};
+		}
+		return builder;
+	};
+	const result = await init.apply( this, args );
+	renderer = this;
+	return result;
+};
+// Equal backing resolution in both modes, independent of display DPR.
+WebGPURenderer.prototype.setPixelRatio = function () { return this; };
+const render = WebGPURenderer.prototype.render;
+WebGPURenderer.prototype.render = function ( nextScene, nextCamera, ...args ) {
+	const start = performance.now();
+	const result = render.call( this, nextScene, nextCamera, ...args );
+	if ( nextScene?.isScene ) {
+		scene = nextScene;
+		camera = nextCamera;
+		profile.firstRenderCpuMs ??= performance.now() - start;
+	}
+	return result;
+};
+await import( './main.js' );
+const timestampsAvailable = renderer.backend.trackTimestamp === true;
+// Live viewing needs no unread timestamp queries; enable them only for sampling.
+renderer.backend.trackTimestamp = false;
+const frame = () => new Promise( resolve => requestAnimationFrame( resolve ) );
+const percentile = ( values, p ) => values.length ? [ ...values ].sort( ( a, b ) => a - b )[ Math.ceil( p * values.length ) - 1 ] : null;
+let measuring = false;
+window.__TSLP_DEMO__ = {
+	profile,
+	pause() { window.__TSLP_CANARY_RENDER_EVIDENCE__.controlled = true; },
+	async measure( { warmup = 30, samples = 90 } = {} ) {
+		if ( measuring ) throw new Error( 'Measurement already running' );
+		measuring = true;
+		this.pause();
+		try {
+			const mesh = scene.children.find( object => object.isMesh );
+			const cpu = [], gpu = [];
+			const timed = timestampsAvailable;
+			renderer.backend.trackTimestamp = timed;
+			if ( timed ) await renderer.resolveTimestampsAsync();
+			for ( let i = -warmup; i < samples; i ++ ) {
+				await frame();
+				mesh.rotation.set( 0.25 + i * 0.003, 0.5 + i * 0.004, 0 );
+				const start = performance.now();
+				render.call( renderer, scene, camera );
+				const cpuMs = performance.now() - start;
+				const gpuMs = timed ? await renderer.resolveTimestampsAsync() : null;
+				if ( i >= 0 ) {
+					cpu.push( cpuMs );
+					if ( Number.isFinite( gpuMs ) && gpuMs > 0 ) gpu.push( gpuMs );
+				}
+			}
+			let sceneObjects = 0, meshes = 0, vertices = 0, triangles = 0;
+			scene.traverse( object => {
+				sceneObjects ++;
+				if ( object.isMesh ) {
+					meshes ++;
+					vertices += object.geometry.attributes.position.count;
+					triangles += ( object.geometry.index?.count || object.geometry.attributes.position.count ) / 3;
+				}
+			} );
+			return {
+				...profile, sceneObjects, meshes, vertices, triangles,
+				width: renderer.domElement.width, height: renderer.domElement.height,
+				drawCalls: renderer.info.render.drawCalls,
+				backend: renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl',
+				adapter: renderer.backend.device?.adapterInfo ? { ...renderer.backend.device.adapterInfo, device: renderer.backend.device.adapterInfo.device, architecture: renderer.backend.device.adapterInfo.architecture, vendor: renderer.backend.device.adapterInfo.vendor } : null,
+				cpuMedianMs: percentile( cpu, 0.5 ), cpuP95Ms: percentile( cpu, 0.95 ),
+				gpuMedianMs: percentile( gpu, 0.5 ), gpuP95Ms: percentile( gpu, 0.95 ),
+				samples, gpuSamples: gpu.length, warmup, cpuSamplesMs: cpu, gpuSamplesMs: gpu,
+			};
+		} finally { renderer.backend.trackTimestamp = false; measuring = false; }
+	},
+};
+</script>
+</html>

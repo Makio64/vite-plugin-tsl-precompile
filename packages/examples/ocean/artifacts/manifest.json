@@ -1,27 +1,27 @@
 {
   "__aux": {
-    "cube-render-target:f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d": {
-      "file": "aux-cube-render-target-f8bd804355c3.json",
+    "cube-render-target:1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28": {
+      "file": "aux-cube-render-target-1a6446e96454.json",
       "shape": "cube-render-target",
-      "configHash": "f8bd804355c3eb371301006942eae331cca0746db9ce573e99786d8009086f5d",
-      "hash": "b8881cdf1e5bb1881394b6cb9a021c28f447c29611152f1cc84721f8a0d832df",
-      "threeVersion": "0.185.1",
+      "configHash": "1a6446e96454e1725d84d448fa12b544f41fc1dca3a2e37f493179a8c45e4d28",
+      "hash": "b4e0abce87d8d58932340f08792bdbd566f7dda60437b82558e9e14c3fe44f84",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-08-02T04:31:12.148Z"
+      "capturedAt": "2026-10-13T09:47:28.473Z"
     },
-    "render-output:0ba7c59f39ff4bdbaf183b9000bb0d83fe7ef8f42cd095e60ba7054df4462646": {
-      "file": "aux-render-output-0ba7c59f39ff.json",
+    "render-output:8341d78dc1c394847d0aa1758d4261fcf1648e4b83847f8a99e3b16c4b4e35e6": {
+      "file": "aux-render-output-8341d78dc1c3.json",
       "shape": "render-output",
-      "configHash": "0ba7c59f39ff4bdbaf183b9000bb0d83fe7ef8f42cd095e60ba7054df4462646",
-      "hash": "c39e07506833bf2e972ec157b70ebfce9934d3788aaca21c2b880e2476944d4e",
-      "threeVersion": "0.185.1",
+      "configHash": "8341d78dc1c394847d0aa1758d4261fcf1648e4b83847f8a99e3b16c4b4e35e6",
+      "hash": "e83e6c470573349aabb0c8369f4aae7187cfab97fc120b0d6c4689d4e0e5b9e6",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-08-02T04:31:12.295Z"
+      "capturedAt": "2026-10-13T09:47:28.516Z"
     }
   },
   "ocean-sky": {
-    "file": "ocean-sky.c34d09654fba.json",
-    "hash": "c34d09654fba752662b59164ec8e3f3f8858f93d0662585e6200758e9dbed183",
+    "file": "ocean-sky.5b675472ce1e.json",
+    "hash": "5b675472ce1e665668ec75be55965304adce91233c6b5fdb704975e19212f705",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -34,11 +34,11 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:09:57.408Z"
+    "capturedAt": "2026-10-13T09:47:29.112Z"
   },
   "ocean-water": {
-    "file": "ocean-water.39f2c8c9059f.json",
-    "hash": "39f2c8c9059fdc9a494d25fa9ad619e8140e6f978af616d51fffb967ffd1f61c",
+    "file": "ocean-water.89a65b223bb8.json",
+    "hash": "89a65b223bb85e2a9e67db772d299dee32b650a69ad7a8f72d5cb1c842b0bf04",
     "sourceIdentity": "fa21f08570e880101a6291f2efd85c976e6aaeb5d99b697e5f0ef92cadea0658",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -51,6 +51,6 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:09:57.437Z"
+    "capturedAt": "2026-10-13T09:47:29.099Z"
   }
 }

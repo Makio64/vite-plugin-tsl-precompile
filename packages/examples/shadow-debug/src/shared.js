@@ -6,7 +6,6 @@ import {
 	DirectionalLight,
 	Group,
 	PCFShadowMap,
-	PCFSoftShadowMap,
 	PerspectiveCamera,
 	PlaneGeometry,
 	PointLight,
@@ -21,7 +20,7 @@ import { createPrecompiledShadowSupport } from '@tsl-precompile/runtime/slim-sup
 const SHADOW_TYPES = {
 	basic: { label: 'Basic', value: BasicShadowMap },
 	pcf: { label: 'PCF', value: PCFShadowMap },
-	'pcf-soft': { label: 'PCF Soft', value: PCFSoftShadowMap },
+	'pcf-soft': { label: 'PCF (legacy Soft)', value: PCFShadowMap },
 	vsm: { label: 'VSM', value: VSMShadowMap },
 };
 
@@ -238,7 +237,7 @@ export async function runShadowDebugExample( {
 			import( 'three' ),
 		] );
 		captureRuntime.installPrecompileMarker( captureThree, { devEndpoint: CAPTURE_ENDPOINT } );
-		captureRuntime.setDevRenderer( renderer );
+		await captureRuntime.setDevRenderer( renderer );
 
 	}
 

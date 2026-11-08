@@ -1,5 +1,6 @@
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { computeArtifactContentHash } from './hash.js';
+import { assertArtifactThreeEmitterIdentity } from '@tsl-precompile/contract/three-emitter-identity';
 
 /**
  * Fail closed when a signed artifact envelope does not match its runtime
@@ -21,6 +22,7 @@ export function assertArtifactContentIntegrity( artifact, storedHash, opts ) {
 
 	}
 	if ( artifact.artifactContentHashVersion === undefined && ! required ) return false;
+	assertArtifactThreeEmitterIdentity( artifact, opts, label );
 	if ( artifact.artifactContentHashVersion !== ARTIFACT_CONTENT_HASH_VERSION ) {
 
 		throw new Error( `${ label } uses unsupported content-hash version ${ artifact.artifactContentHashVersion || '<missing>' }. Recapture it.` );
@@ -32,6 +34,7 @@ export function assertArtifactContentIntegrity( artifact, storedHash, opts ) {
 
 	}
 	const computed = computeArtifactContentHash( artifact, {
+		...opts,
 		shape,
 		threeVersion,
 		pluginVersion,

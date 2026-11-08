@@ -15,9 +15,9 @@ import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
 
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
-import { THREE_SRC } from '../_three-src.js';
+import { THREE_R185_SRC } from '../_three-src.js';
 
-const PATH = resolve( THREE_SRC, 'nodes/lighting/ShadowFilterNode.js' );
+const PATH = resolve( THREE_R185_SRC, 'nodes/lighting/ShadowFilterNode.js' );
 
 test( 'rewrite/ShadowFilterNode: shadow material uses registered precompiled artifact', () => {
 

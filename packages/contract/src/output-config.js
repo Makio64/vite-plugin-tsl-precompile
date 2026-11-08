@@ -19,6 +19,7 @@
  *   currentColorSpace: string|number|boolean|null,
  *   logarithmicDepthBuffer: boolean,
  *   sampledTexture: '2d'|'2d-array',
+ *   sampledTextureDataType?: string|number|boolean,
  *   multiview: boolean,
  * }}
  */
@@ -27,7 +28,7 @@ export function createRendererOutputConfig( renderer, outputTexture ) {
 	const currentColorSpace = scalar( safeRead( renderer, 'currentColorSpace' ) )
 		?? scalar( safeRead( renderer, 'outputColorSpace' ) );
 
-	return {
+	const config = {
 		schema: 'renderer-output@1',
 		toneMapping: scalar( safeRead( renderer, 'toneMapping' ) ),
 		currentColorSpace,
@@ -35,6 +36,11 @@ export function createRendererOutputConfig( renderer, outputTexture ) {
 		sampledTexture: safeRead( outputTexture, 'isArrayTexture' ) === true ? '2d-array' : '2d',
 		multiview: rendererUsesMultiview( renderer ),
 	};
+	// Output attachments with different component types need distinct binding
+	// evidence, even when the final color-transform WGSL happens to be equal.
+	const sampledTextureDataType = scalar( safeRead( outputTexture, 'type' ) );
+	if ( sampledTextureDataType != null ) config.sampledTextureDataType = sampledTextureDataType;
+	return config;
 
 }
 
@@ -125,5 +131,15 @@ function safeCall( object, method ) {
 		return null;
 
 	}
+
+}
+
+
+/** Stable identity for one internal effect pass owned by a named pipeline. */
+export function createEffectPassCaptureName( pipelineName, handlerName, effectIndex, passIndex ) {
+
+	return typeof pipelineName === 'string' && pipelineName.length > 0
+		? `${ pipelineName }--effect-${ handlerName }-${ effectIndex }-${ passIndex }`
+		: null;
 
 }

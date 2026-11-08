@@ -6,6 +6,8 @@ import {
 	createPMREMSourceTopology,
 	createPMREMSourceTopologyKey,
 	createPMREMSupportConfig,
+	getPMREMBlurConfig,
+	PMREM_SPHERICAL_GAUSSIAN_BLUR,
 	pmremProfileForSource,
 	pmremRequiredStages,
 	validatePMREMLayoutConfig,
@@ -27,6 +29,40 @@ const INT_TYPE = 1013;
 const UNSIGNED_INT_TYPE = 1014;
 const FLOAT_TYPE = 1015;
 const HALF_FLOAT_TYPE = 1016;
+
+test( 'PMREM scene blur records the exact native algorithm without changing legacy identity', () => {
+
+	const layout = createPMREMLayoutConfig( 32 );
+	const legacy = createPMREMSupportConfig( layout, 'scene' );
+	assert.deepEqual( legacy, { schema: 'pmrem-support@1', profile: 'scene', layout } );
+	assert.deepEqual( validatePMREMSupportConfig( legacy ), [] );
+	assert.deepEqual( getPMREMBlurConfig( legacy ), { algorithm: 'weighted-separable', samples: 20 } );
+	const current = createPMREMSupportConfig( layout, 'scene', null, { blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } );
+	assert.deepEqual( current.blur, { algorithm: 'spherical-gaussian', samples: 20 } );
+	assert.notEqual( current.blur, PMREM_SPHERICAL_GAUSSIAN_BLUR );
+	assert.equal( getPMREMBlurConfig( current ), PMREM_SPHERICAL_GAUSSIAN_BLUR );
+	assert.ok( Object.isFrozen( getPMREMBlurConfig( current ) ) );
+	assert.deepEqual( validatePMREMSupportConfig( current ), [] );
+	assert.notEqual( JSON.stringify( current ), JSON.stringify( legacy ) );
+
+} );
+
+test( 'PMREM blur discriminator rejects unknown algorithms, sample counts, and source profiles', () => {
+
+	const layout = createPMREMLayoutConfig( 32 );
+	const support = createPMREMSupportConfig( layout, 'scene', null, { blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } );
+	for ( const blur of [ null, {}, { algorithm: 'weighted-separable', samples: 20 }, { algorithm: 'spherical-gaussian', samples: 19 }, { algorithm: 'spherical-gaussian', samples: 20, sigma: 0.2 } ] ) {
+
+		assert.ok( validatePMREMSupportConfig( { ...support, blur } ).length > 0 );
+		assert.throws( () => getPMREMBlurConfig( { ...support, blur } ), /getPMREMBlurConfig/ );
+		assert.throws( () => createPMREMSupportConfig( layout, 'scene', null, { blur } ), /createPMREMSupportConfig/ );
+
+	}
+	assert.throws( () => createPMREMSupportConfig( layout, 'texture-equirect', equirectTexture(), { blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } ), /omitted for texture profiles/ );
+	const texture = createPMREMSupportConfig( layout, 'texture-equirect', equirectTexture() );
+	assert.ok( validatePMREMSupportConfig( { ...texture, blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } ).some( entry => entry.code === 'pmrem.blur.profile' ) );
+
+} );
 
 function equirectTexture( overrides = {} ) {
 

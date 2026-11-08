@@ -1,4 +1,5 @@
 import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { assertArtifactThreeEmitterIdentity, createThreeEmitterHashFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import {
@@ -9,6 +10,7 @@ import {
 
 const MANIFEST_FILENAME = 'manifest.json';
 const MANIFEST_CONSISTENCY_ERROR = 'TSLP_ARTIFACT_MANIFEST_INCONSISTENT';
+const ENVELOPE_READ_CONCURRENCY = 64;
 
 /**
  * Load captured artifacts from a directory.
@@ -36,7 +38,13 @@ export async function loadArtifactDirectory( artifactsDirectory, opts = {} ) {
 
 		try {
 
-			return await loadArtifactDirectoryOnce( artifactsDirectory, opts );
+			const loaded = await loadArtifactDirectoryOnce( artifactsDirectory, opts );
+			if ( opts.expectedEmitter ) for ( const item of [ ...Object.values( loaded.manifest ), ...Object.values( loaded.auxManifest ) ] ) {
+
+				assertArtifactThreeEmitterIdentity( item.entry.artifact || item.entry, opts.expectedEmitter, `Artifact in ${ artifactsDirectory }` );
+
+			}
+			return loaded;
 
 		} catch ( error ) {
 
@@ -66,9 +74,12 @@ async function loadArtifactDirectoryOnce( artifactsDirectory, opts ) {
 
 	}
 
-	const durableManifest = await readDurableManifest( artifactsDir );
-	if ( durableManifest ) return loadManifestArtifacts( artifactsDir, files, durableManifest, opts );
-	return loadLegacyArtifacts( artifactsDir, files, opts );
+	const [ rootRealPath, durableManifest ] = await Promise.all( [
+		realpath( artifactsDir ),
+		files.includes( MANIFEST_FILENAME ) ? readDurableManifest( artifactsDir ) : null,
+	] );
+	if ( durableManifest ) return loadManifestArtifacts( artifactsDir, rootRealPath, files, durableManifest, opts );
+	return loadLegacyArtifacts( artifactsDir, rootRealPath, files, opts );
 
 }
 
@@ -112,24 +123,35 @@ async function readDurableManifest( artifactsDir ) {
 
 }
 
-async function loadManifestArtifacts( artifactsDir, files, durableManifest, opts ) {
+async function loadManifestArtifacts( artifactsDir, rootRealPath, files, durableManifest, opts ) {
 
-	const rootRealPath = await realpath( artifactsDir );
 	const userArtifacts = Object.create( null );
 	const auxiliaryArtifacts = Object.create( null );
 	const referencedFiles = new Map();
 	const identities = new Map();
 
-	for ( const [ name, manifestEntry ] of Object.entries( durableManifest ) ) {
+	const userEntries = Object.entries( durableManifest ).filter( ( [ name ] ) => name !== '__aux' );
+	const aux = durableManifest.__aux;
+	const auxEntries = aux && typeof aux === 'object' && ! Array.isArray( aux ) ? Object.entries( aux ) : [];
+	const userLoads = startConcurrentLoads( userEntries, ( [ name, manifestEntry ] ) =>
+		isManifestEntryObject( manifestEntry )
+			? loadReferencedEnvelope( artifactsDir, rootRealPath, manifestEntry.file, `artifact ${ JSON.stringify( name ) }` )
+			: null,
+	);
+	const auxLoads = startConcurrentLoads( auxEntries, ( [ key, manifestEntry ] ) =>
+		isManifestEntryObject( manifestEntry ) &&
+		typeof manifestEntry.shape === 'string' && manifestEntry.shape.length > 0 &&
+		typeof manifestEntry.configHash === 'string' && manifestEntry.configHash.length > 0 &&
+		key === `${ manifestEntry.shape }:${ manifestEntry.configHash }`
+			? loadReferencedEnvelope( artifactsDir, rootRealPath, manifestEntry.file, `auxiliary artifact ${ JSON.stringify( key ) }` )
+			: null,
+	);
 
-		if ( name === '__aux' ) continue;
+	for ( let i = 0; i < userEntries.length; i ++ ) {
+
+		const [ name, manifestEntry ] = userEntries[ i ];
 		assertManifestEntryObject( manifestEntry, `artifact ${ JSON.stringify( name ) }` );
-		const loaded = await loadReferencedEnvelope(
-			artifactsDir,
-			rootRealPath,
-			manifestEntry.file,
-			`artifact ${ JSON.stringify( name ) }`,
-		);
+		const loaded = await userLoads[ i ];
 		if ( loaded.entry.__materialShape !== undefined || loaded.entry.__configHash !== undefined ) {
 
 			throw manifestError( artifactsDir, `artifact ${ JSON.stringify( name ) } references auxiliary envelope ${ JSON.stringify( loaded.file ) }.` );
@@ -152,14 +174,14 @@ async function loadManifestArtifacts( artifactsDir, files, durableManifest, opts
 
 	}
 
-	const aux = durableManifest.__aux;
 	if ( aux !== undefined && ( ! aux || typeof aux !== 'object' || Array.isArray( aux ) ) ) {
 
 		throw manifestError( artifactsDir, '`__aux` must contain an object when present.' );
 
 	}
-	for ( const [ key, manifestEntry ] of Object.entries( aux || {} ) ) {
+	for ( let i = 0; i < auxEntries.length; i ++ ) {
 
+		const [ key, manifestEntry ] = auxEntries[ i ];
 		assertManifestEntryObject( manifestEntry, `auxiliary artifact ${ JSON.stringify( key ) }` );
 		if ( typeof manifestEntry.shape !== 'string' || manifestEntry.shape.length === 0 ||
 			typeof manifestEntry.configHash !== 'string' || manifestEntry.configHash.length === 0 ) {
@@ -173,12 +195,7 @@ async function loadManifestArtifacts( artifactsDir, files, durableManifest, opts
 			throw manifestError( artifactsDir, `auxiliary artifact key ${ JSON.stringify( key ) } does not match ${ JSON.stringify( expectedKey ) }.` );
 
 		}
-		const loaded = await loadReferencedEnvelope(
-			artifactsDir,
-			rootRealPath,
-			manifestEntry.file,
-			`auxiliary artifact ${ JSON.stringify( key ) }`,
-		);
+		const loaded = await auxLoads[ i ];
 		if ( loaded.entry.__materialShape !== manifestEntry.shape || loaded.entry.__configHash !== manifestEntry.configHash ) {
 
 			throw manifestError(
@@ -210,10 +227,12 @@ async function loadManifestArtifacts( artifactsDir, files, durableManifest, opts
 
 	if ( opts.rejectUnreferencedDuplicates === true || opts.rejectUnreferencedArtifacts === true ) {
 
-		for ( const file of files ) {
+		const unreferencedFiles = files.filter( ( file ) => file !== MANIFEST_FILENAME && ! referencedFiles.has( file ) );
+		const unreferencedLoads = startConcurrentLoads( unreferencedFiles, ( file ) => readUnreferencedEnvelope( artifactsDir, file, rootRealPath ) );
+		for ( let i = 0; i < unreferencedFiles.length; i ++ ) {
 
-			if ( file === MANIFEST_FILENAME || referencedFiles.has( file ) ) continue;
-			const loaded = await readUnreferencedEnvelope( artifactsDir, file, rootRealPath );
+			const file = unreferencedFiles[ i ];
+			const loaded = await unreferencedLoads[ i ];
 			const identity = loaded && envelopeIdentity( loaded.entry );
 			if ( identity && identities.has( identity ) ) {
 
@@ -245,17 +264,18 @@ async function loadManifestArtifacts( artifactsDir, files, durableManifest, opts
 
 }
 
-async function loadLegacyArtifacts( artifactsDir, files, opts ) {
+async function loadLegacyArtifacts( artifactsDir, rootRealPath, files, opts ) {
 
-	const rootRealPath = await realpath( artifactsDir );
 	const userArtifacts = Object.create( null );
 	const auxiliaryArtifacts = Object.create( null );
 	const identities = new Map();
+	const candidateFiles = files.filter( ( file ) => file !== MANIFEST_FILENAME );
+	const legacyLoads = startConcurrentLoads( candidateFiles, ( file ) => readUnreferencedEnvelope( artifactsDir, file, rootRealPath ) );
 
-	for ( const file of files ) {
+	for ( let i = 0; i < candidateFiles.length; i ++ ) {
 
-		if ( file === MANIFEST_FILENAME ) continue;
-		const loaded = await readUnreferencedEnvelope( artifactsDir, file, rootRealPath );
+		const file = candidateFiles[ i ];
+		const loaded = await legacyLoads[ i ];
 		if ( ! loaded ) continue;
 		const { entry, mtime } = loaded;
 		const identity = envelopeIdentity( entry );
@@ -292,6 +312,44 @@ async function loadLegacyArtifacts( artifactsDir, files, opts ) {
 
 	}
 	return { manifest: userArtifacts, auxManifest: auxiliaryArtifacts, authoritative: false };
+
+}
+
+function startConcurrentLoads( items, fn ) {
+
+	let active = 0;
+	const queue = [];
+	const next = () => {
+
+		if ( active >= ENVELOPE_READ_CONCURRENCY || queue.length === 0 ) return;
+		active ++;
+		const run = queue.shift();
+		run().finally( () => {
+
+			active --;
+			next();
+
+		} );
+
+	};
+	return items.map( ( item, index ) => {
+
+		const promise = new Promise( ( resolveLoad, rejectLoad ) => {
+
+			queue.push( () => Promise.resolve().then( () => fn( item, index ) ).then( resolveLoad, rejectLoad ) );
+			next();
+
+		} );
+		promise.catch( () => {} );
+		return promise;
+
+	} );
+
+}
+
+function isManifestEntryObject( manifestEntry ) {
+
+	return Boolean( manifestEntry && typeof manifestEntry === 'object' && ! Array.isArray( manifestEntry ) );
 
 }
 
@@ -517,7 +575,7 @@ function assertAuxiliaryProvenanceAgreement( artifactsDir, manifestEntry, envelo
 	const envelopeHasProvenance = envelope.threeVersion !== undefined || envelope.pluginVersion !== undefined;
 	if ( ! manifestHasProvenance && ! envelopeHasProvenance ) return; // Legacy capture; build compatibility rejects it later.
 
-	for ( const field of [ 'threeVersion', 'pluginVersion' ] ) {
+	for ( const field of [ 'threeVersion', 'pluginVersion', ...Object.keys( createThreeEmitterHashFields( envelope ) ) ] ) {
 
 		if ( typeof manifestEntry[ field ] !== 'string' || manifestEntry[ field ].length === 0 ) {
 
@@ -554,6 +612,7 @@ function assertAuxiliaryProvenanceAgreement( artifactsDir, manifestEntry, envelo
 		throw manifestError( artifactsDir, `${ label } envelope threeVersion does not match artifact sourceThreeVersion.` );
 
 	}
+	assertArtifactThreeEmitterIdentity( artifact, envelope, label );
 	if ( artifact.sourceHashVersion !== envelope.pluginVersion ) {
 
 		throw manifestError( artifactsDir, `${ label } envelope pluginVersion does not match artifact sourceHashVersion.` );

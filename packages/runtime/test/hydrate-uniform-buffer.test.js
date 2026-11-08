@@ -107,3 +107,91 @@ test( 'uniform buffer kind seeds flat NodeUniformBuffers from plan snapshots', (
 	assert.equal( attachedResolver, liveResolver );
 
 } );
+
+test( 'replay UBOs upload changed bytes and keep upload state private to each clone', async () => {
+
+	const { ReplayUniformBuffer } = await import( '../src/hydrate/kinds/uniform-buffer.js' );
+	const buffer = new Float32Array( 4 );
+	const binding = new ReplayUniformBuffer( 'object', buffer );
+	assert.equal( binding.update(), true );
+	assert.equal( binding.update(), false );
+	buffer[ 1 ] = -0;
+	assert.equal( binding.update(), true, 'signed zero changes bytes' );
+	const words = new Uint32Array( buffer.buffer );
+	words[ 2 ] = 0x7fc00001;
+	assert.equal( binding.update(), true );
+	assert.equal( binding.update(), false, 'unchanged NaN payload does not upload forever' );
+	words[ 2 ] = 0x7fc00002;
+	assert.equal( binding.update(), true, 'different NaN payload changes bytes' );
+	const clone = binding.clone();
+	assert.equal( clone.update(), true, 'new GPU binding needs its initial upload' );
+	buffer[ 0 ] = 12;
+	assert.equal( binding.update(), true );
+	assert.equal( clone.update(), true, 'clone must not inherit another binding\'s upload history' );
+	binding._buffer = new Float32Array( buffer );
+	assert.equal( binding.update(), true, 'replacement allocation needs uploading' );
+
+} );
+
+test( 'shared UBO writes honor render/frame cadence and invalidate every render context owner', async () => {
+
+	const { ReplayUniformBuffer } = await import( '../src/hydrate/kinds/uniform-buffer.js' );
+	const binding = new ReplayUniformBuffer( 'render', new Float32Array( 4 ) );
+	binding.groupNode = { shared: true, updateType: 'render', version: 0 };
+	const frame = { frameId: 1, renderId: 1, renderer: {}, scene: {}, camera: {}, lightsNode: {} };
+	assert.equal( binding.needsWrite( frame ), true );
+	binding.didWrite( frame );
+	assert.equal( binding.needsWrite( { ...frame, object: {} } ), false );
+	for ( const key of [ 'renderer', 'scene', 'camera', 'lightsNode' ] ) {
+
+		frame[ key ] = {};
+		assert.equal( binding.needsWrite( frame ), true, key );
+		binding.didWrite( frame );
+
+	}
+	frame.renderId ++;
+	assert.equal( binding.needsWrite( frame ), true );
+	binding.didWrite( frame );
+	binding.groupNode.updateType = 'frame';
+	frame.renderId ++;
+	assert.equal( binding.needsWrite( frame ), false );
+	frame.frameId ++;
+	assert.equal( binding.needsWrite( frame ), true );
+	binding.didWrite( frame );
+	binding.groupNode.shared = false;
+	assert.equal( binding.needsWrite( frame ), true, 'object UBOs still write on every draw' );
+	binding.groupNode.shared = true;
+	assert.equal( binding.needsWrite( {} ), true, 'unstamped standalone callers never reuse stale values' );
+
+} );
+
+// Exercise every word, including non-vec4 tails and views inside larger buffers.
+test( 'replay UBO upload comparison detects every byte lane and leaves adjacent storage untouched', async () => {
+
+	const { ReplayUniformBuffer } = await import( '../src/hydrate/kinds/uniform-buffer.js' );
+	for ( const length of [ 1, 2, 3, 4, 5, 7, 8, 9, 36, 73 ] ) {
+
+		const storage = new Uint32Array( length + 8 ).fill( 0x12345678 );
+		const words = storage.subarray( 4, 4 + length );
+		const binding = new ReplayUniformBuffer( 'object', new Float32Array( words.buffer, words.byteOffset, length ) );
+		assert.equal( binding.update(), true );
+		assert.equal( binding.update(), false );
+		for ( let i = 0; i < length; i ++ ) {
+
+			for ( const mask of [ 1, 0x100, 0x10000, 0x80000000 ] ) {
+
+				words[ i ] ^= mask;
+				assert.equal( binding.update(), true, `${ length } words, index ${ i }, mask ${ mask }` );
+				assert.equal( binding.update(), false );
+
+			}
+
+		}
+		assert.deepEqual( Array.from( storage.subarray( 0, 4 ) ), Array( 4 ).fill( 0x12345678 ) );
+		assert.deepEqual( Array.from( storage.subarray( 4 + length ) ), Array( 4 ).fill( 0x12345678 ) );
+		binding.release();
+		assert.equal( binding.update(), false );
+
+	}
+
+} );

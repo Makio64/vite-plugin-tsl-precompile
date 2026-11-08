@@ -141,11 +141,13 @@ test( 'live-route smoke waits for iframe teardown before grading browser failure
 	const source = await readFile( resolve( SITE_ROOT, 'scripts/test-live-example.mjs' ), 'utf8' );
 	const close = source.indexOf( "await page.locator( '.ex-live-close' ).click();" );
 	const actualNavigation = source.indexOf( "frame.contentWindow?.location.href === 'about:blank'", close );
-	const settle = source.indexOf( 'await page.waitForTimeout( 50 );', actualNavigation );
-	const failures = source.indexOf( 'browserFailures.messagesSince( failureCheckpoint )', settle );
+	const teardownDelay = source.indexOf( 'await page.waitForTimeout( 50 );', actualNavigation );
+	const completionProof = source.indexOf( 'await browserFailures.settle();', teardownDelay );
+	const failures = source.indexOf( 'browserFailures.messagesSince( failureCheckpoint )', completionProof );
 	assert.ok(
-		close >= 0 && actualNavigation > close && settle > actualNavigation && failures > settle,
-		'the smoke gate must observe actual iframe navigation and its teardown before reading failures',
+		close >= 0 && actualNavigation > close && teardownDelay > actualNavigation &&
+			completionProof > teardownDelay && failures > completionProof,
+		'the smoke gate must observe iframe teardown and settle network proofs before reading failures',
 	);
 
 } );
@@ -168,12 +170,14 @@ test( 'landing gives three compact install starts without exposing the agent pro
 		readFile( resolve( SITE_ROOT, 'src/main.js' ), 'utf8' ),
 	] );
 	assert.equal( page.match( /class="start-option(?: |")/g )?.length, 3 );
-	assert.match( page, /Agent installs it/ );
-	assert.match( page, /Agent plans the install/ );
+	assert.match( page, /Pre-release source preview:/ );
+	assert.match( page, /Run the repository demo/ );
+	assert.match( page, /Open source setup/ );
+	assert.match( page, /Agent plans a future install/ );
 	assert.match( page, /Do it manually/ );
-	assert.match( page, /data-copy="#agent-prompt"/ );
+	assert.doesNotMatch( page, /data-copy="#agent-prompt"/ );
 	assert.match( page, /data-copy="#review-agent-prompt"/ );
-	assert.match( page, /<div id="agent-prompt" hidden>/ );
+	assert.doesNotMatch( page, /<div id="agent-prompt" hidden>/ );
 	assert.match( page, /<div id="review-agent-prompt" hidden>/ );
 	assert.doesNotMatch( page, /View complete AI task|View review-first AI task/ );
 	assert.match( page, /<details class="fold" id="manual-setup">/ );

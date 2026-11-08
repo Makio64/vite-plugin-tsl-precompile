@@ -99,12 +99,20 @@ function targetDimension( target, colors, depthTexture ) {
 		safeRead( target, 'is3DRenderTarget' ) === true
 	) return '3d';
 
-	const dimensions = new Set( [ ...colors, depthTexture ].filter( Boolean ).map( textureDimension ) );
-	if ( dimensions.size === 1 ) return dimensions.values().next().value;
+	let dimension = null;
+	let mixed = false;
+	for ( let index = 0; index <= colors.length; index ++ ) {
+
+		const texture = index < colors.length ? colors[ index ] : depthTexture;
+		if ( ! texture ) continue;
+		const next = textureDimension( texture );
+		if ( dimension === null ) dimension = next;
+		else if ( dimension !== next ) mixed = true;
+
+	}
 	// "mixed" is intentionally outside the valid selector vocabulary. A
 	// malformed live target can therefore never produce durable evidence.
-	if ( dimensions.size > 1 ) return 'mixed';
-	return '2d';
+	return mixed ? 'mixed' : dimension || '2d';
 
 }
 
@@ -292,9 +300,15 @@ export function rendererRenderTargetTextureSelectorValidationError( selector ) {
 	const hints = selector.hints;
 	if ( ! hints || ( hints.name !== null && ( typeof hints.name !== 'string' || hints.name.length === 0 ) ) ) return 'invalid-name-hint';
 	const extent = hints.extent;
-	if ( ! extent || ! [ extent.width, extent.height, extent.depth ].every( ( value ) => value === null || finitePositiveInteger( value ) === value ) ) return 'invalid-extent-hint';
+	if ( ! extent || ! validExtent( extent.width ) || ! validExtent( extent.height ) || ! validExtent( extent.depth ) ) return 'invalid-extent-hint';
 	if ( hints.name === null && ( extent.width === null || extent.height === null ) ) return 'anonymous-selector-missing-extent';
 	return null;
+
+}
+
+function validExtent( value ) {
+
+	return value === null || finitePositiveInteger( value ) === value;
 
 }
 

@@ -11,15 +11,19 @@
  * @module EmitManifest
  */
 
+import { isRendererRegistryShape } from '@tsl-precompile/contract/artifact-variants';
+import { slimRuntimeEntryForMode } from './slim-source.js';
 import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
 import { forEachArtifactPayload } from '@tsl-precompile/contract/artifact-traversal';
 import { normalizeArtifactLightIdentitiesDeep } from '@tsl-precompile/contract/light-identities';
 import { emitUpdaterSource } from './emit-updater.js';
+import { emitSharedUniformGroupKeys } from './shared-uniform-groups.js';
 import { VIRTUAL_WGSL_POOL_MODULE_ID } from './_shared/constants.js';
 import { emitOptimizedJsonExpression, getExternalWgslRefIdentifiers } from './wgsl-optimize.js';
 
 export const ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT = '@tsl-precompile/contract/attribute-generators';
 export const VARIANT_SELECTOR_ADAPTER_MATERIALIZER_IMPORT = '@tsl-precompile/contract/variant-selector-adapter';
+export const DYNAMIC_BINDINGS_MATERIALIZER_IMPORT = '@tsl-precompile/contract/dynamic-bindings';
 
 /**
  * @param {Object} manifestEntry - e.g. { file: 'ocean-water.abcd.json', hash: 'sha256:...' }
@@ -53,11 +57,13 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 	// `dynamicBindings` is a validated, derived view of `uniformPlan`. Persisted
 	// captures keep it as a convergence guard, but serializing the same source
 	// records twice makes generated modules larger and slower to parse. Drop the
-	// redundant literal before light normalization, then reconstruct the public
-	// root/variant views from references into the emitted plan. This preserves
-	// the virtual-module API without duplicating source snapshots in its payload.
+	// redundant literal, then let the shared contract reconstruct the public
+	// root/variant views once from the emitted plan. This preserves the virtual-
+	// module API without repeating descriptor metadata or source snapshots.
 	const normalizedArtifact = normalizeArtifactLightIdentitiesDeep( artifact );
-	const artifactForEmission = replayEmission ? omitDynamicBindingsDeep( normalizedArtifact ) : normalizedArtifact;
+	const artifactForEmission = replayEmission
+		? stripLiveBoundAuxTextureSnapshotsDeep( omitDynamicBindingsDeep( normalizedArtifact ), artifact.materialShape )
+		: normalizedArtifact;
 	const dynamicBindingRestorations = replayEmission ? emitDynamicBindingRestorations( artifactForEmission ) : [];
 	const materializeAttributeDescriptors = artifactNeedsAttributeDescriptorMaterialization( artifactForEmission );
 	const materializeVariantSelectorAdapter = artifactNeedsVariantSelectorAdapterMaterialization( artifactForEmission );
@@ -86,7 +92,19 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 			.replace( /export const __unsupportedKinds/, 'const __codegenUnsupportedKinds' )
 		: null;
 
+	const registerAuxiliary = sourceValidationMode === 'callsite' && isRendererRegistryShape( artifact.materialShape );
 	const lines = [];
+	if ( registerAuxiliary ) {
+
+		lines.push( `import { registerPrecompiledArtifacts as __registerAuxiliary } from ${ JSON.stringify( slimRuntimeEntryForMode( opts.slim === true ? 'prebuilt' : opts.slim ) ) };` );
+		lines.push( 'export { __registerAuxiliary };' );
+
+	}
+	if ( dynamicBindingRestorations.some( line => line.includes( '__tslp_collectDynamicBindings(' ) ) ) {
+
+		lines.push( `import { collectArtifactDynamicBindings as __tslp_collectDynamicBindings } from ${ JSON.stringify( DYNAMIC_BINDINGS_MATERIALIZER_IMPORT ) };` );
+
+	}
 	if ( materializeAttributeDescriptors ) {
 
 		lines.push( `import { materializeArtifactAttributeDescriptors as __tslp_materializeAttributes } from ${ JSON.stringify( ATTRIBUTE_DESCRIPTOR_MATERIALIZER_IMPORT ) };` );
@@ -118,7 +136,7 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 			`export const update = null;`,
 			`export const updateGroup = null;`,
 			'',
-			`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+			`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings${ registerAuxiliary ? ', __registerAuxiliary' : '' } };`,
 			'',
 		);
 		return { source: lines.join( '\n' ), unsupportedKinds };
@@ -135,12 +153,13 @@ export function emitArtifactModule( manifestEntry, artifactJson, opts = {} ) {
 		...( materializeAttributeDescriptors ? [ '__tslp_materializeAttributes( artifact );' ] : [] ),
 		...( materializeVariantSelectorAdapter ? [ '__tslp_materializeVariantSelectors( artifact );' ] : [] ),
 		...dynamicBindingRestorations,
+		...emitSharedUniformGroupKeys( artifactForEmission ),
 		`export const update = __generatedUpdate;`,
 		`export const updateGroup = __generatedUpdateGroup;`,
 		`export const __unsupportedKinds = ${ JSON.stringify( unsupportedKinds ) };`,
 		`export const dynamicBindings = artifact.dynamicBindings;`,
 		'',
-		`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings };`,
+		`export default { __hash, name, __sourceValidationMode, artifact, update, updateGroup, __unsupportedKinds, dynamicBindings${ registerAuxiliary ? ', __registerAuxiliary' : '' } };`,
 		'',
 	);
 
@@ -191,7 +210,10 @@ function emitDynamicBindingRestorations( artifact ) {
 	const visit = ( member, memberExpression ) => {
 
 		if ( ! member || typeof member !== 'object' || Array.isArray( member ) ) return;
-		lines.push( `${ memberExpression }.dynamicBindings = ${ emitDynamicBindingArrayExpression( member, memberExpression ) };` );
+		const bindings = collectArtifactDynamicBindings( member ).length > 0
+			? `__tslp_collectDynamicBindings(${ memberExpression })`
+			: '[]';
+		lines.push( `${ memberExpression }.dynamicBindings = ${ bindings };` );
 		if ( ! member.variants || typeof member.variants !== 'object' || Array.isArray( member.variants ) ) return;
 		for ( const [ key, variant ] of Object.entries( member.variants ) ) {
 
@@ -205,41 +227,119 @@ function emitDynamicBindingRestorations( artifact ) {
 
 }
 
-function emitDynamicBindingArrayExpression( artifact, artifactExpression ) {
+export function prepareAuxArtifactForEmission( artifact, shape = '' ) {
 
-	const sourceExpressions = new Map();
-	for ( let groupIndex = 0; groupIndex < ( artifact.uniformPlan || [] ).length; groupIndex ++ ) {
+	if ( ! artifact || typeof artifact !== 'object' ) return artifact;
+	const normalized = normalizeArtifactLightIdentitiesDeep( artifact );
+	return stripLiveBoundAuxTextureSnapshotsDeep( omitDynamicBindingsDeep( normalized ), shape );
 
-		const group = artifact.uniformPlan[ groupIndex ];
-		for ( const collection of [ 'slots', 'textures', 'storageBuffers' ] ) {
+}
 
-			const entries = group && Array.isArray( group[ collection ] ) ? group[ collection ] : [];
-			for ( let entryIndex = 0; entryIndex < entries.length; entryIndex ++ ) {
+function stripLiveBoundAuxTextureSnapshotsDeep( artifact, shape = '' ) {
 
-				const source = entries[ entryIndex ] && entries[ entryIndex ].source;
-				if ( ! source || typeof source !== 'object' || sourceExpressions.has( source ) ) continue;
-				sourceExpressions.set(
-					source,
-					`${ artifactExpression }.uniformPlan[${ groupIndex }].${ collection }[${ entryIndex }].source`,
-				);
+	if ( ! artifact || typeof artifact !== 'object' ) return artifact;
+	const effectiveShape = artifact.materialShape || shape || '';
+	const internalPass = artifact.internalPass;
+	const pmremBoundNamesByGroup = new Map();
+	if ( internalPass?.family === 'pmrem' && Array.isArray( internalPass.inputs ) ) {
+
+		for ( const input of internalPass.inputs ) {
+
+			if ( ! input || input.kind !== 'texture' || ! input.group || ! input.binding ) continue;
+			let names = pmremBoundNamesByGroup.get( input.group );
+			if ( ! names ) {
+
+				names = new Set();
+				pmremBoundNamesByGroup.set( input.group, names );
 
 			}
+			names.add( input.binding );
+			names.add( `${ input.binding }_sampler` );
 
 		}
 
 	}
+	const isCubeRenderTarget = effectiveShape === 'cube-render-target';
+	let uniformPlan = artifact.uniformPlan;
+	if ( ( isCubeRenderTarget || pmremBoundNamesByGroup.size > 0 ) && Array.isArray( uniformPlan ) ) {
 
-	const entries = collectArtifactDynamicBindings( artifact ).map( ( entry ) => {
+		let planChanged = false;
+		const nextPlan = uniformPlan.map( ( group ) => {
 
-		const sourceExpression = sourceExpressions.get( entry.source );
-		if ( ! sourceExpression ) throw new Error( '[tsl-precompile] could not link a derived dynamic binding to its emitted uniformPlan source' );
-		const metadata = { ...entry };
-		delete metadata.source;
-		const literal = JSON.stringify( metadata );
-		return `${ literal.slice( 0, - 1 ) },"source":${ sourceExpression }}`;
+			if ( ! group || typeof group !== 'object' ) return group;
+			const boundNames = pmremBoundNamesByGroup.get( group.name );
+			if ( ! isCubeRenderTarget && ! boundNames ) return group;
+			const shouldStrip = ( entry ) => Boolean(
+				entry &&
+				entry.source &&
+				entry.source.kind === 'artifact.texture' &&
+				entry.source.snapshot !== undefined &&
+				( isCubeRenderTarget || ( boundNames && boundNames.has( entry.name ) ) )
+			);
+			let groupChanged = false;
+			const textures = Array.isArray( group.textures ) ? group.textures.map( ( entry ) => {
 
-	} );
-	return `[${ entries.join( ',' ) }]`;
+				if ( ! shouldStrip( entry ) ) return entry;
+				groupChanged = true;
+				const nextSource = { ...entry.source };
+				delete nextSource.snapshot;
+				return { ...entry, source: nextSource };
+
+			} ) : group.textures;
+			const orderedBindings = Array.isArray( group.orderedBindings ) ? group.orderedBindings.map( ( binding ) => {
+
+				if ( ! binding || ! shouldStrip( binding.ref ) ) return binding;
+				groupChanged = true;
+				const nextSource = { ...binding.ref.source };
+				delete nextSource.snapshot;
+				return { ...binding, ref: { ...binding.ref, source: nextSource } };
+
+			} ) : group.orderedBindings;
+			if ( ! groupChanged ) return group;
+			planChanged = true;
+			return {
+				...group,
+				...( textures !== group.textures ? { textures } : {} ),
+				...( orderedBindings !== group.orderedBindings ? { orderedBindings } : {} ),
+			};
+
+		} );
+		if ( planChanged ) uniformPlan = nextPlan;
+
+	}
+	let variants = artifact.variants;
+	if ( variants && typeof variants === 'object' ) {
+
+		let variantsChanged = false;
+		const nextVariants = {};
+		for ( const [ key, variant ] of Object.entries( variants ) ) {
+
+			const nextVariant = stripLiveBoundAuxTextureSnapshotsDeep(
+				variant && ! variant.internalPass && internalPass ? { ...variant, internalPass } : variant,
+				effectiveShape,
+			);
+			if ( nextVariant !== variant ) {
+
+				variantsChanged = true;
+				if ( variant && ! Object.prototype.hasOwnProperty.call( variant, 'internalPass' ) && nextVariant && Object.prototype.hasOwnProperty.call( nextVariant, 'internalPass' ) ) {
+
+					delete nextVariant.internalPass;
+
+				}
+
+			}
+			nextVariants[ key ] = nextVariant;
+
+		}
+		if ( variantsChanged ) variants = nextVariants;
+
+	}
+	if ( uniformPlan === artifact.uniformPlan && variants === artifact.variants ) return artifact;
+	return {
+		...artifact,
+		...( uniformPlan !== artifact.uniformPlan ? { uniformPlan } : {} ),
+		...( variants !== artifact.variants ? { variants } : {} ),
+	};
 
 }
 

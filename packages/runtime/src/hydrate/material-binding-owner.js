@@ -28,6 +28,10 @@ export function createMaterialBindingOwnerContext( artifact, {
 	}
 
 	const requiresShadowCaster = artifactRequiresShadowCasterBinding( artifact );
+	const generatedUsesShadowCaster = hasShadowOwnedGeneratedProperty( propertyOwners );
+	const generatedUsesArtifactRefs = ( artifact.uniformPlan || [] ).some( group => ( group.slots || [] ).some( slot =>
+		slot.source?.kind?.startsWith( 'pmrem.' ) || slot.source?.kind === 'texture.uvFlipY'
+	) );
 	const initialOwner = resolveExactOwner( renderObject, renderMaterial, bindingMaterial );
 	const fixedShadowCaster = initialOwner.kind === RENDER_BINDING_OWNER_KINDS.SHADOW_CASTER
 		? initialOwner.material
@@ -79,6 +83,8 @@ export function createMaterialBindingOwnerContext( artifact, {
 	const generatedMaterial = new Proxy( {}, {
 		get( _target, property ) {
 
+			if ( property === 'precompiledArtifact' ) return artifact;
+
 			const owners = typeof property === 'string' ? propertyOwners.get( property ) : null;
 			let owner = null;
 			if ( owners && owners.size === 1 ) owner = owners.values().next().value;
@@ -101,7 +107,7 @@ export function createMaterialBindingOwnerContext( artifact, {
 
 			currentFrame = frame || null;
 			if ( ! generatedUpdaterCompatible ) return null;
-			return hasShadowOwnedGeneratedProperty( propertyOwners ) ? generatedMaterial : activeMaterial( frame );
+			return generatedUsesShadowCaster || generatedUsesArtifactRefs ? generatedMaterial : activeMaterial( frame );
 
 		},
 		stampFrame( frame ) {

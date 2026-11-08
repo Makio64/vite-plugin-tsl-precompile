@@ -19,8 +19,137 @@ import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
 
 import { rewriteThreeSource } from '../../src/three-rewrite.js';
-import { THREE_SRC } from '../_three-src.js';
-const PATH = resolve( THREE_SRC, 'renderers/common/Renderer.js' );
+import { THREE_R185_SRC } from '../_three-src.js';
+const PATH = resolve( THREE_R185_SRC, 'renderers/common/Renderer.js' );
+
+function replayCompilationLoop() {
+
+	const result = rewriteThreeSource( readFileSync( PATH, 'utf8' ), PATH, { threeVersion: '185', pluginVersion: '0.1.0' } );
+	assert.equal( result.warning, null );
+	const ast = parse( result.code, { sourceType: 'module' } );
+	const renderer = ast.program.body.find( node => node.type === 'ClassDeclaration' && node.id.name === 'Renderer' );
+	const body = renderer.body.body.find( node => node.key?.name === 'compileAsync' ).body.body;
+	const start = body.find( node => node.type === 'VariableDeclaration' && node.declarations[ 0 ].id.name === 'compileYieldDeadline' );
+	const end = body.at( -1 );
+	return new ( Object.getPrototypeOf( async function () {} ).constructor )( 'compilationPromises', 'yieldToMain', 'performance', result.code.slice( start.start, end.end ) );
+
+}
+
+test( 'rewrite/Renderer compileAsync batches cheap replay objects within a four millisecond yield budget', async () => {
+
+	const compile = replayCompilationLoop();
+	let now = 0;
+	const yielded = [], events = [];
+	const items = Array.from( { length: 10 }, ( _, id ) => ( { object: { id, geometry: { drawRange: { start: id } } }, group: { id } } ) );
+	const owner = {
+		_objects: { get( object ) { return { object }; } },
+		_nodes: {
+			getForRender( ro ) { assert.equal( ro.drawRange, ro.object.geometry.drawRange ); assert.equal( ro.group, items[ ro.object.id ].group ); events.push( [ ro.object.id, 'hydrate' ] ); },
+			updateBefore( ro ) { events.push( [ ro.object.id, 'before' ] ); },
+			updateForRender( ro ) { events.push( [ ro.object.id, 'uniforms' ] ); },
+			updateAfter( ro ) { events.push( [ ro.object.id, 'after' ] ); },
+		},
+		_geometries: { updateForRender() { now ++; } },
+		_bindings: { updateForRender() {} },
+		_pipelines: { getForRender( ro, promises ) { assert.deepEqual( promises, [] ); events.push( [ ro.object.id, 'pipeline' ] ); } },
+	};
+	await compile.call( owner, items, async () => { yielded.push( now ); }, { now: () => now } );
+	assert.deepEqual( yielded, [ 4, 8 ], 'reused pipelines do not force one scheduler/RAF yield per object' );
+	assert.deepEqual( events, items.flatMap( ( { object } ) => [ 'hydrate', 'before', 'uniforms', 'pipeline', 'after' ].map( stage => [ object.id, stage ] ) ) );
+
+} );
+
+test( 'rewrite/Renderer compileAsync retains native pipeline dependency and error barriers', async () => {
+
+	const compile = replayCompilationLoop();
+	const first = Promise.withResolvers(), second = Promise.withResolvers(), startedSecond = Promise.withResolvers();
+	const events = [];
+	const items = [ 0, 1 ].map( id => ( { object: { id, geometry: {} } } ) );
+	const owner = {
+		_objects: { get( object ) { return { object }; } },
+		_nodes: {
+			getForRender( ro ) { events.push( `hydrate${ ro.object.id }` ); },
+			updateBefore() {}, updateForRender() {},
+			updateAfter( ro ) { events.push( `after${ ro.object.id }` ); },
+		},
+		_geometries: { updateForRender() {} }, _bindings: { updateForRender() {} },
+		_pipelines: { getForRender( ro, promises ) {
+
+			promises.push( ro.object.id === 0 ? first.promise : second.promise );
+			if ( ro.object.id === 1 ) startedSecond.resolve();
+
+		} },
+	};
+	const pending = compile.call( owner, items, async () => {}, { now: () => 0 } );
+	assert.deepEqual( events, [ 'hydrate0' ] );
+	first.resolve();
+	await startedSecond.promise;
+	assert.deepEqual( events, [ 'hydrate0', 'after0', 'hydrate1' ] );
+	const error = new Error( 'native pipeline failed' );
+	second.reject( error );
+	await assert.rejects( pending, value => value === error );
+	assert.deepEqual( events, [ 'hydrate0', 'after0', 'hydrate1' ] );
+
+} );
+
+for ( const replacement of [ 'await this._nodes.getForRenderAsync( item );', 'await this._nodes.getForRenderDeferred( renderObject );' ] ) {
+
+	test( `rewrite/Renderer rejects changed async hydration: ${ replacement }`, () => {
+
+		const source = readFileSync( PATH, 'utf8' ).replace( 'await this._nodes.getForRenderAsync( renderObject );', replacement );
+		const result = rewriteThreeSource( source, PATH, { threeVersion: '185', pluginVersion: '0.1.0' } );
+		assert.equal( result.code, null );
+		assert.match( result.warning, /compileAsync work loop shape changed/ );
+
+	} );
+
+}
+
+test( 'rewrite/Renderer schedules captured shadows before the main scene and after initialization', () => {
+
+	const result = rewriteThreeSource( readFileSync( PATH, 'utf8' ), PATH, { threeVersion: '185', pluginVersion: '0.1.0' } );
+	assert.equal( result.warning, null );
+	const ast = parse( result.code, { sourceType: 'module' } );
+	const rendererClass = ast.program.body.find( node => node.type === 'ClassDeclaration' && node.id.name === 'Renderer' );
+	const body = rendererClass.body.body.find( node => node.key?.name === 'render' ).body;
+	const render = new Function( 'scene', 'camera', result.code.slice( body.start + 1, body.end - 1 ) );
+	const events = [];
+	const scene = {}, camera = {};
+	const owner = {
+		_initialized: false,
+		_nodes: { renderShadows( input, view ) { assert.equal( input, scene ); assert.equal( view, camera ); events.push( 'shadows' ); } },
+		_renderScene() { events.push( 'scene' ); },
+	};
+	assert.throws( () => render.call( owner, scene, camera ), /before the backend is initialized/ );
+	assert.deepEqual( events, [] );
+	owner._initialized = true;
+	render.call( owner, scene, camera );
+	assert.deepEqual( events, [ 'shadows', 'scene' ] );
+
+} );
+
+test( 'rewrite/Renderer releases replay targets before backend sampler caches', () => {
+
+	const result = rewriteThreeSource( readFileSync( PATH, 'utf8' ), PATH, { threeVersion: '185', pluginVersion: '0.1.0' } );
+	assert.equal( result.warning, null );
+	const ast = parse( result.code, { sourceType: 'module' } );
+	const rendererClass = ast.program.body.find( node => node.type === 'ClassDeclaration' && node.id.name === 'Renderer' );
+	const body = rendererClass.body.body.find( node => node.key?.name === 'dispose' ).body;
+	const dispose = new Function( result.code.slice( body.start + 1, body.end - 1 ) );
+	const events = [];
+	const owner = {
+		_initialized: true,
+		backend: { dispose() { events.push( 'backend' ); }, timestampQueryPool: {} },
+		_nodes: { disposeRendererResources() { events.push( 'resources' ); }, dispose() { events.push( 'nodes' ); } },
+		_frameBufferTargets: new Map(),
+		setRenderTarget() {},
+		setAnimationLoop() {},
+	};
+	for ( const key of [ 'info', '_animation', '_objects', '_geometries', '_pipelines', '_bindings', '_renderLists', '_renderContexts', '_textures' ] ) owner[ key ] = { dispose() {} };
+	dispose.call( owner );
+	assert.deepEqual( events, [ 'resources', 'backend', 'nodes' ] );
+
+} );
 
 test( 'rewrite/Renderer: NodeMaterial replaced with Material sentinel + fragmentNode swap', () => {
 

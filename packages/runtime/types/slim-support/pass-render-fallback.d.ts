@@ -55,3 +55,6 @@ export function renderOffscreenOverrideWithFullRenderer( args: RenderOffscreenOv
 export function renderPassWithFullRenderer( args: RenderPassWithFullRendererArgs ): boolean;
 export function shareRenderTargetTextures( args: ShareRenderTargetTexturesArgs ): ShareRenderTargetTexturesStats;
 export function sharePassRenderTargetTextures( args: SharePassRenderTargetTexturesArgs ): SharePassRenderTargetTexturesStats;
+
+/** Synchronous transaction; restores materials even if mapping or rendering throws. */
+export function withMappedSceneMaterials<T>( scene: unknown, callback: () => T, materialMapper: ( material: unknown, context: { override: boolean } ) => unknown ): T;

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  vite@8.0.16>postcss: 8.5.23
+  postcss@8.5.23>nanoid: 3.3.17
+  '@eslint/eslintrc@3.3.6>js-yaml': 4.3.1
+
 importers:
 
   .:
@@ -12,8 +17,8 @@ importers:
         specifier: ^25.7.0
         version: 25.7.0
       '@types/three':
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.0
+        version: 0.186.0
       eslint:
         specifier: 9.39.4
         version: 9.39.4
@@ -32,8 +37,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -53,6 +58,9 @@ importers:
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
+      vite-plugin-tsl-precompile:
+        specifier: workspace:*
+        version: link:../../plugin
 
   packages/examples/bloom:
     dependencies:
@@ -60,8 +68,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -76,8 +84,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -92,8 +100,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -114,8 +122,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -130,8 +138,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -149,8 +157,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -165,9 +173,28 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
+      vite:
+        specifier: ^8.0.16
+        version: 8.0.16(@types/node@25.7.0)(terser@5.46.1)
+      vite-plugin-tsl-precompile:
+        specifier: workspace:*
+        version: link:../../plugin
+
+  packages/examples/performance:
+    dependencies:
+      '@tsl-precompile/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
+    devDependencies:
+      playwright:
+        specifier: ^1.59.1
+        version: 1.59.1
       vite:
         specifier: ^8.0.16
         version: 8.0.16(@types/node@25.7.0)(terser@5.46.1)
@@ -181,8 +208,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -197,8 +224,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -219,8 +246,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       vite:
         specifier: ^8.0.16
@@ -235,8 +262,8 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       playwright:
         specifier: ^1.59.1
@@ -254,8 +281,8 @@ importers:
         specifier: workspace:*
         version: link:../runtime
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
 
   packages/plugin:
     dependencies:
@@ -278,11 +305,11 @@ importers:
         specifier: workspace:*
         version: link:../runtime
       '@types/three':
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.0
+        version: 0.186.0
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.0 || 0.186.1
+        version: 0.186.1
       vite:
         specifier: '>=6.4.3 <9'
         version: 8.0.16(@types/node@25.7.0)(terser@5.46.1)
@@ -293,11 +320,11 @@ importers:
         specifier: workspace:*
         version: link:../contract
       '@types/three':
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.0
+        version: 0.186.0
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.0 || 0.186.1
+        version: 0.186.1
     devDependencies:
       '@rollup/plugin-node-resolve':
         specifier: ^16.0.3
@@ -315,8 +342,8 @@ importers:
   packages/site:
     dependencies:
       three:
-        specifier: 0.185.1
-        version: 0.185.1
+        specifier: 0.186.1
+        version: 0.186.1
     devDependencies:
       sharp:
         specifier: ^0.34.5
@@ -899,8 +926,8 @@ packages:
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
 
-  '@types/three@0.185.1':
-    resolution: {integrity: sha512-db1xTb+EgYF2didW+eudSvVPtn75zo+fGsY8ShQrJY/B5ZBmC2Fiaykv3aImHAlCNEGuMPkPGXBJGLwzu5mC7A==}
+  '@types/three@0.186.0':
+    resolution: {integrity: sha512-mxYSBpDC+D0pLfSP6sW4WZTcT+nrtmZcimMqnVmy36Hte3XpeYSrvgg4TRdaM1GemGog1AWzI5qL2VoIfMXbJQ==}
 
   '@types/webxr@0.5.24':
     resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
@@ -1130,8 +1157,8 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@4.3.0:
-    resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
+  js-yaml@4.3.1:
+    resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
     hasBin: true
 
   jsesc@3.1.0:
@@ -1245,8 +1272,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  nanoid@3.3.15:
-    resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
+  nanoid@3.3.17:
+    resolution: {integrity: sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -1301,8 +1328,8 @@ packages:
     resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
     engines: {node: '>=14.19.0'}
 
-  postcss@8.5.16:
-    resolution: {integrity: sha512-vuwillviilfKZsg0VGj5R/YwwcHx4SLsIOI/7K6mQkWx+l5cUHTjj5g0AasTBcyXsbfTgrwsUNmVUb5xVwyPwg==}
+  postcss@8.5.23:
+    resolution: {integrity: sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg==}
     engines: {node: ^10 || ^12 || >=14}
 
   prelude-ls@1.2.1:
@@ -1385,8 +1412,8 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  three@0.185.1:
-    resolution: {integrity: sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==}
+  three@0.186.1:
+    resolution: {integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==}
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -1569,7 +1596,7 @@ snapshots:
       globals: 14.0.0
       ignore: 5.3.2
       import-fresh: 3.3.1
-      js-yaml: 4.3.0
+      js-yaml: 4.3.1
       minimatch: 3.1.5
       strip-json-comments: 3.1.1
     transitivePeerDependencies:
@@ -1895,7 +1922,7 @@ snapshots:
 
   '@types/stats.js@0.17.4': {}
 
-  '@types/three@0.185.1':
+  '@types/three@0.186.0':
     dependencies:
       '@dimforge/rapier3d-compat': 0.12.0
       '@tweenjs/tween.js': 23.1.3
@@ -2112,7 +2139,7 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@4.3.0:
+  js-yaml@4.3.1:
     dependencies:
       argparse: 2.0.1
 
@@ -2196,7 +2223,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  nanoid@3.3.15: {}
+  nanoid@3.3.17: {}
 
   natural-compare@1.4.0: {}
 
@@ -2241,9 +2268,9 @@ snapshots:
 
   pngjs@7.0.0: {}
 
-  postcss@8.5.16:
+  postcss@8.5.23:
     dependencies:
-      nanoid: 3.3.15
+      nanoid: 3.3.17
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -2379,7 +2406,7 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
 
-  three@0.185.1: {}
+  three@0.186.1: {}
 
   tinyglobby@0.2.17:
     dependencies:
@@ -2405,7 +2432,7 @@ snapshots:
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.5
-      postcss: 8.5.16
+      postcss: 8.5.23
       rolldown: 1.0.3
       tinyglobby: 0.2.17
     optionalDependencies:

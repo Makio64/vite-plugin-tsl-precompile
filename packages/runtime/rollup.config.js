@@ -16,7 +16,7 @@
 
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,10 +35,10 @@ import {
 	createSlimBundleVersionIdentity,
 	formatSlimBundleStamp,
 	serializeSlimBundleMetadata,
+	readSlimThreeReleaseProfile,
 } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import {
 	SLIM_THREE_COMPILER_MODULES,
-	SLIM_THREE_PACKAGE_VERSION,
 	SLIM_THREE_POLICY_VERSION,
 	SLIM_THREE_REPLAY_ADAPTER_MODULES,
 	getSlimThreeCompilerModule,
@@ -56,14 +56,20 @@ export { findRenderedSlimCompilerModules, findRenderedSlimStockAdapterModules } 
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) );
 const requireFromRuntime = createRequire( import.meta.url );
-const threePackageRoot = dirname( dirname( requireFromRuntime.resolve( 'three/src/constants.js' ) ) );
+const threePackageRoot = process.env.TSLP_THREE_SOURCE_ROOT
+	? resolve( process.env.TSLP_THREE_SOURCE_ROOT )
+	: dirname( dirname( requireFromRuntime.resolve( 'three/src/constants.js' ) ) );
+const threeRelease = await readSlimThreeReleaseProfile( threePackageRoot, {
+	sourceCommit: process.env.TSLP_THREE_SOURCE_COMMIT || undefined,
+} );
 const contractPackageRoot = dirname( dirname( requireFromRuntime.resolve( '@tsl-precompile/contract/slim-three-policy' ) ) );
 const pluginPackageRoot = dirname( dirname(
 	requireFromRuntime.resolve( 'vite-plugin-tsl-precompile/build/slim-rewrite' ),
 ) );
 
 export const SLIM_BUNDLE_VERSIONS = createSlimBundleVersionIdentity( {
-	threeVersion: SLIM_THREE_PACKAGE_VERSION,
+	threeVersion: threeRelease.packageVersion,
+	...( threeRelease.channel === 'development' ? { threeRevision: threeRelease.revision, threeCommit: threeRelease.gitCommit } : {} ),
 	policyVersion: SLIM_THREE_POLICY_VERSION,
 	artifactToolchainVersion: ARTIFACT_TOOLCHAIN_VERSION,
 } );
@@ -76,7 +82,7 @@ export const SLIM_BUNDLE_SOURCE_INPUTS = createSlimBundleSourceInputs( {
 } );
 
 export const SLIM_BUNDLE_THREE_LICENSE_BANNER =
-	'/*! @license three.js r185 MIT; see THIRD_PARTY_NOTICES.md */';
+	`/*! @license three.js r${ threeRelease.revision } MIT; see THIRD_PARTY_NOTICES.md */`;
 
 /**
  * Modules that belong to runtime shader compilation rather than replay.
@@ -121,7 +127,9 @@ export const threeRewritePlugin = {
 	transform( code, id ) {
 
 		const r = rewriteThreeSource( code, id, {
-			threeVersion: SLIM_THREE_PACKAGE_VERSION,
+			threeVersion: threeRelease.packageVersion,
+			threeRevision: threeRelease.revision,
+			threeCommit: threeRelease.gitCommit,
 		} );
 		if ( ! r ) return null;
 		if ( r.warning ) {
@@ -155,6 +163,37 @@ const runtimeAliasPlugin = {
 
 		}
 		return null;
+
+	},
+};
+
+// Keep a single Three identity when probing a checkout outside node_modules.
+// Canonical IDs retain /three/src/ so rewrite and residue classifiers still
+// apply; the loader reads only the verified candidate's real source files.
+const candidateThreeRoot = resolve( __dirname, '__tslp_candidate__/three' );
+const candidateThreeSource = `${ candidateThreeRoot }/src/`;
+const candidateThreeAlias = {
+	name: 'tsl-precompile:verified-three-candidate',
+	resolveId( id, importer ) {
+
+		if ( ! process.env.TSLP_THREE_SOURCE_ROOT ) return null;
+		if ( id === 'three' ) return `${ candidateThreeSource }Three.Core.js`;
+		if ( id === 'three/webgpu' ) return `${ candidateThreeSource }Three.WebGPU.js`;
+		if ( id === 'three/tsl' ) return `${ candidateThreeSource }Three.TSL.js`;
+		if ( id.startsWith( 'three/src/' ) ) return resolve( candidateThreeRoot, id.slice( 6 ) );
+		if ( importer?.startsWith( candidateThreeSource ) && /^\.{1,2}\//.test( id ) ) {
+
+			const target = resolve( dirname( importer ), id );
+			if ( target.startsWith( candidateThreeSource ) ) return target;
+
+		}
+		return null;
+
+	},
+	load( id ) {
+
+		if ( ! id.startsWith( candidateThreeSource ) ) return null;
+		return readFileSync( resolve( threePackageRoot, 'src', id.slice( candidateThreeSource.length ) ), 'utf8' );
 
 	},
 };
@@ -405,7 +444,7 @@ export function createSlimBundleProvenancePlugin( {
 export default {
 	input: 'src/slim-entry.js',
 	output: {
-		file: 'build/three.webgpu.slim.js',
+		file: process.env.TSLP_SLIM_OUTPUT_FILE || 'build/three.webgpu.slim.js',
 		format: 'esm',
 		sourcemap: false,
 		// Single-file bundle: three/src has a few dynamic imports (e.g. lazy
@@ -487,6 +526,7 @@ export default {
 		replayLightingAdapter,
 		replayNodeManagerAdapter,
 		replayXRManagerAdapter,
+		candidateThreeAlias,
 		threeBareAlias,
 		nodeResolve( {
 			browser: true,

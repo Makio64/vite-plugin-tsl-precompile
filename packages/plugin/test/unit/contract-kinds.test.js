@@ -19,6 +19,7 @@ import {
 import {
 	DYNAMIC_BINDING_PHASE,
 	DYNAMIC_BINDING_TARGET,
+	MATERIAL_UNIFORM_TYPES,
 	VIEWPORT_TEXTURE_IDENTITY_SCHEMA,
 	createViewportTextureIdentity,
 	dynamicBindingDescriptor,
@@ -48,10 +49,25 @@ test( 'contract kind registry recognises codegen and runtime texture kinds', () 
 	assert.ok( isKnownKind( 'velocity.currentProjectionMatrix' ) );
 	assert.ok( isKnownKind( 'environment.rotation' ) );
 	assert.ok( isKnownKind( 'pmrem.maxMip' ) );
+	assert.ok( isKnownKind( 'pmrem.maxLod' ) );
+	assert.ok( isKnownKind( 'pmrem.size' ) );
 	assert.ok( isKnownKind( 'builtin.dfgLUT' ) );
 	assert.ok( isBlockedKind( 'builtin.dfgLUT' ) );
 	assert.match( blockedKindReason( 'builtin.dfgLUT' ), /DFG LUT/ );
 	assert.equal( isKnownKind( 'totally.new.kind' ), false );
+
+} );
+
+test( 'contract owns direct material uniform types used by codegen and refresh monitoring', () => {
+
+	assert.equal( Object.keys( MATERIAL_UNIFORM_TYPES ).length, 44 );
+	for ( const [ kind, value ] of Object.entries( MATERIAL_UNIFORM_TYPES ) ) {
+
+		assert.equal( kindInfo( kind ).value, value, kind );
+		assert.equal( dynamicBindingDescriptor( kind ).resolver, 'emit-updater/material', kind );
+
+	}
+	assert.equal( Object.isFrozen( MATERIAL_UNIFORM_TYPES ), true );
 
 } );
 
@@ -251,6 +267,23 @@ test( 'contract validates PMREM scalar-to-atlas relations in every effective var
 		'variants.child.uniformPlan[0].slots[0].source.textureUuid',
 	);
 	assert.match( relationError.message, /same artifact variant/ );
+
+} );
+
+test( 'contract cube PMREM scalars require exact cube ownership instead of atlas or ordinary cube sources', () => {
+
+	const artifact = { vertexShader: 'v', fragmentShader: 'f', uniformPlan: [ {
+		name: 'object', slots: [ { source: { kind: 'pmrem.maxLod', textureUuid: 'pmrem' } }, { source: { kind: 'pmrem.size', textureUuid: 'pmrem' } } ],
+		textures: [ { textureType: 'cube', source: { kind: 'artifact.texture', textureUuid: 'pmrem', isPMREMTexture: true, mapping: 301 } } ],
+	} ] };
+	assert.equal( validateArtifact( artifact ).ok, true );
+	for ( const changed of [ { textureType: '2d' }, { source: { kind: 'artifact.texture', textureUuid: 'pmrem', mapping: 301 } } ] ) {
+
+		const invalid = structuredClone( artifact );
+		Object.assign( invalid.uniformPlan[ 0 ].textures[ 0 ], changed );
+		assert.equal( validateArtifact( invalid ).errors.filter( value => value.code === 'pmrem.uniform.texture-reference' ).length, 2 );
+
+	}
 
 } );
 

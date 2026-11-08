@@ -1,3 +1,4 @@
+export { cloneSceneForPMREM } from './full-renderer-scene.js';
 import { NODE_GRAPH_TEXTURE_KEYS } from '@tsl-precompile/contract/texture-props';
 
 export const PMREM_CUBE_UV_MAPPING = 306;
@@ -8,7 +9,10 @@ export const EQUIRECTANGULAR_REFRACTION_MAPPING = 304;
 
 export function isPMREMTexture( texture ) {
 
-	return !! ( texture && texture.isTexture === true && texture.isCubeTexture !== true && ! Array.isArray( texture.image ) && ( texture.mapping === PMREM_CUBE_UV_MAPPING || texture.name === 'PMREM.cubeUv' ) );
+	return !! ( texture && texture.isTexture === true && (
+		texture.isPMREMTexture === true ||
+		texture.isCubeTexture !== true && ! Array.isArray( texture.image ) && ( texture.mapping === PMREM_CUBE_UV_MAPPING || texture.name === 'PMREM.cubeUv' )
+	) );
 
 }
 
@@ -96,7 +100,7 @@ export function collectPMREMSourceTexturesFromMaterial( material, opts = {} ) {
 
 export function isPMREMArtifactTextureSource( source ) {
 
-	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' ) );
+	return !! ( source && source.kind === 'artifact.texture' && ( source.isPMREMTexture === true || source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' ) );
 
 }
 
@@ -150,7 +154,8 @@ function sourceHasImageSize( source ) {
 function textureMatchesPMREMSourceSize( texture, source ) {
 
 	if ( ! sourceHasImageSize( source ) ) return true;
-	const image = texture && texture.image || null;
+	const images = texture && texture.image || null;
+	const image = Array.isArray( images ) ? images[ 0 ]?.mipmaps?.[ 0 ] || images[ 0 ] : images;
 	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
 	const imageDepth = typeof image.depth === 'number' ? image.depth : 1;
 	return typeof source.imageDepth !== 'number' || imageDepth === source.imageDepth;

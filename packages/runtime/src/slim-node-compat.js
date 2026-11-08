@@ -132,6 +132,10 @@ export function inertNodeStub( children = [], props = {} ) {
 	fn.analyze = () => {};
 	fn.generate = ( builder, output = null ) => generateSlimConst( builder, slimOutputType( fn, output ) );
 	fn.build = ( builder, output = null ) => fn.generate( builder, output );
+	fn.addEventListener = () => {};
+	fn.hasEventListener = () => false;
+	fn.removeEventListener = () => {};
+	fn.dispatchEvent = () => {};
 	fn.dispose = () => {};
 	fn.traverse = ( callback ) => traverseSlimNode( proxy, callback );
 	for ( const method of SLIM_NODE_CHAIN_METHODS ) {
@@ -307,7 +311,50 @@ export class Node {
 
 	}
 
-	dispose() {}
+	addEventListener( type, listener ) {
+
+		if ( typeof listener !== 'function' ) return;
+		if ( ! Object.prototype.hasOwnProperty.call( this, '_listeners' ) || ! this._listeners ) {
+
+			Object.defineProperty( this, '_listeners', { value: {}, configurable: true } );
+
+		}
+		const list = this._listeners[ type ] || ( this._listeners[ type ] = [] );
+		if ( ! list.includes( listener ) ) list.push( listener );
+
+	}
+
+	hasEventListener( type, listener ) {
+
+		const list = this._listeners && this._listeners[ type ];
+		return Array.isArray( list ) && list.includes( listener );
+
+	}
+
+	removeEventListener( type, listener ) {
+
+		const list = this._listeners && this._listeners[ type ];
+		if ( ! Array.isArray( list ) ) return;
+		const index = list.indexOf( listener );
+		if ( index !== - 1 ) list.splice( index, 1 );
+
+	}
+
+	dispatchEvent( event ) {
+
+		const list = event && this._listeners && this._listeners[ event.type ];
+		if ( ! Array.isArray( list ) || list.length === 0 ) return;
+		event.target = this;
+		for ( const listener of list.slice() ) listener.call( this, event );
+		event.target = null;
+
+	}
+
+	dispose() {
+
+		this.dispatchEvent( { type: 'dispose' } );
+
+	}
 	traverse( callback ) { traverseSlimNode( this, callback ); }
 	toVar() { return inertNodeStub( [ this ] ); }
 	add( ...args ) { return inertNodeStub( [ this, ...args ] ); }

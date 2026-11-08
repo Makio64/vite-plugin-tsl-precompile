@@ -1,3 +1,4 @@
+import { createEffectPassCaptureName } from '@tsl-precompile/contract/output-config';
 /**
  * @module SlimSupport/PostprocessEffectsReplay
  *
@@ -33,7 +34,7 @@
  *     production-relevant.
  */
 
-import { listAux, findAux, attachPostprocessTextureRefs } from '../aux-loader.js';
+import { listAux, findAux, createPostprocessTextureAttacher } from '../aux-loader.js';
 import {
 	collectEffectNodes,
 	findEffectHandler,
@@ -42,6 +43,7 @@ import {
 import { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
 import { rememberPreparedPostprocessResources } from './postprocess-resource-refresh.js';
 import { installVelocityProjectionLifecycle } from './velocity-projection-lifecycle.js';
+import { attachArtifactTextureRefsWhere } from './artifact-texture-wiring.js';
 
 export { wireLiveNodeSidecarsToArtifact } from './live-node-sidecars.js';
 export { refreshPreparedPostprocessResources } from './postprocess-resource-refresh.js';
@@ -121,6 +123,7 @@ export function preparePrecompiledPostprocess( args = {} ) {
 			loadAux: args.loadAux,
 			PrecompiledMaterial: args.PrecompiledMaterial,
 			auxConfigHash: args.auxConfigHash || 'tslp-e2e-bypass',
+			pipelineName: root.__tslpAuxName || null,
 			sharedContext: args.sharedContext || null,
 			renderer: args.renderer || null,
 			passNodes: Array.isArray( args.passNodes ) ? args.passNodes : null,
@@ -211,14 +214,18 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 	}
 
 	const replacements = [];
-	for ( const subPass of subPasses ) {
+	const attachTextures = createPostprocessTextureAttacher( node );
+	for ( const [ passIndex, subPass ] of subPasses.entries() ) {
 
 		if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) continue;
 
 		let replacement = null;
 		try {
 
-			replacement = makePrecompiledAuxMaterial( subPass.shape, subPass.material, opts );
+			const captureName = createEffectPassCaptureName( opts.pipelineName, handler.name, opts.effectIndex || 0, passIndex );
+			const entry = captureName ? findAux( subPass.shape, captureName ) : null;
+			if ( captureName && ! entry ) throw new Error( `Missing named effect capture ${ captureName }` );
+			replacement = makePrecompiledAuxMaterial( subPass.shape, subPass.material, entry ? { ...opts, auxConfigHash: entry.configHash } : opts );
 
 		} catch ( err ) {
 
@@ -238,7 +245,7 @@ export function prepareEffectNodeForReplay( handler, node, opts = {} ) {
 		// direction/invSize matching) against the *replacement* material
 		// (so the hooks see `replacement.precompiledArtifact`).
 		wireLiveNodeSidecarsToArtifact( replacement.precompiledArtifact, subPass.material, { overlay: subPass.liveUniformOverlay === true } );
-		attachPostprocessTextureRefs( replacement.precompiledArtifact, node );
+		attachTextures( replacement.precompiledArtifact );
 
 		const subPassWithReplacement = { ...subPass, material: replacement };
 		if ( typeof handler.wireSubPassUniforms === 'function' ) {
@@ -365,8 +372,41 @@ export function makePrecompiledAuxMaterial( shape, sourceMaterial, opts = {} ) {
 
 	}
 	if ( typeof shape === 'string' && shape.startsWith( 'bloom-' ) ) material.toneMapped = false;
+	wireBloomBlurInput( material, shape );
 	material.needsUpdate = true;
 	return material;
+
+}
+
+function wireBloomBlurInput( material, shape ) {
+
+	if ( ! shouldCloneMirrorSidecar( shape, 'colorTexture' ) || ! material.colorTexture ) return;
+	const artifact = material.precompiledArtifact;
+	const inputs = new Set();
+	for ( const group of artifact.uniformPlan || [] ) for ( const entry of group.textures || [] ) {
+
+		if ( entry.source?.kind === 'artifact.texture' && entry.source.textureUuid ) inputs.add( entry.source.textureUuid );
+
+	}
+	if ( inputs.size !== 1 ) return;
+	const input = material.colorTexture;
+	let value = input.value;
+	// Bloom switches this owner-local sidecar between the bright input and
+	// H/V mip targets within one updateBefore(). Effect-level refresh misses
+	// those transitions. Preserve the shader's exact input on every assignment;
+	// selector resolution still verifies renderer ownership and write hazards.
+	Object.defineProperty( input, 'value', {
+		get: () => value,
+		set( texture ) {
+
+			value = texture;
+			attachArtifactTextureRefsWhere( artifact, texture, source => inputs.has( source.textureUuid ) );
+
+		},
+		enumerable: true,
+		configurable: true,
+	} );
+	input.value = value;
 
 }
 

@@ -11,6 +11,7 @@ import {
 	BROWSER_FAILURE_POLICY_SHA256,
 	installBrowserFailureCollector,
 } from '../../browser-failure-policy.mjs';
+import { launchEvidenceBrowser } from '../../batch/e2e-environment.mjs';
 import { SHOWCASE_ROUTE_IDS } from '../src/route-manifest.js';
 
 const ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
@@ -18,12 +19,9 @@ const CONFIG = resolve( ROOT, 'vite.config.js' );
 const RESULTS = resolve( process.env.TSLP_WOW_RESULTS || resolve( ROOT, 'results' ) );
 const MANIFEST = resolve( ROOT, 'artifacts/manifest.json' );
 const EXPECTED_ARTIFACTS = SHOWCASE_ROUTE_IDS.flatMap( id => [ `wow-${ id }-surface`, `wow-${ id }-accent` ] );
-const BROWSER_ARGS = [
+const BROWSER_BASE_ARGS = [
 	'--enable-unsafe-webgpu',
 	'--ignore-gpu-blocklist',
-	'--enable-features=Vulkan,WebGPUService',
-	'--use-vulkan=swiftshader',
-	'--use-angle=swiftshader',
 	'--no-sandbox',
 	'--disable-dev-shm-usage',
 ];
@@ -151,6 +149,7 @@ async function testRoute( activeBrowser, activeBaseUrl, id ) {
 
 	} finally {
 
+		await browserFailures.settle();
 		failures.push( ...browserFailures.messages() );
 		browserFailures.dispose();
 		await page.close();
@@ -171,15 +170,11 @@ async function testRoute( activeBrowser, activeBaseUrl, id ) {
 
 async function launchBrowser() {
 
-	try {
-
-		return await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } );
-
-	} catch {
-
-		return chromium.launch( { headless: true, args: BROWSER_ARGS } );
-
-	}
+	const { browser } = await launchEvidenceBrowser( chromium, {
+		args: BROWSER_BASE_ARGS,
+		headless: true,
+	} );
+	return browser;
 
 }
 

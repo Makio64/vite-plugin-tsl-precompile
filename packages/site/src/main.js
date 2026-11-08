@@ -35,9 +35,9 @@ document.querySelectorAll( '[data-copy]' ).forEach( ( btn ) => {
 const packageCommands = {
 	pnpm: {
 		install: `pnpm add -D vite-plugin-tsl-precompile@alpha
-pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
 # TypeScript only:
-pnpm add -D @types/three@0.185.1 --save-exact`,
+pnpm add -D @types/three@0.186.0 --save-exact`,
 		capture: 'pnpm dev',
 		verify: `pnpm exec tsl-precompile-doctor --source src
 pnpm exec tsl-precompile-verify --source src --source-root . artifacts
@@ -47,9 +47,9 @@ pnpm build`,
 	},
 	npm: {
 		install: `npm install --save-dev vite-plugin-tsl-precompile@alpha
-npm install --save-exact @tsl-precompile/runtime@alpha three@0.185.1
+npm install --save-exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript only:
-npm install --save-dev --save-exact @types/three@0.185.1`,
+npm install --save-dev --save-exact @types/three@0.186.0`,
 		capture: 'npm run dev',
 		verify: `npx --no-install tsl-precompile-doctor --source src
 npx --no-install tsl-precompile-verify --source src --source-root . artifacts
@@ -59,9 +59,9 @@ npm run build`,
 	},
 	yarn: {
 		install: `yarn add --dev vite-plugin-tsl-precompile@alpha
-yarn add --exact @tsl-precompile/runtime@alpha three@0.185.1
+yarn add --exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript only:
-yarn add --dev --exact @types/three@0.185.1`,
+yarn add --dev --exact @types/three@0.186.0`,
 		capture: 'yarn run dev',
 		verify: `yarn exec tsl-precompile-doctor --source src
 yarn exec tsl-precompile-verify --source src --source-root . artifacts
@@ -71,9 +71,9 @@ yarn run build`,
 	},
 	bun: {
 		install: `bun add --dev vite-plugin-tsl-precompile@alpha
-bun add --exact @tsl-precompile/runtime@alpha three@0.185.1
+bun add --exact @tsl-precompile/runtime@alpha three@0.186.1
 # TypeScript only:
-bun add --dev --exact @types/three@0.185.1`,
+bun add --dev --exact @types/three@0.186.0`,
 		capture: 'bun run dev',
 		verify: `bunx --bun tsl-precompile-doctor --source src
 bunx --bun tsl-precompile-verify --source src --source-root . artifacts

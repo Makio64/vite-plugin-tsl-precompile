@@ -47,6 +47,7 @@ import {
 	storageEntryAnonymousResourceIdentity,
 } from './storage-buffer-identity.js';
 import { resolveTypedArrayCtor } from './typed-arrays.js';
+import { cloneBindingRecordFromDescriptors } from './binding-record-clone.js';
 import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
 
 /**
@@ -62,12 +63,12 @@ import { walkNodeGraphUnique } from '../slim-support/node-graph-walker.js';
  * storage-buffer `orderedBindings[].ref` aliases remain intact.
  *
  * @param {Object} artifact
- * @param {{ resetLiveNodeSidecars?: boolean }} [options]
+ * @param {{ resetLiveNodeSidecars?: boolean, forceArtifactView?: boolean }} [options]
  * @returns {Object}
  */
 export function createHydrationBindingArtifactView( artifact, options = {} ) {
 
-	if ( ! artifact || typeof artifact !== 'object' || ! hasLocalBindingRecords( artifact, options.resetLiveNodeSidecars === true ) ) return artifact;
+	if ( ! artifact || typeof artifact !== 'object' || ! hasLocalBindingRecords( artifact, options.resetLiveNodeSidecars === true || options.forceArtifactView === true ) ) return artifact;
 
 	const clonedRecords = new WeakMap();
 	const clonedSources = new WeakMap();
@@ -267,7 +268,7 @@ function cloneRecord( record, replacements = null, mutableLiveSidecars = false, 
 			: { value, enumerable: true, configurable: true, writable: true };
 
 	}
-	return Object.create( Object.getPrototypeOf( record ), descriptors );
+	return cloneBindingRecordFromDescriptors( Object.getPrototypeOf( record ), descriptors );
 
 }
 
@@ -466,7 +467,17 @@ export function bindUserNodeAttributesToArtifact( artifact, sourceMaterial, sour
 
 		}
 
-		if ( ! live ) live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+		if ( ! live ) {
+
+			live = findInstancedObjectAttributeMatchingEntry( sourceObject, entry, entries );
+			if ( live ) {
+
+				setLiveAttributeBinding( entry, live, 'instancedObject' );
+				continue;
+
+			}
+
+		}
 		if ( ! live ) continue;
 		setLiveAttributeBinding( entry, live );
 
@@ -695,7 +706,7 @@ function attributeMatchesEntry( candidate, entry ) {
 	// them. Accept (3 → 4) while keeping every other field exact.
 	if ( wantSize && candidate.itemSize !== wantSize
 		&& ! ( candidate.itemSize === 3 && wantSize === 4 ) ) return false;
-	if ( wantCount && candidate.count !== wantCount ) return false;
+	if ( entry.runtimeSized !== true && wantCount && candidate.count !== wantCount ) return false;
 	if ( wantArray
 		&& candidate.array
 		&& candidate.array.constructor
@@ -978,12 +989,12 @@ export function hydrateNodeAttributes( attributes ) {
 		const liveAttribute = ( hasCapturedAnonymousSnapshot && ! isLiveStorageAttribute && ! isLiveInstancedObjectAttribute )
 			? null
 			: attribute._liveAttribute || ( attribute.node && attribute.node.attribute );
-		if ( liveAttribute ) return { ...attribute, node: { attribute: liveAttribute } };
+		if ( liveAttribute ) return { ...attribute, node: createHydratedAttributeNode( attribute, liveAttribute ) };
 		if ( attribute.objectAttribute ) throw new Error(
 			`[tsl-precompile/slim] Could not resolve captured object attribute ${ attribute.objectAttribute.kind || '<unknown>' }.`,
 		);
 		const interleavedAttribute = interleavedFallbacks.get( attribute );
-		if ( interleavedAttribute ) return { ...attribute, node: { attribute: interleavedAttribute } };
+		if ( interleavedAttribute ) return { ...attribute, node: createHydratedAttributeNode( attribute, interleavedAttribute ) };
 
 		const itemSize = attribute.itemSize || itemSizeFromAttributeType( attribute.type );
 		const count = Math.max( 1, attribute.count || 1 );
@@ -1003,12 +1014,39 @@ export function hydrateNodeAttributes( attributes ) {
 
 		return {
 			...attribute,
-			node: {
-				attribute: fallbackAttribute,
-			},
+			node: createHydratedAttributeNode( attribute, fallbackAttribute ),
 		};
 
 	} );
+
+}
+
+function createHydratedAttributeNode( attribute, resolvedAttribute ) {
+
+	const column = attribute && attribute[ GENERATED_INSTANCE_MATRIX_COLUMN_SIDECAR ];
+	const isInstancedObjectColor = attribute && attribute._liveAttributeSource === 'instancedObject'
+		&& ! Number.isInteger( column )
+		&& resolvedAttribute && resolvedAttribute.itemSize === 3;
+	return {
+		attribute: resolvedAttribute,
+		getObjectAttribute( object ) {
+
+			if ( Number.isInteger( column ) && object && object.isInstancedMesh === true ) {
+
+				return getInstancedMatrixColumnAttribute( object, column ) || this.attribute;
+
+			}
+			if ( isInstancedObjectColor && object && object.isInstancedMesh === true
+				&& object.instanceColor && object.instanceColor.isBufferAttribute === true
+				&& object.instanceColor.itemSize === this.attribute.itemSize ) {
+
+				return object.instanceColor;
+
+			}
+			return this.attribute;
+
+		},
+	};
 
 }
 

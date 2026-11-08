@@ -65,6 +65,14 @@ test( 'a real render exposes a directly harvestable material artifact', async ()
 
 	}
 
+	const shadows = await compileTSL( renderer, scene, camera, {
+		noGlobalMRT: true,
+		materialShapes: [ 'shadow-depth' ],
+		renderObjectHarvest: { ...harvest, familiesByMaterial: new Map( [ [ material, family ] ] ) },
+	} );
+	assert.ok( shadows.some( entry => entry.materialShape === 'shadow-depth' ),
+		'a completed beauty family must not suppress a newly observed shadow family borrowing its caster' );
+
 	renderer.dispose();
 
 } );

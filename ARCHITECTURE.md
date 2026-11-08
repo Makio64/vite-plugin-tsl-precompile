@@ -2,257 +2,427 @@
 
 ## Mental model
 
-- Author marks materials with `material.precompile('name')`.
-- In dev, the marker waits for a real render, records the material's Scene/Camera/Object context, then fires the real three.js node builder and saves an artifact (shader + bindings + uniform plan).
-- In prod, a Vite/Babel transform rewrites the marker to load the baked
-  artifact and select the mode-owned apply path. Slim material/compute modules
-  also carry generated updater code; full-Three material modules are passive
-  metadata.
-- Production may keep full Three (compatibility default) or opt into a slim
-  build with no node builder. The full path validates and registers each
-  artifact but returns the exact live NodeMaterial to Three's compiler. Slim
-  runtime work includes material adoption, artifact hydration,
-  topology/variant selection, replay adapters, bind-group setup, and generated
-  typed-array writes per frame. The plugin selects that apply boundary at
-  build time; setup timing and runtime module-copy order do not participate.
+The plugin records real Three.js rendering during development and turns those
+captures into production modules. The shared contract describes what a capture
+means; runtime code binds it to live objects and GPU resources.
 
-Inspired by Unreal's Material Compiler (`FMaterialUniformExpressionSet` generates C++ updaters at cook time) and Unity Shader Graph (HLSL variants compiled offline; SRP Batcher writes uniforms at runtime).
+There are two production paths. Compatibility mode registers and validates the
+artifact, then returns the original NodeMaterial to Three's compiler. Slim mode
+adopts the material and replays captured shaders without the node builder.
+The plugin selects the apply path at build time. Setup order must not select it.
 
 ## Layers
 
+```text
+Author: material.precompile('name')
+  → dev marker observes a real render and extracts shader/binding state
+  → dev server validates and atomically publishes artifacts + manifest
+  → Vite/Babel transform resolves the artifact and emits a virtual module
+  → compatibility: validate/register, preserve the live material
+    slim: select captured topology, hydrate bindings, run generated writers
 ```
-┌─────────────────────────────────────────────┐
-│ AUTHOR CODE (unchanged three.js + .precompile)
-└─────────────────────────────────────────────┘
-         │
-         ▼  (dev)                           │
-┌──────────────┐                   (build)  │
-│ runtime:     │                            ▼
-│ precompile-  │                   ┌───────────────┐
-│ marker.js    │                   │ plugin:       │
-│ runs real    │                   │ babel-trans-  │
-│ extractor    │                   │ form rewrites │
-│ on live mat, │                   │ .precompile() │
-│ POSTs to     │                   │ → virtual mod │
-│ dev server   │                   │ import        │
-└──────┬───────┘                   └──────┬────────┘
-       │                                  │
-       ▼                                  ▼
-┌──────────────┐                   ┌───────────────┐
-│ plugin:      │                   │ plugin:       │
-│ dev-capture  │                   │ node-harness  │
-│ writes       │                   │ re-runs       │
-│ artifacts/   │                   │ extractor in  │
-│ <name>.<h>.  │                   │ Node +        │
-│ json,        │                   │ mock WebGPU   │
-│ manifest.json│                   │ (for CI       │
-└──────┬───────┘                   │ verify)       │
-       │                           └──────┬────────┘
-       │                                  │
-       ▼                                  ▼
-┌─────────────────────────────────────────────┐
-│ artifacts/<name>.<hash>.json
-│   · wgsl (vertex + fragment)
-│   · bindings (bind-group layout)
-│   · uniformPlan (descriptor list)
-│   · lightIdentities (variant-local shared light records)
-│   · sourceGraphHash + exact Three/toolchain versions
-│   · renderContextSignature (source/provenance topology)
-│   · renderContextSelectors (replay-reproducible shader variants)
-│   · __hash (artifact-content/module identity gate)
-│   · source owners + project-local dependency-closure revisions
-└─────────────────────────────────────────────┘
-         │
-         ▼  (codegen, phase 3)
-┌─────────────────────────────────────────────┐
-│ generated virtual modules — compact static artifact,
-│ optional native-shader/raw numeric pools; slim material/compute
-│ modules also carry updater.js writes via runtime/writers.js,
-│ while full material modules stay passive metadata
-└─────────────────────────────────────────────┘
-         │
-         ▼  (runtime, phase 4)
-┌─────────────────────────────────────────────┐
-│ __applyPrecompiled(material, artifact, expected)
-│   · assert hash === expected
-│   · register artifact
-│   · full: retain exact live NodeMaterial + compiler
-│   · slim: adopt PrecompiledMaterial + hydrate replay state
-└─────────────────────────────────────────────┘
-```
+
+The Node extractor harness uses mock WebGPU for deterministic generation tests.
+It does not replace browser capture of real lights, targets, shadows, and passes.
+Its Node frame shim schedules through `setImmediate`, retaining an asynchronous
+boundary and cancellation without a timer delay per compiled object.
+`pnpm verify` validates stored artifacts without initializing a renderer.
 
 ## Packages
 
 ### `@tsl-precompile/plugin`
 
-The Vite plugin. Runs at build time.
+Published as `vite-plugin-tsl-precompile`; source lives in `packages/plugin`.
 
-- `src/index.js` — plugin entry; exports `tslPrecompile(options)`.
-- `src/babel-transform.js` — finds `.precompile('name')` call sites; rewrites them.
-- `src/dev-capture-server.js` — POST endpoint for the runtime marker in dev mode. This is a browser-to-local-dev-server boundary, not a general ingestion API: requests must be same-origin (`Origin`/`Host` and protocol agree), use `application/json`, and stay within the 32 MiB declared and streamed body limit. Aborted or rejected bodies cannot publish partial artifacts. User and auxiliary writes share one atomic queue; semantically identical recaptures preserve artifact/manifest bytes and skip redundant HMR invalidation. Current fully signed user and auxiliary captures aggregate compatible WGSL/WebGPU and GLSL/WebGL variants instead of letting the later backend replace the earlier one. Current content-addressed user artifacts are contract-validated before their first durable write. PMREM/VSM members arrive as one signed family envelope, are validated against one canonical semantic config hash, and become authoritative through one manifest rename only after every member file is durable. Unsigned legacy user-material payloads are accepted only as migration input inside this trusted local boundary; they do not weaken signed-family validation.
-- `src/node-harness.js` — headless three.js + mock WebGPU, for CI verify.
-- `src/emit-updater.js` — descriptor → static updater.js codegen.
-- `src/emit-manifest.js` — artifact JSON → virtual module source.
-- `src/wgsl-optimize.js` — build-output-only shader pooling and WGSL minification, including the shared `virtual:tsl-precompile/__wgsl` pool. Native GLSL is pooled byte-for-byte so directives such as `#version` retain their required line structure. It also restores schema-known uniform-plan aliases before emission, hoists profitable shared records, and replaces sufficiently large exact typed-array snapshots with raw little-endian base64 constants. The generated decoder performs synchronous byte materialization, not decompression, and preserves ordinary `Array` runtime contracts.
-- `src/hash.js` — artifact hash wrapper around the shared graph normalizer from `@tsl-precompile/contract`.
-- `src/three-rewrite.js` — strict, version-locked AST rewrites for the compiler-free Three closure. The r185 Renderer rewrite installs exact-caster replay, graph-free `ReplayNodeLibrary`, and removes the stock shadow-node graph. The exact `CubeRenderTarget.fromEquirectangularTexture()` lifecycle is replaced by a preflighted replay adapter. Complete comment-free AST fingerprints replace Three's last `NodeUtils` / node-constants owners and add lazy texture-loader tracking to Three's exact `Loader` constructor; loader-free source builds therefore retain no concrete loader/fetch/cache closure. Any upstream semantic drift fails the slim build instead of partially applying a cut.
-- `build/slim-rewrite` — narrow, build-only package boundary exposing the rewrite dispatcher and virtual-runtime owner lookup to the runtime's checked Rollup recipe. The runtime declares this tool as a development dependency; its published recipe never reaches through a monorepo-relative plugin path.
-- `src/vendor/` — vendored files from the three.js fork (compileTSL, extractUniformPlan, …), plus the centralized private RenderObject observer. A bounded observer epoch snapshots reused render contexts and supplies complete real-render variant families to extraction; incomplete families fall back atomically to synthetic compilation.
+| Owner | Responsibility |
+|---|---|
+| `src/index.js`, `babel-transform.js` | Vite integration, marker transforms, mode selection |
+| `src/dev-capture-request.js`, `dev-capture-server.js` | Same-origin JSON transport, bounded requests, validation, atomic publication |
+| `src/vendor/`, `node-harness.js` | Version-specific extraction and deterministic Node fixtures |
+| `src/emit-manifest.js`, `emit-updater.js`, `wgsl-optimize.js` | Static payloads, typed-array writers, shader/numeric pooling |
+| `src/three-rewrite.js` | Strict version-locked rewrites of Three's private renderer seam |
+| `src/cli/` | Verify, diagnose, recapture, and integration tooling |
+
+Capture transport accepts at most 32 MiB, rejects aborted/rejected requests before
+publication, and serializes user and auxiliary writes through one atomic queue.
+Complete signed PMREM/VSM families become authoritative through one manifest
+rename after every member is durable. Semantically identical recapture avoids
+redundant writes and HMR. Preserve the legacy migration boundary without relaxing
+validation of current signed captures.
+Marked synthetic scenes own their temporary RenderObjects. The extractor releases
+only exact scene/object pairs after artifact extraction, removing material listeners
+that otherwise retain discarded scenes and renderers. Capture owners dispose only
+geometries they allocated; caller materials, geometries, and live render state retain
+their own lifetimes.
+
+Production codegen packs schema-proven numeric snapshots using the smallest exact
+scalar representation, and uses repeated-block runs when they save bytes including
+the decoder. Large fallback texture arrays decode only when their `data` is read;
+live texture resolution can therefore avoid allocating them. Generated accessors
+preserve array identity, replacement, serialization and reads from frozen owners.
+These are emitted JavaScript choices: captured JSON, hashes and ordinary runtime
+Array values keep their existing contract.
+
+Numeric encoding computes literal size during exact-value validation. Finite
+numbers use the same decimal text conversion as JSON, avoiding a second numeric
+serialization pass. Alias and reference discovery iterate arrays directly rather
+than copying their contents with `Object.values`; the emitted representation and
+its size gates stay unchanged.
+
+Texture snapshots with 2–4 scalar components per pixel can use an exact palette
+of up to 256 byte-distinct colors. Palette indices reuse the numeric run encoder;
+the combined blob is selected only when its saving covers the decoder. Decoding
+writes directly into the final ordinary Array without an intermediate index or
+palette Array. Existing lazy access, alias identity and replacement semantics
+apply to this representation too; captured JSON and texture precision stay intact.
+
+The shader string pool shares repeated whole shaders and exact function/structure
+text across different shaders. Generated string concatenation preserves every
+post-minification shader byte. WGSL minification shortens generated private
+`nodeVar` names only when the new name is absent throughout the shader and the
+old name is absent from struct members and function signatures. Whole Unicode
+identifiers are replaced; bindings, entry points, expressions and GLSL stay intact.
+Separate mutable artifact records keep their own identity. Captured JSON and
+content hashes remain unchanged.
+
+Shared shader-pool discovery reads the capture graph in one pass, without cloning
+its numeric snapshots. A pool-local map minifies each distinct shader once and is
+discarded when that pool is built. Array scalars need no recursive candidate
+visits; selector arrays retain their dedicated collector. Active-path tracking
+rejects cycles while counting each occurrence of a shared artifact. Emission still
+owns its separate mutable clone and schema alias restoration.
+
+Replay modules reconstruct their public `dynamicBindings` arrays once through
+the shared contract collector, with source references into `uniformPlan`.
+Generated modules therefore omit both repeated source snapshots and derived
+descriptor literals. Empty views remain literal arrays; passive compatibility
+modules retain their capture metadata. Internal descriptor lookup reuses frozen
+templates, while the public descriptor API preserves its independent frozen
+prefix records. No binding topology is rediscovered per frame by this emission.
+
+The same virtual string module also shares exact fields from render-context
+selector strings. Only JSON text that survives parse/stringify byte for byte is
+eligible; opaque or noncanonical selectors stay intact. Generated concatenation
+restores the original selector without projecting away any matching axis or
+adding a runtime decoder. Selector fragments use the ordinary string-size gate;
+shader function fragments retain their larger gate.
+
+The runtime build imports rewrites through the plugin's `build/slim-rewrite`
+package export. Keep this dependency build-only; published code must not reach
+through monorepo-relative paths. See [VENDORING.md](packages/plugin/src/vendor/VENDORING.md)
+before changing the private Three seam. `pnpm vendor:probe` checks actual vendor
+imports and shared rewrite targets, reporting all changed assumptions with source
+locations against the installed/supported versions.
 
 ### `@tsl-precompile/contract`
 
-Shared extractor/codegen/runtime contract helpers.
+This package owns vocabulary and pure interpretation shared by capture, codegen,
+and replay. Start cross-package changes here rather than copying predicates.
 
-- `src/graph-normalize.js` — one graph-normalization implementation imported by plugin and runtime hashers.
-- `src/render-context.js` — canonical shader-topology signature for renderer, scene, camera, object, geometry, clipping, and MRT state.
-- `src/render-selector.js` — graph-free, canonical RenderObject topology used to select a captured variant in compiler-free replay; its exported scene descriptor is also the sole environment/fog invalidation vocabulary. Target topology distinguishes the default/output/intermediate and 2D/cube/array/3D surfaces, snapshots active face/mip and effective samples, and signs replayable attachment/MRT state while excluding resize dimensions. Shadow-depth selectors describe the effective source-caster branches (map/color/mask, depth, position, and alpha) rather than the shared override material alone. The same contract owns render-binding identities and the source-over-artifact precedence used when a renderer-owned pass mixes caster and override-material inputs.
-- `src/output-config.js` — versioned renderer-output and RenderPipeline topology descriptors shared by capture, rewrites, and replay; live exposure is intentionally excluded.
-- `src/cube-render-target.js` — canonical source-texture and destination-target topology for equirectangular cube conversion, including r185's effective pole filter/mipmap state and custom format/MSAA/depth attachments. It also owns the exact single-texture binding-evidence invariant shared by Node capture, browser capture, and replay.
-- `src/pmrem-config.js` — `pmrem-support@1`: exact operation profile, atlas layout, source sample/component type, sampling branch, sampler presence, wrap behavior, capability, and sample-count identity. It intentionally excludes texture metadata that cannot change WGSL or the binding layout.
-- `src/vsm-config.js` / `src/internal-pass.js` — `shadow-vsm-support@1` plus the shared renderer-owned pass graph. VSM selection distinguishes native depth from compatibility-mode unfilterable-float input, but keeps map size, light type, radius, and blur samples as live values rather than artifact-family identity.
-- `src/artifact-variants.js` / `src/shader-language.js` — the shared variant-local payload field list, native shader-language identity, and family merge contract used by capture, registries, codegen, and runtime. The raw private Three cache key remains available for live routing, while a backend-aware variant key keeps WGSL and GLSL payloads distinct. A family map's represented root payload is authoritative and is projected back onto the durable root while root-only metadata is preserved; equivalent cross-family collisions canonical-union semantic selectors, divergent payload collisions fail closed instead of overwriting a shader family, and emitted family keys are ordered independently of capture arrival.
-- `src/material-compute.js` — the versioned material-global compute ownership contract. It validates embedded precompiled kernels, exact resource and render-binding identities, initial state, lifecycle paths/cadence, and schedule order across every represented render variant.
-- `src/light-identities.js` — shared capture normalization and validation for variant-local light identity tables; slots retain legacy fields but resolve through one complete record per light.
-- `src/stable-json.js` — deterministic JSON encoding for persisted selectors and payload comparisons.
-- `src/artifact-content.js` — canonical artifact-content identity plus the shared durable-data boundary. Capture serialization skips private `_...` sidecars before reading their values (so a live object's `toJSON()` cannot expand into artifact data), while the server strips any stale private fields before validation and persistence.
-- `src/artifact-traversal.js` / `src/variant-selector-adapter.js` — one canonical walk over generated user, auxiliary, variant, and material-compute payloads plus the generated selector projection/matching adapter. Generated modules attach the adapter as a non-serializable sidecar; the checked renderer consumes its tiny interface and fails closed when manually registered signed JSON was not materialized.
-- `src/attribute-generators.js` — canonical captured-attribute vocabulary shared by dev capture, extraction, validation, and replay. `range@1` is accepted only after capture and extraction both verify exact live Float32 output; `instance-matrix@1` records proven object-owned columns. Runtime fills recipe storage directly and exposes matrix columns as live shared views.
-- `src/kinds.js` — shared `source.kind` registry, blocked-kind reasons, artifact payload/aggregate validation, and source-kind collection.
-- `src/texture-props.js` — canonical material texture slots and node-graph texture keys.
+- `kinds.js`, `dynamic-bindings.js`, `texture-props.js`: source kinds, validation,
+  dynamic resource descriptors, and material texture properties.
+- `graph-normalize.js`, `artifact-content.js`: source graph and durable payload
+  identity. Auxiliary node/plain-config payload assembly also lives here; retain
+  its pinned v1 bytes. Serialization excludes private runtime sidecars.
+- `render-context.js`, `render-selector.js`, `artifact-variants.js`: topology,
+  backend-aware variant families, source ownership, and merge rules.
+- `material-compute.js`, `internal-pass.js`, `pmrem-config.js`, `vsm-config.js`:
+  exact resource ownership and operation-family contracts.
+- `artifact-traversal.js`, `variant-selector-adapter.js`: canonical family walk
+  and build-generated selector adapters; runtime consumes their small sidecar.
+
+Generated selector adapters can describe, project and encode a live render
+object in one pass. The live factory and persisted-string projection share the
+same contract policy. Older adapters retain the serialize/project path; the
+prebuilt renderer calls the optional factory without importing that policy.
+- `versions.js`, `slim-three-policy.js`, `diagnostic-globals.js`: toolchain,
+  rewrite policy, and declared diagnostic interfaces.
+
+Scene topology descriptors emit sanitized scalars in canonical key order, so the
+frame path can serialize them directly without recursively copying and sorting
+them. Texture-kind priority is a shared static table. Tests compare the fast scene
+encoding against the general canonical serializer. Replay reads topology each
+render call and reuses its numeric hash only when the resulting string is equal;
+lighting, shadows, multiview, and custom-node identity checks keep their existing
+invalidation rules.
+
+Shader content, source provenance, and runtime resource identity are different
+contracts. Do not replace one with another just because both contain hashes.
 
 ### `@tsl-precompile/runtime`
 
-Ships with the user's bundle. Runtime only.
+`setup` resolves to synchronous development installation and an inert production
+entry. `apply` similarly separates development schema validation from production
+application. Generated modules use narrow `/apply`, `/loader`, `/writers`, and
+support entries; `/core` is the explicit small public AOT surface.
 
-- `src/precompile-marker.js` — `Material.prototype.precompile`. In dev, calls the extractor + POSTs artifact. In prod, replaced by transform.
-- `src/range-attribute-capture.js` — development-only RangeNode instrumentation for Three's above-uniform-limit attribute branch. For the version-checked r185 shape it replaces only that physical branch with a local deterministic generator, never reads or replaces `Math.random`, verifies the live attribute byte-for-byte, and attaches the private recipe sidecar consumed and reverified by the extractor; scalar, buffer, frozen, and unsupported shapes retain stock behavior/snapshots.
-- `src/auxiliary/cube-render-target-capture.js` — isolated dev-only owner for CubeRenderTarget's temporary graph, exact face camera, compile-lock coordination, source-state restoration, and capture-resource disposal; `aux-marker.js` remains discovery/registration/persistence orchestration.
-- `src/apply-precompiled-common.js` / `src/apply-precompiled-full.js` — full-Three apply boundary selected deterministically by the production transform. Marker-owned material modules remain passive (metadata, diagnostic kinds, and WGSL; no updater/light-helper closure), keep artifact hash/source-freshness gates and narrow diagnostic registration, and return the original live NodeMaterial. Standalone compute modules retain `updateGroup`. The narrow module graph does not import replay-only Three source constructors.
-- `src/aux-registry.js` — generated full-mode aux registration subpath. It targets the direct aux-loader registry instead of the broad runtime barrel, so a stock `three/build/three.webgpu.js` build retains zero separate `three/src/**` modules. Slim source/prebuilt virtual aux modules continue to target their exact replay singleton.
-- `src/apply-precompiled.js` / `src/apply-precompiled-development.js` — replay apply boundary used by both slim modes. It shares the production gates above, then adopts `PrecompiledMaterial`; development additionally loads the shared artifact-schema validator.
-- `src/slim-replay-renderer-context.js` — graph-free renderer context/cache identity and explicit high-precision state for replay; it preserves the narrow `RenderObject` invalidation protocol without constructing a TSL `ContextNode`.
-- `src/slim-replay-lighting.js` — graph-free per-scene light state used by RenderList and semantic variant selection.
-- `src/slim-replay-node-manager.js` — compiler-free render/compute state manager; hydrates artifacts directly and caches by material identity plus semantic topology.
-- `src/slim-replay-node-library.js` — graph-free owner for the private renderer library registry. Both Renderer construction paths use this exact compatibility surface, and the stock Three `NodeLibrary` is forbidden replay residue.
-- `src/slim-replay-node-core-primitives.js` — exact r185 `hash`, `hashArray`, `hashString`, `NodeAccess`, and `NodeUpdateType` owner used by renderer replay and the safe public `NodeUtils` compatibility surface. Strict whole-module rewrites keep Three's Node-core owners at zero rendered bytes.
-- `src/slim-node-compat.js` / `src/slim-replay-lights-node.js` — shared graph-free Node compatibility and the small replay `LightsNode`; lighting replay no longer imports the broad TSL/PassNode stub module.
-- `src/slim-replay-shadow-material.js` — graph-free, per-caster shadow replay identity created at Renderer’s exact override handoff. It keeps the shared captured shadow artifact, carries the exact caster through a non-serializable contract sidecar, mirrors Three’s per-draw alpha/render state, unwraps callback-visible material identity, and turns canonical caster-topology changes into Three-compatible material/program invalidation without inheriting shared alpha-test version churn. Because complete shadow families are registered before replay, the slim Renderer never constructs Three's stock color/depth/position shadow-node graph.
-- `src/slim-replay-background.js` — compiler-free background pass; selects a captured artifact from the raw scene input, isolates texture refs per scene, and preserves Three's clear/XR/sky-mesh behavior.
-- `src/slim-replay-output.js` — graph-free renderer-output and RenderPipeline material adapter; selects exact topology, isolates texture refs per owner, validates 2D/array sampling, and disposes replacements safely.
-- `src/slim-replay-cube-render-target.js` — graph-free equirectangular conversion adapter. It selects an exact source/destination capture, validates one sampled-texture identity across the complete artifact family, clones the registry template, and wires the live source without retaining CubeRenderTarget's TSL graph.
-- `src/slim-replay-scene-nodes.js` — graph-free environment/fog topology state; hashes the shared semantic descriptor, preserves Three's invalidation axes, and fails closed when an opaque custom scene graph is replaced.
-- `src/slim-source-entry.js` / `src/slim-source-common.js` — guarded application-tree-shaken slim mode. The Vite plugin routes Three internals through the same replay adapters as the checked prebuilt build, preserves one exact Three source identity, validates a plugin/runtime policy handshake, and rejects compiler, classified stock-adapter, retained Three Node/TSL, or split bare-Three identity residue in final chunks. In prebuilt mode, generated `/apply`, `/writers`, `/generated/light-writer`, and `/slim-support/node-dependencies` imports alias to helpers exported by the same prebuilt singleton. Loader tracking is installed lazily on the exact Three `Loader` subclass only when constructed, while allocation-only compatibility stubs are marked pure so selective applications do not pay for unused Node-material shells.
-- `src/hydrate/*` — runtime hydration modules: static binding allocation, texture/source resolution, built-in texture reconstruction, live texture registry, shared light identity resolution, per-frame texture rebinders, and source-qualified material binding ownership. Signed shadow artifacts resolve caster-owned scalar/texture/graph inputs from the exact caster while source-local render-material exceptions remain on the renderer-owned override. Each hydrated state owns cloned mutable attribute/storage/uniform-live records and exact graph update phases, so shared artifact families cannot leak the first caster’s GPU resource or live node; legacy shadow graphs read the temporary renderer-owned override as before.
-- Slim-replay hydration imports exact `three/src/**` constructors/constants instead of the bare Three barrel. This preserves module identity for the prebuilt build and is the tree-shaking prerequisite for the guarded slim source entry.
-- `src/hydrate/variants/artifact-variant-selector.js` — small runtime dispatcher over the generated selector adapter. Signed artifacts fail closed on an uncaptured topology or missing materialization sidecar; old unsigned artifacts retain cache-key/MRT compatibility.
-- `src/slim-support/live-scene-index.js` — first productized slim-support helper for live texture indexing and null-image healing.
-- `src/slim-support/internal-pass.js` / `@tsl-precompile/contract/internal-pass` — shared `internal-pass@1` system for renderer-owned programs. Capture retains exact native shader source, pipeline selectors, and UUID evidence; the durable descriptor exposes only stable PMREM/VSM roles. A complete operation family is signed and POSTed as one transaction: every content-addressed member is written before one atomic manifest rename publishes the generation, and the loader rejects partial or cross-config families. Replay clones the artifact and binds live uniforms, textures, and packed buffers through non-serializable sidecars.
-- `src/slim-stub-pmrem-generator.js` / `src/slim-support/pmrem.js` — compiler-free PMREM replay plus artifact/source caching. The replacement keeps Three r185's unindexed `faceIndex` atlas geometry and source → GGX/blur schedule, selects atomic operation families by `pmrem-support@1` (profile, source topology, and nested `pmrem-layout@1`), and never constructs `NodeMaterial`.
-- `src/hydrate/material-compute.js` / `src/hydrate/material-compute-ownership.js` — hydrate the signed material-global compute contract before draw-variant state. `precompiled` mode replays embedded storage-buffer kernel artifacts and exact lifecycle/schedule paths without a live graph. Storage textures and other unsupported proofs remain explicit `hybrid-required` descriptors, which fail closed until the configured support instance completes one exact delegated transaction for that material.
-- `src/slim-support/auto-compute.js` / `src/slim-support/compute-sync.js` — compatibility discovery for retained raw `ComputeNode` graphs plus exact shared-device resource transfer. `hybrid-required` dispatch pre-shares sampled/read-only inputs, invalidates replaced full-renderer bind groups, synchronizes only contracted writable outputs, aligns the full renderer's logical NodeFrame without disturbing its render cadence, initializes once per renderer/device generation, and revokes all prior support-owned leases before each serialized transaction. Owner-local assignments are applied only after exact render-variant selection.
-- `src/slim-support/precompiled-shadows.js` — compiler-free Directional/Spot VSM scheduler. Selection uses `shadow-vsm-support@1`, whose identity is the source/moments binding topology observed in Three r185 rather than mutable light, map-size, radius, or blur-sample values. The scheduler owns raw depth and vertical/horizontal moments targets, renders the captured shadow-depth family, replays the exact VSM filters, and publishes the final live moments texture for ordinary artifact hydration.
-- `src/slim-support/shadow-fallback.js` — fail-closed standard Directional/Spot/Point depth-shadow population through a shared-device full renderer for families not covered by precompiled scheduling, including proxy-scene caching, depth-texture sharing, and lifecycle-safe disposal.
-- `src/slim-support/postprocess-frame-scheduler.js` — owner-scoped once-per-logical-frame claims for pass producers, context effects, consumers, and terminal effects. Separate renderer scopes share work through the explicit `(frameId, renderId)` identity; failed work releases its claim and downstream dependencies fail closed.
-- `src/writers.js` — `writeMat4 / writeVec4 / writeF32 / writeColor`.
-- `src/artifact-loader.js` — manifest resolver.
-- `build/three.webgpu.slim.js` — prebuilt slim three.js (no node builder).
-- `rollup.config.js` — the publishable checked-bundle recipe. It resolves the plugin-owned rewrite through `vite-plugin-tsl-precompile/build/slim-rewrite`; provenance hashes that boundary, the rewrite dispatcher/runtime-owner registry, vendor inputs, and the recipe itself.
-- `build-tools/slim-bundle-analysis.js` / `slim-budget.json` — deterministic Rollup graph metrics and reviewable caps shared by the prebuilt, generated-helper consumer, minimal-source, and advanced-source production gates. Every profile enforces compiler/stock-adapter absence and retained Node/TSL module count plus rendered bytes; source profiles additionally reject split bare-Three identity, while the helper profile requires exactly one prebuilt runtime and zero `runtime/src` copies. Run `pnpm test:slim:budget`; use `pnpm analyze:slim` for JSON output.
+For slim markers with verified captured source owners, the transform selects the
+internal call-site apply export. Shared artifact/hash/version gates remain active,
+but the material graph hasher is only retained for the ordinary apply path. Mixed
+modules retain that ordinary path for artifacts without a validated owner. The
+call-site entry rejects a missing generated validation marker, and development
+retains schema validation for both entries.
+
+Generated slim auxiliary tables select a guarded direct registrar when none of
+their entries needs the renderer-owned registry. Call-site material modules carry
+a registration hook only for renderer-owned shapes, importing it from the same
+slim singleton as the renderer. Together these boundaries let ordinary builds
+discard the shadow-family merger. The shared contract owns the shape predicate;
+manual registration and ordinary application retain the general registry. A
+misrouted renderer-owned artifact fails before registration instead of silently
+losing its renderer binding.
+
+Generated aux-only tables defer viewport fallback preparation until lookup,
+replay cloning or reading an entry's artifact. Metadata registration remains
+eager; unused shapes retain their captured data without constructing textures.
+Public registration remains eager. Deferred work retries if texture constructors
+are not installed yet or preparation fails.
+
+Precompiled WGSL removes TSL graph construction, not native WebGPU pipeline
+compilation or Three's render-object/resource setup. The slim Renderer hydrates
+directly and yields CPU preparation on a four millisecond budget. In verified
+r186/r187 source, `slim-pipeline-preparation.js` batches at most 16 independent
+WebGPU pipelines for precompiled objects with empty before/after callback lists.
+Dependent objects and WebGL retain native pipeline/callback barriers; progress
+reports completed objects in order. Async validation scopes close in submission
+order before pipeline completion, keeping errors local when requests overlap.
+Preparation must target the actual render passes: compiling a scene for
+the default target does not prepare PMREM or the complete postprocessing chain.
+Cold measurements include preparation and first queue completion, not just the
+draw after preparation; queue completion is not a presentation timestamp.
+Selector-backed color, depth and sampler bindings resolve in the late rebinding
+phase, after live producer passes publish their render targets. This prevents
+the first consumer draw from retaining a pending placeholder. The performance
+lab validates first-frame pixels before any warm-up can repair missing inputs;
+`compare --cold-only` runs this gate without steady-frame benchmark loops.
+
+| Owner | Responsibility |
+|---|---|
+| `precompile-marker.js`, `aux-marker.js`, `dev-capture-outcome.js` | Dev installation, extraction lifecycle, capture settlement |
+| `apply-precompiled-*.js`, `_vendor-PrecompiledMaterial.js` | Mode-specific application and live material adoption |
+| `hydrator.js`, `hydrate/*` | Allocation, source resolution, variants, dynamic rebinding |
+| `slim-replay-*.js` | Graph-free adapters for Three renderer-owned state |
+| `slim-support/scene-support.js` | Product orchestration of PMREM, compute, shadows, passes, disposal |
+| `slim-support/internal-pass.js`, `precompiled-shadows.js` | Captured operation scheduling |
+| `slim-support/full-renderer-fallback.js`, `compute-sync.js` | Explicit shared-device delegation and exact resource transfer |
+| `writers.js`, `generated/light-writer.js` | Per-frame writes into already allocated buffers |
+
+Artifact templates are shared; mutable uniform/attribute/storage state belongs to
+a hydrated owner. Camera/render-scoped resources must not leak between objects or
+variants. A cache must name its owner and invalidation lifetime, especially when
+lights, targets, graphs, or devices change.
+
+`hydrate/uniform-plan.js` indexes the state-local artifact view once after attaching
+live sidecars. The allocator, texture owner, dispatcher, and UBO seeder share that
+index. Cached texture binding records distinguish the ordered alias used for owner
+selection from dispatch's exact group match; paired samplers reuse the group's
+texture map. Records retain live entries and sidecars, and resolution memos include
+the record's identity to isolate hydrated owners. Plan layout is fixed for that
+hydration. Compact texture descriptors use contract's `texturesOnly` projection.
+Writable textures are sampled-texture bindings with `store: true`, owned by their
+existing source resolver.
+Storage-buffer entries preserve their live references and ordered-plan fallback.
+
+Replay UBOs deduplicate shared frame/render writes by binding, frame/render ID,
+renderer, scene, camera, light context and backing array. Live uniform groups keep
+per-draw writes because callbacks and pass sidecars can change inside one render
+ID. Each binding compares shader-visible bytes before upload; cloned GPU bindings
+have independent upload history. Texture resolution keeps separate group/binding
+keys and renderer/render/frame identities, avoiding per-draw string allocation
+and cross-renderer cache hits. Post-process preparation shares one texture
+discovery snapshot across its sub-passes; later resource refresh collects again.
+Hydration also selects uniform overlay slots and generated material ownership
+once. Update plans retain live slot references so pass-local values can still
+change between draws with the same frame and render IDs.
+
+Generated replay modules also identify exact camera/light-only uniform groups
+that can share a GPU binding. Codegen hashes the full plan, binding layout and
+light identities; a nonserialized contract symbol carries that proof to hydration.
+The sharing cache belongs to a renderer and render context, and replaces released
+buffers. Allocation checks this cache first, skipping duplicate CPU arrays,
+snapshot seeding and binding setup without a second traversal. Material/object
+groups, live sidecars and unproven artifacts stay local.
+The WebGPU draw cache compares native `GPUBindGroup` identities: unchanged groups
+avoid redundant commands, and replacing GPU resources invalidates the cache even
+when the CPU binding id is unchanged. ArrayCamera overrides last for one draw.
+
+Generated PMREM writers allocate frozen source descriptors once at module load.
+Atlas lookup still reads the live texture registry each draw. Environment and
+background rotation writers share one matrix cached by Euler values, order and
+enablement; this retains no scene/material and invalidates within the same frame,
+including signed-zero changes.
+
+Texture shape probes share one description per artifact/binding, covering WGSL
+texture declarations and GLSL combined samplers. Hot lookups allocate no query
+keys or callbacks. Replacing any shader stage invalidates the descriptions;
+texture shape validation and sampler comparison remain separate predicates.
+Resource tracking keeps a snapshot per binding in each rebinder's WeakMap. It
+reuses unchanged snapshots without allocating or rewriting the map, but reads the
+live texture, GPU resource and version on every check, including for clones.
+
+Hydration clones binding records from their own descriptors, so lazy accessors
+are not evaluated. Ordinary writable data records use direct assignments after
+descriptor validation; inherited keys use property definition. Custom prototypes,
+accessors and restricted descriptors retain the general descriptor clone. Aliases
+share one clone within a hydration, while mutable buffers remain object-owned.
+
+Render-target resolution builds full descriptors only for textures at the captured
+attachment address, including aliases of that texture. It still checks live target
+topology, replacement, renderer ownership, ambiguity and active writes on every
+lookup. Scalar counters replace match arrays; dimension and extent validation
+avoid temporary collections. No target topology or attachment snapshot is cached.
+
+Texture dispatch prepares inert render-target fallbacks only after a retryable
+pending result. Successful material bindings bypass shader-hint and builtin setup;
+successful artifact bindings build diagnostic details only when a listener exists.
+Strategy records, strict misses and listener changes remain observable. Graph
+discovery rejects scalar roots before resource probes and reads absent members
+without throwing; custom object getters still use the guarded discovery path.
+
+Direct material uniform types are shared by contract validation and codegen
+in `contract/dynamic-bindings.js`.
+
+Built-in postprocess handlers initialize through a pure factory that owns its
+registry. Unused root exports can therefore drop the handler graph and its replay
+helpers. Used handlers retain eager initialization, insertion order, replacement
+and removal semantics; no lookup-time initialization or package-wide purity flag
+is needed.
+
+PMREM scene cloning is exposed through `slim-support/pmrem`; it shares CPU geometry
+allocation with shadow fallback in `full-renderer-scene.js`. Each transaction owns
+its cloned geometry/material/texture resources and rolls back unsupported nested
+objects. `withMappedSceneMaterials` in `pass-render-fallback.js` restores arrays and
+overrides after a synchronous render or mapper failure. Harness code supplies source
+material mapping and diagnostics; these runtime helpers own cleanup.
+
+Slim replay uses exact Three source constructors to preserve module identity.
+Prebuilt consumers resolve generated helpers and shared root-runtime exports to
+the same singleton. The plugin derives the root/prebuilt export intersection from
+the checked installation. Two export-only virtual modules forward shared helpers
+to the bundle and remaining root exports to their source owners, preserving the
+root namespace without retaining the broad source barrel. Only those generated
+facades declare themselves free of side effects; used source providers retain
+their own initialization. Guarded
+source mode permits application tree shaking while enforcing the same rewrite
+policy. Bundle gates reject compiler, stock-adapter, retained Node/TSL, and split
+Three identity residue. Do not add package-wide `sideEffects: false`; required
+bootstrap effects make that unsafe.
+
+Source builds can explicitly require WebGPU with `webgpuOnly: true`, removing
+the native WebGL fallback module graph and rejecting `forceWebGL` before backend
+allocation. The default source and checked prebuilt surfaces keep native WebGL 2
+fallback. Development still captures through full Three in either configuration.
+
+Pure slim cannot compile an uncaptured graph. Supported replay requires a captured
+topology; bounded hybrid operations require explicit support and resource ownership.
+A missing proof must produce an actionable error rather than guessed GPU bindings.
+
+Bound auxiliary inputs resolve directly through the registry before capture
+enumeration. Successful binding/hash resolution creates one result record; it
+does not cache that record, so replacement and registry reset remain visible.
+Viewport fallback wiring copies shared texture references only when a missing
+binding needs a fallback. It inspects the separate shader modules directly and
+leaves shader text and reference maps untouched when all bindings are already
+wired.
 
 ### `packages/examples/*`
 
-Integration testbeds: ocean, bloom, compute, background, shadow-debug, compute-debug, batch, and the docs site.
+Examples exercise real applications. `batch` owns browser execution, corpus
+selection, source/network evidence, screenshots, and coverage reporting. Behavior
+an adopter needs belongs in runtime `slim-support`, not in replay source strings.
+The inspector is a diagnostic consumer; the site publishes independently verified
+evidence rather than trusting a stored `pass` field.
+Each batch case owns its visits and payload bucket through success and failure.
+Setup failures close partial contexts; network disposal releases bodies, request
+records and loader closures. Capture POSTs share the plugin's bounded transport
+reader and publish only into the bucket generation active when the request began.
+The stock, E2E, slim-load and ocean smoke drivers keep Playwright's direct connection and track their own
+fresh Chromium child through Node's public `child_process` diagnostic channel,
+matched to the browser's CDP process identity. After contexts close, native browser
+shutdown gets 250 ms. On macOS/Linux, a still-live owned child can be stopped only
+after its current parent and detached process group are verified; child lifetime
+and empty contexts are checked again immediately before signaling that group.
+Cleanup awaits both actual child closure and Playwright's original close promise,
+which includes temporary-profile cleanup. Failures abort recycling and still close
+the HTTP server. Unknown ownership, unsupported platforms and active contexts keep
+ordinary graceful shutdown. Observation is bounded and removed after launch/close;
+no private Playwright fields, shared Chrome session or global process lookup is used.
+Local diagnostic captures default to the installed matching Three package;
+upstream and canonical runs keep their official-checkout requirement.
+The browser harness preserves native monotonic Object3D ids across Three module
+copies. Call-stack hashes reordered cloned lights and changed shader binding
+order. Fatal page errors now abort pending visit waits while resource cleanup and
+GPU/network evidence still complete; recoverable warnings retain their policy.
 
-The batch harness stores every campaign under one run-scoped evidence
-directory. Screenshots remain PNG; complete user and auxiliary artifact graphs
-are compact JSON encoded as deterministic gzip (`.json.gz`, level 1, zero
-mtime). Their descriptors hash and count the compressed bytes and explicitly
-record `contentEncoding: "gzip"` plus the exact uncompressed byte count.
-Replay verifies run identity, path containment, stored size, and stored hash
-before it validates this metadata, performs bounded decompression, and parses
-strict UTF-8 JSON. Encoding/suffix drift, corrupt streams, and oversized
-expansion fail closed. Schema-2 evidence captured before this storage change is
-read only through the narrow legacy form: an unencoded `.json` descriptor with
-both compression fields absent.
+Full-resolution canvas brightness probes reuse one scratch surface per source
+canvas and clear it before each draw, including transparent and resized frames.
+The optional initial brightness poll can finish after a deterministically frozen,
+idle frame's GPU queue completes. This requires exactly one observed WebGPU
+device, matching the initialized renderer, and a case configured for one animation
+owner. Unknown, WebGL, multi-device and special-timer cases retain ordinary polling. The same
+poll deadline bounds freeze observation and queue completion; final loader/freeze,
+presentation, screenshot brightness, pixel and GPU-error gates still run.
 
-Visual and semantic grading are separate gates. PSNR compares the selected
-capture/replay frames; `webgpu_storage_buffer.html` is the sole configured
-volatile-compute pixel diagnostic, and every other canonical row remains
-pixel-gated. The independent `tslp-e2e-semantic-evidence-gate@3` requires
-stock, capture, and replay to be observed and to explicitly complete their
-deterministic freeze boundary. Missing phases, incomplete freezes, timeouts,
-unexpected browser/runtime or GPU errors, and `[tslp*]` or
-`[tsl-precompile*]` warnings block the row.
-Each phase must also publish a versioned positive GPU observation: the
-`requestAdapter` hook ran, at least one device received uncaptured-error and
-device-loss observers, and every observed queue completed a submitted-work
-fence.
+The canonical campaign covers the exact checked catalogue. Validation binds source
+snapshots, official Three provenance, configuration, semantic operation completion,
+GPU diagnostics, artifacts, and screenshot bytes. Source changes make old evidence
+stale. Run-scoped artifact files may be gzip-encoded; replay checks stored hashes,
+encoding, declared size, and bounded decompression before parsing them.
 
-The gate also validates a complete `tslp-e2e-operation-registry@1`. Its closed
-policy recognizes the required replay operations for material compute, direct
-`NodeMaterial` replacement, `RenderPipeline` passes, and Bloom; a missing or
-unknown outcome, duplicate outcome, incomplete registry, or requiredness
-downgrade fails closed. Only auxiliary-capture outcomes may be optional. Their
-failures remain structured evidence but are non-blocking. A required failure is
-accepted only when every selector-class failure has an ordered identity/error
-record bound to its exact operation and effect, and one-to-one counter deltas
-prove a later render and presentation for each failure:
-`FSR1Node` full-pass rendering with no downstream failure, or `BloomNode`
-rendering. Matching pixels alone cannot prove that recovery.
+Site verification checks every screenshot file before reusing a pixel comparison.
+Its comparison cache keys both verified content hashes and ignore regions; repository
+snapshot reuse keys the complete snapshot. Both caches live for one validation call,
+so a later invocation rechecks the current files.
 
-Coverage aggregation revalidates the semantic gate instead of trusting a stored
-`status: "pass"`. The cohort manifest also binds the fingerprinted repository
-source snapshot, harness sources, configuration, toolchain, artifacts, and
-shots. A source-fingerprint change makes prior evidence stale; regenerate an
-exact campaign before treating its coverage as current. For local cohorts,
-validators rediscover the current manifest/options, HTML inventory, route
-mapping, and route bytes and require that exact catalogue to match the recorded
-source snapshot.
-
-Canonical Three-source provenance is file-exact rather than a summary
-attestation. `threeCheckout.sourceVerification.files` lists every served path
-with its byte count, SHA-256, Git blob, mode, object format, official r185
-commit, and official tree. Its count must be nonzero and exact, and
-`verifiedSourcesSha256` is recomputed from the sorted
-`path\0gitCommit\0gitTree\0gitObjectFormat\0gitBlob\0gitMode\0sha256\0bytes\n`
-records. Visual cohort manifests add the `three` domain to the same records
-under `sources.three`; validators require that snapshot's `fileCount` and JSON
-fingerprint, the checkout `sourceFingerprint`, and the self-contained proof
-list to agree exactly. The stock report carries and validates the same
-self-contained proof list. Its independent harness fingerprint is the recursive
-static-import closure plus workspace package/lock inputs; it also records the
-actual browser/WebGPU environment and requires positive device, error-observer,
-and submitted-work-fence proof with zero captured GPU errors for every route.
-
-Artifact descriptors bind the exact stored bytes. Replay first verifies run
-identity, path containment, stored size, and SHA-256, then checks the declared
-gzip encoding and exact uncompressed length while performing bounded
-decompression and strict UTF-8/schema validation. The v2 gate and its
-fingerprinted harness changes require a fresh exact campaign; this architecture
-description does not claim a final 254-route result from pre-v2 evidence.
+Release benchmarks expand any selected PMREM route into complete real captures
+of the shared module's three routes before building. Their workspace catalogue
+includes those routes, and capture verifies the loaded case identity. Build and
+measurement still select only requested workloads; reports distinguish requested,
+expanded and successfully captured scope. No artifact is synthesized for an
+unvisited branch.
 
 ## Staleness gates
 
-Layered so payload drift, ordinary source edits, and toolchain drift fail loudly:
+1. Contract validation and content hashes cover shaders, bindings, plans, and variants.
+2. Build-time call-site ownership binds transformed source and transitive local imports.
+3. Dev recaptures on changes; build rejects exact Three/toolchain mismatches.
+4. Virtual modules enforce content identity; runtime checks expected identity and the
+   live source graph before applying either mode (`autoMark` uses its call-site gate).
+5. Structural `pnpm verify` audits stored artifacts/manifests. Generation tests compare
+   real extraction paths; browser tests prove rendering and GPU behavior.
 
-1. Artifact content hash over emitted shaders, bindings, uniform plan, render state, and variants (`__hash`).
-2. Stable call-site ownership + a conservative transformed-owner and transitive
-   project-local static-import closure revision at build time. Dev and build use
-   Vite's resolver, so aliases resolve identically; the durable owner records
-   canonical root-relative dependency identities so the source-aware
-   `pnpm verify -- --source ...` scan can recompute the same revision. Virtual
-   modules, `node_modules`, and linked sources outside the configured root stay
-   on their own toolchain/package provenance planes.
-3. Hot re-extract in dev on file save.
-4. Build-time exact Three/toolchain metadata mismatch → hard error.
-5. Virtual-module content-identity mismatch → hard error.
-6. Runtime source-graph recomputation before either full-material retention or slim material adoption (`autoMark` uses the call-site gate because it rewrites the constructor before later graph assignments).
-7. `pnpm verify` CI gate: committed artifact metadata, schema, and source-kind validation.
+## Verification ownership
+
+[`scripts/test.mjs`](scripts/test.mjs) owns Node suite discovery, plugin tiers,
+worker limits, and file selection. Package scripts delegate to it. Each file retains
+Node process isolation and its package working directory. Compiler/rewrite/pack
+fixtures remain serial; ordinary plugin tests keep bounded parallelism in full runs.
+The site campaign fixture runs in full; quick retains the smaller site contracts.
+Negative site evidence checks use an 18-case boundary catalogue with one complete
+local cohort. The integration check still validates all 272 cases and nine cohorts;
+the public validator enforces the current release catalogue's cardinality.
+
+The compact reporter prints counts, failures, and slow files. Node also writes the
+complete spec report to the printed temporary directory. `--verbose` streams it.
+File timings include imports and setup. `--low-memory` selects one ordinary worker;
+repeatable `--match` options select several affected file groups. Each suite group
+owns its worker process tree, with cancellation cleanup and a five-minute watchdog.
+Timeouts fail the run and terminate descendants instead of leaving hung fixtures.
+Selection is explicit, never inferred from a partial import graph or a stale result
+cache. Empty selections and unknown options fail. Browser evidence is never reused
+as proof that changed product source passed.
+Explicit filename matches are applied before opening unrelated plugin tests for
+classification. Full plans still audit every heavy fixture, and selected heavy
+fixtures retain their serial execution and classification checks.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commands and [AGENTS.md](AGENTS.md) for the
+required gates. CI runs package/site suites once and keeps the existing Node status
+name as a dependent success check. Browser, budget, packed-consumer, and artifact
+gates remain independent.
 
 ## Evolution / structural debt
 
-For the structural changes that make the plugins easier to evolve and 100% visual
-fidelity reachable (extracting the slim-support runtime module, splitting the hydrator,
-a shared extractor↔codegen↔runtime contract, de-duplicating the graph hasher, hardening
-the three.js fork seam, …), see [ROADMAP.md](./ROADMAP.md) —
-the prioritized P0→P3 audit.
+[ROADMAP.md](ROADMAP.md) holds current decisions and sequencing.
+[evolution-archive.md](evolution-archive.md) holds implementation history and dated
+measurements. Read the active guides first; load historical detail only for the
+subsystem being changed.

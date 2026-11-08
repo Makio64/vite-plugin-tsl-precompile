@@ -6,6 +6,7 @@ import { Color, Euler, Matrix3, Matrix4, Vector3, Vector4 } from 'three';
 import { writeMaterialValue, writeUniformGroup } from '../src/hydrate/material-writers.js';
 import { selectArtifactVariant } from '../src/hydrate/variants/artifact-variant-selector.js';
 import { withTemporalFrame } from '../src/slim-support/temporal-frame.js';
+import { writeEnvironmentRotation, writeMat4FromEuler } from '../src/writers.js';
 
 function makeView( size = 256 ) {
 
@@ -18,6 +19,60 @@ function makeGroup( slots ) {
 	return { name: 'render', slots };
 
 }
+
+test( 'rotation writers reuse unchanged values and invalidate across mutations, owners and enablement', () => {
+
+	const view = makeView( 80 );
+	const rotation = new Euler( 0.123, - 0.456, 0.789 );
+	const scene = { environment: {}, environmentRotation: rotation };
+	const material = { envMap: null, envMapRotation: new Euler( 0.7, 0.8, 0.9 ) };
+	const cos = Math.cos, sin = Math.sin;
+	let trigCalls = 0;
+	Math.cos = value => { trigCalls ++; return cos( value ); };
+	Math.sin = value => { trigCalls ++; return sin( value ); };
+	try {
+
+		writeEnvironmentRotation( view, 8, material, scene );
+		assert.equal( trigCalls, 6 );
+		const first = new Uint8Array( view.buffer ).slice();
+		scene.environmentRotation = rotation.clone();
+		writeEnvironmentRotation( view, 8, material, scene );
+		assert.equal( trigCalls, 6, 'equal values from another owner reuse the matrix' );
+		assert.deepEqual( new Uint8Array( view.buffer ), first );
+		for ( const order of [ 'XYZ', 'YXZ', 'ZXY', 'ZYX', 'YZX', 'XZY' ] ) {
+
+			for ( const axis of [ 'x', 'y', 'z' ] ) {
+
+				rotation.order = order;
+				rotation[ axis ] += 0.11;
+				const expected = new Float32Array( new Matrix4().makeRotationFromEuler( rotation ).transpose().elements );
+				writeMat4FromEuler( view, 8, rotation, { isTexture: true } );
+				assert.deepEqual( new Uint8Array( view.buffer, 8, 64 ), new Uint8Array( expected.buffer ) );
+
+			}
+
+		}
+		for ( const x of [ 0, - 0, 0 ] ) {
+
+			rotation.set( x, 0, 0, 'XYZ' );
+			writeMat4FromEuler( view, 8, rotation, { isTexture: true } );
+			const expected = new Float32Array( new Matrix4().makeRotationFromEuler( rotation ).transpose().elements );
+			assert.deepEqual( new Uint8Array( view.buffer, 8, 64 ), new Uint8Array( expected.buffer ) );
+
+		}
+		writeMat4FromEuler( view, 8, rotation, null );
+		assert.deepEqual( new Float32Array( view.buffer, 8, 16 ), new Float32Array( new Matrix4().elements ) );
+		material.envMap = {};
+		writeEnvironmentRotation( view, 8, material, scene );
+		assert.deepEqual( new Float32Array( view.buffer, 8, 16 ), new Float32Array( new Matrix4().makeRotationFromEuler( material.envMapRotation ).transpose().elements ) );
+
+	} finally {
+
+		Math.cos = cos; Math.sin = sin;
+
+	}
+
+} );
 
 test( 'writeUniformGroup writes camera.projectionMatrix at the slot offset', () => {
 

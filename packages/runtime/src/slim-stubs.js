@@ -47,7 +47,7 @@ import {
 	traverseSlimNode,
 	wrapWithSlimNodeChainFallback,
 } from './slim-node-compat.js';
-import { NodeAccess, hash, hashArray, hashString } from './slim-replay-node-core-primitives.js';
+import { NodeAccess, hash as hashNodeKey, hashArray, hashString } from './slim-replay-node-core-primitives.js';
 import { LightsNode } from './slim-replay-lights-node.js';
 import { registerLiveUniformNode } from './slim-support/live-uniform-registry.js';
 import { attachLiveNodeDependency } from './slim-support/node-dependencies.js';
@@ -126,6 +126,11 @@ function attributeCarrierNode( attribute, nodeType = null, extraProps = {} ) {
 		attribute,
 		value: attribute,
 		nodeType: nodeType || nodeTypeFromAttribute( attribute ),
+		getObjectAttribute() {
+
+			return this.attribute;
+
+		},
 		...extraProps,
 	} );
 
@@ -279,13 +284,7 @@ export class PassNode {
 	updateReference() { return this; }
 	setup( { renderer } = {} ) {
 
-		if ( renderer ) {
-
-			try { this.renderTarget.samples = this.options.samples === undefined ? renderer.samples : this.options.samples; } catch ( _ ) {}
-			try { if ( typeof renderer.getOutputBufferType === 'function' ) this.renderTarget.texture.type = renderer.getOutputBufferType(); } catch ( _ ) {}
-			try { if ( renderer.reversedDepthBuffer === true ) this.renderTarget.depthTexture.type = FloatType; } catch ( _ ) {}
-
-		}
+		configurePassRenderTarget( this, renderer );
 		return this.scope === PassNode.DEPTH ? this.getLinearDepthNode() : this.getTextureNode();
 
 	}
@@ -419,6 +418,9 @@ export class PassNode {
 		const scene = this.scene;
 		let camera = this.camera;
 		if ( ! renderer || ! scene || ! camera ) return;
+		// Compiler-free replay never invokes NodeBuilder.setup(). Apply the
+		// renderer's sample count and attachment formats before allocating GPUs.
+		configurePassRenderTarget( this, renderer );
 
 		const size = new Vector2( 1, 1 );
 		try {
@@ -527,6 +529,15 @@ export class PassNode {
 
 	setPixelRatio( pixelRatio ) { this._pixelRatio = pixelRatio || 1; this.setSize( this._width, this._height ); return this; }
 	dispose() { try { if ( this.renderTarget && typeof this.renderTarget.dispose === 'function' ) this.renderTarget.dispose(); } catch ( _ ) {} }
+
+}
+
+function configurePassRenderTarget( pass, renderer ) {
+
+	if ( ! renderer ) return;
+	pass.renderTarget.samples = pass.options.samples === undefined ? renderer.samples : pass.options.samples;
+	if ( typeof renderer.getOutputBufferType === 'function' ) pass.renderTarget.texture.type = renderer.getOutputBufferType();
+	if ( renderer.reversedDepthBuffer === true ) pass.renderTarget.depthTexture.type = FloatType;
 
 }
 
@@ -817,7 +828,7 @@ export class CanvasTarget {
  * `NodeUtils` — the r185 graph-free hash surface remains usable by addons;
  * compiler/type-construction helpers retain the loud Proxy-throw behavior.
  */
-export const NodeUtils = /* @__PURE__ */ new Proxy( /* @__PURE__ */ Object.freeze( { hash, hashArray, hashString } ), {
+export const NodeUtils = /* @__PURE__ */ new Proxy( /* @__PURE__ */ Object.freeze( { hash: hashNodeKey, hashArray, hashString } ), {
 	get( target, prop ) {
 
 		if ( prop === Symbol.toPrimitive || prop === 'toString' ) return () => '[NodeUtils slim-stub]';
@@ -897,6 +908,18 @@ export const modelViewProjection = /* @__PURE__ */ inertNodeStub();
 export const modelPosition = /* @__PURE__ */ inertNodeStub();
 export const modelScale = /* @__PURE__ */ inertNodeStub();
 export const cameraPosition = /* @__PURE__ */ inertNodeStub();
+export const cameraViewMatrix = /* @__PURE__ */ inertNodeStub();
+export const metalness = /* @__PURE__ */ inertNodeStub();
+export const roughness = /* @__PURE__ */ inertNodeStub();
+export const reflectVector = /* @__PURE__ */ inertNodeStub();
+export const screenCoordinate = /* @__PURE__ */ inertNodeStub();
+export const positionGeometry = /* @__PURE__ */ inertNodeStub();
+export const globalId = /* @__PURE__ */ inertNodeStub();
+export const instanceIndex = /* @__PURE__ */ inertNodeStub();
+export const HALF_PI = /* @__PURE__ */ inertNodeStub();
+export const cameraNear = /* @__PURE__ */ inertNodeStub();
+export const cameraFar = /* @__PURE__ */ inertNodeStub();
+export const materialColor = /* @__PURE__ */ inertNodeStub();
 export const cameraProjectionMatrix = /* @__PURE__ */ inertNodeStub();
 export const cameraWorldMatrix = /* @__PURE__ */ inertNodeStub();
 export const cameraNormalMatrix = /* @__PURE__ */ inertNodeStub();
@@ -925,15 +948,29 @@ export function passTexture( passNode, textureValue ) {
 // harness (and any production wiring code) can recover it and run
 // PMREMGenerator on the same cubemap/equirect at replay time. The slim
 // stub itself is otherwise inert.
-const __pmremStubSources = new WeakMap();
-export function pmremTexture( source, ..._ ) {
+export class PMREMNode extends Node {
 
-	const stub = inertNodeStub();
-	if ( source && ( source.isTexture === true || source.isCubeTexture === true ) ) __pmremStubSources.set( stub, source );
-	return stub;
+	constructor( value, uvNode = null, levelNode = null ) {
+
+		super( 'vec3' );
+		this.isPMREMNode = true;
+		this._value = value;
+		this.uvNode = uvNode;
+		this.levelNode = levelNode;
+
+	}
+
+	get value() { return this._value; }
+	set value( value ) { this._value = value; }
 
 }
-export function __getPmremStubSource( stub ) { return __pmremStubSources.get( stub ); }
+
+export function pmremTexture( source, uvNode = null, levelNode = null ) {
+
+	return new PMREMNode( source, uvNode, levelNode );
+
+}
+export function __getPmremStubSource( stub ) { return stub?.isPMREMNode === true ? stub.value : undefined; }
 export function vec2( ...args ) { return inertNodeStub( args ); }
 export function vec3( ...args ) { return inertNodeStub( args ); }
 export function vec4( ...args ) { return inertNodeStub( args ); }
@@ -958,6 +995,7 @@ export function storageBufferAttribute( attribute, nodeType = null ) { return st
 export function instancedArray( source, nodeType = 'float' ) { return storageCarrierNode( makeStorageAttribute( source, nodeType, true ), nodeType ); }
 export function storage( source, nodeType = 'float' ) { return storageCarrierNode( makeStorageAttribute( source, nodeType, false ), nodeType ); }
 export function reference( ...args ) { return inertNodeStub( args ); }
+export function referenceAttribute( ...args ) { return inertNodeStub( args ); }
 export function add( ...args ) { return inertNodeStub( args ); }
 export function sub( ...args ) { return inertNodeStub( args ); }
 export function mul( ...args ) { return inertNodeStub( args ); }
@@ -981,6 +1019,7 @@ export function mod( ...args ) { return inertNodeStub( args ); }
 export function min( ...args ) { return inertNodeStub( args ); }
 export function max( ...args ) { return inertNodeStub( args ); }
 export function sin( ...args ) { return inertNodeStub( args ); }
+export function mx_noise_float( ...args ) { return inertNodeStub( args ); }
 export function cos( ...args ) { return inertNodeStub( args ); }
 export function tan( ...args ) { return inertNodeStub( args ); }
 export function atan( ...args ) { return inertNodeStub( args ); }
@@ -1022,8 +1061,40 @@ export function rangeFogFactor( ...args ) { return inertNodeStub( args ); }
 export function densityFogFactor( ...args ) { return inertNodeStub( args ); }
 export function logarithmicDepthToViewZ( ...args ) { return inertNodeStub( args ); }
 export function viewZToPerspectiveDepth( ...args ) { return inertNodeStub( args ); }
+export function perspectiveDepthToViewZ( ...args ) { return inertNodeStub( args ); }
+export function orthographicDepthToViewZ( ...args ) { return inertNodeStub( args ); }
+export function mx_cell_noise_float( ...args ) { return inertNodeStub( args ); }
+export function mx_fractal_noise_float( ...args ) { return inertNodeStub( args ); }
+export function packNormalToRGB( ...args ) { return inertNodeStub( args ); }
+export function unpackRGBToNormal( ...args ) { return inertNodeStub( args ); }
+export function sample( ...args ) { return inertNodeStub( args ); }
+export function Return( ...args ) { return inertNodeStub( args ); }
+export function Continue( ...args ) { return inertNodeStub( args ); }
+export function materialReference( ...args ) { return inertNodeStub( args ); }
+export function textureLoad( ...args ) { return inertNodeStub( args ); }
+export function textureStore( ...args ) { return inertNodeStub( args ); }
+export function bitcast( ...args ) { return inertNodeStub( args ); }
+export function wgslFn( ...args ) { return inertNodeStub( args ); }
+export function colorSpaceToWorking( ...args ) { return inertNodeStub( args ); }
+export function rand( ...args ) { return inertNodeStub( args ); }
+export function shiftRight( ...args ) { return inertNodeStub( args ); }
+export function countOneBits( ...args ) { return inertNodeStub( args ); }
+export function interleavedGradientNoise( ...args ) { return inertNodeStub( args ); }
+export function property( ...args ) { return inertNodeStub( args ); }
+export function outputStruct( ...args ) { return inertNodeStub( args ); }
+export function distance( ...args ) { return inertNodeStub( args ); }
+export function trunc( ...args ) { return inertNodeStub( args ); }
+export function hash( ...args ) { return inertNodeStub( args ); }
+export function struct( ...args ) { return inertNodeStub( args ); }
+export function premultiplyAlpha( ...args ) { return inertNodeStub( args ); }
+export function unpremultiplyAlpha( ...args ) { return inertNodeStub( args ); }
 export function getNormalFromDepth( ...args ) { return inertNodeStub( args ); }
 export function getScreenPosition( ...args ) { return inertNodeStub( args ); }
+export function getScreenPositionFromClip( ...args ) { return inertNodeStub( args ); }
+export function isBackgroundDepth( ...args ) { return inertNodeStub( args ); }
+export function array( ...args ) { return inertNodeStub( args ); }
+export function lightPosition( ...args ) { return inertNodeStub( args ); }
+export function lightTargetPosition( ...args ) { return inertNodeStub( args ); }
 export function getViewPosition( ...args ) { return inertNodeStub( args ); }
 export function textureSize( ...args ) { return inertNodeStub( args ); }
 export function luminance( ...args ) { return inertNodeStub( args ); }
@@ -1048,8 +1119,10 @@ export function uvec3( ...args ) { return inertNodeStub( args ); }
 export function uvec4( ...args ) { return inertNodeStub( args ); }
 export function varyingProperty( ...args ) { return inertNodeStub( args ); }
 export function OnMaterialUpdate( ...args ) { return inertNodeStub( args ); }
+export function OnBeforeRenderPipeline( ...args ) { return inertNodeStub( args ); }
+export function OnAfterRenderPipeline( ...args ) { return inertNodeStub( args ); }
 export function reflect( ...args ) { return inertNodeStub( args ); }
-export function reflector( ...args ) { return inertNodeStub( args ); }
+export { reflector } from './slim-support/reflector.js';
 
 /**
  * `renderGroup` — used as a *value* (uniform group identity) in some examples.
@@ -1075,6 +1148,7 @@ export const viewportLinearDepth = /* @__PURE__ */ inertNodeStub();
 export const linearDepth = /* @__PURE__ */ inertNodeStub();
 export const depth = /* @__PURE__ */ inertNodeStub();
 export const depthPass = /* @__PURE__ */ inertNodeStub();
+export const velocity = /* @__PURE__ */ inertNodeStub();
 
 /** Matrix-based transform helpers used by background and MRT setups */
 export const highpModelNormalViewMatrix = /* @__PURE__ */ inertNodeStub();

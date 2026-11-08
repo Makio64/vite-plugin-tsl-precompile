@@ -18,7 +18,7 @@ function readMember( value, key ) {
 
 	try {
 
-		return value[ key ];
+		return value?.[ key ];
 
 	} catch ( _ ) {
 
@@ -81,7 +81,7 @@ function isTerminalResource( value ) {
 
 function isGraphValue( value ) {
 
-	return ! isTerminalResource( value ) && ( isNodeLike( value ) || isPlainObject( value ) );
+	return isObjectLike( value ) && ! isTerminalResource( value ) && ( isNodeLike( value ) || isPlainObject( value ) );
 
 }
 

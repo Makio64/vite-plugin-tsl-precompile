@@ -50,6 +50,7 @@ export interface CompileTSLOptions extends Record<string, unknown> {
 	skipNodeUpdatesForMaterials?: object[];
 	renderObjectHarvest?: RenderObjectHarvestSession | Promise<RenderObjectHarvestResult>;
 	skipWarmupRender?: boolean;
+	fullscreenQuad?: object;
 }
 
 export interface CompileTSLArtifacts extends Array<PrecompiledArtifact> {

@@ -450,3 +450,21 @@ test( 'light intensity live: light.colorScaled reflects mutated intensity', asyn
 	assert.equal( r4, 4, `expected colorScaled.r at intensity=4 to scale to 4.0, got ${ r4 }` );
 
 } );
+
+test( 'spot light live: the view-space position keeps light.viewPosition provenance', async () => {
+
+	// r185/r186 expose the memoised UniformNode directly; r187dev wraps it in a once() Fn for
+	// single cameras. Either way it must stay a live light source, never a frozen snapshot.
+	const { artifact } = await generateForMaterial( ( { webgpu, core } ) => {
+
+		const light = new core.SpotLight( 0xffffff, 10, 10, Math.PI / 5, 0.25, 1.5 );
+		light.position.set( 2, 4, 2 );
+		const material = new webgpu.MeshStandardNodeMaterial();
+		const mesh = new core.Mesh( new core.BoxGeometry(), material );
+		return { material, name: 'spot-view-position', objects: [ mesh, light, light.target ] };
+
+	} );
+	const kinds = new Set( artifact.uniformPlan.flatMap( ( group ) => ( group.slots || [] ).map( ( slot ) => slot.source && slot.source.kind ) ) );
+	assert.ok( kinds.has( 'light.viewPosition' ), `expected light.viewPosition among ${ [ ...kinds ].join( ', ' ) }` );
+
+} );

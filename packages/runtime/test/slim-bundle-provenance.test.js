@@ -24,6 +24,14 @@ import {
 	SLIM_BUNDLE_VERSIONS,
 	createSlimBundleProvenancePlugin,
 } from '../rollup.config.js';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+
+// The checked-in prebuilt targets the stable release. With the pinned r187dev build installed,
+// verify a candidate bundle by pointing TSLP_TEST_CHECKED_SLIM_DIR at its build directory (or point
+// TSLP_THREE_SOURCE_ROOT at the stable package to verify the checked file).
+const CHECKED_SLIM = process.env.TSLP_TEST_CHECKED_SLIM_DIR || SLIM_BUNDLE_VERSIONS.three === SLIM_THREE_PACKAGE_VERSION
+	? {}
+	: { skip: `checked prebuilt targets three ${ SLIM_THREE_PACKAGE_VERSION }; build inputs resolve ${ SLIM_BUNDLE_VERSIONS.three }` };
 
 const VERSIONS = createSlimBundleVersionIdentity( {
 	threeVersion: '0.185.1',
@@ -209,7 +217,7 @@ test( 'in-memory Rollup emits a post-transform stamp and final-bundle SHA sideca
 
 } );
 
-test( 'checked slim bundle and sidecar match the current source inputs', async () => {
+test( 'checked slim bundle and sidecar match the current source inputs', CHECKED_SLIM, async () => {
 
 	const buildDirectory = process.env.TSLP_TEST_CHECKED_SLIM_DIR || new URL( '../build/', import.meta.url );
 	const [ bundleSource, metadata, expectedSource ] = await Promise.all( [
@@ -234,6 +242,12 @@ async function writeSourceFixture( root ) {
 	const runtimeRoot = join( root, 'runtime' );
 	const contractRoot = join( root, 'contract' );
 	const pluginRoot = join( root, 'plugin' );
+	const inputs = createSlimBundleSourceInputs( {
+		threePackageRoot: threeRoot,
+		runtimePackageRoot: runtimeRoot,
+		contractPackageRoot: contractRoot,
+		pluginPackageRoot: pluginRoot,
+	} );
 	for ( const directory of [
 		join( threeRoot, 'src/math' ),
 		join( runtimeRoot, 'src' ),
@@ -251,6 +265,9 @@ async function writeSourceFixture( root ) {
 		writeFile( join( pluginRoot, 'build-tools/slim-rewrite.js' ), 'export { rewrite } from "../src/three-rewrite.js";\n' ),
 		writeFile( join( pluginRoot, 'src/three-rewrite.js' ), 'export const rewrite = 1;\n' ),
 		writeFile( join( pluginRoot, 'src/three-rewrite-runtime.js' ), 'export const registry = 1;\n' ),
+		...inputs.rewriteImplementationFiles
+			.filter( input => ! [ 'build-tools/slim-rewrite.js', 'src/three-rewrite.js', 'src/three-rewrite-runtime.js' ].includes( input.name ) )
+			.map( input => writeFile( input.file, 'export const helper = 1;\n' ) ),
 		writeFile( join( pluginRoot, 'src/vendor/vendor.js' ), 'export const vendor = 1;\n' ),
 		writeFile( join( runtimeRoot, 'rollup.config.js' ), 'export default {};\n' ),
 		writeFile( join( runtimeRoot, 'build-tools/slim-bundle-analysis.js' ), 'export const analysis = 1;\n' ),
@@ -259,11 +276,6 @@ async function writeSourceFixture( root ) {
 		writeFile( join( pluginRoot, 'package.json' ), '{"name":"vite-plugin-tsl-precompile"}\n' ),
 	] );
 
-	return createSlimBundleSourceInputs( {
-		threePackageRoot: threeRoot,
-		runtimePackageRoot: runtimeRoot,
-		contractPackageRoot: contractRoot,
-		pluginPackageRoot: pluginRoot,
-	} );
+	return inputs;
 
 }

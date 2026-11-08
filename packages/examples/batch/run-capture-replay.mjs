@@ -13,6 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
+import { launchOwnedBrowser, closeOwnedEvidenceBrowser } from './e2e-browser-process.mjs';
 import { OCEAN_DIAGNOSTIC_ARTIFACTS_DIR_ENV } from '../ocean/artifacts-dir.js';
 import {
 	fatalCaptureReplayBrowserErrors,
@@ -90,19 +91,24 @@ async function waitForVite( state ) {
 
 async function launchBrowser() {
 
-	try {
+	const launched = await launchOwnedBrowser( async () => {
 
-		return await chromium.launch( {
-			channel: 'chrome',
-			headless: true,
-			args: BROWSER_ARGS,
-		} );
+		try {
 
-	} catch {
+			return { browser: await chromium.launch( {
+				channel: 'chrome',
+				headless: true,
+				args: BROWSER_ARGS,
+			} ), channel: 'chrome' };
 
-		return chromium.launch( { headless: true, args: BROWSER_ARGS } );
+		} catch {
 
-	}
+			return { browser: await chromium.launch( { headless: true, args: BROWSER_ARGS } ), channel: 'playwright-chromium' };
+
+		}
+
+	} );
+	return launched.browser;
 
 }
 
@@ -194,7 +200,7 @@ async function main() {
 
 		await context.close();
 		context = null;
-		await browser.close();
+		await closeOwnedEvidenceBrowser( browser );
 		browser = null;
 		await stopOwnedChild( vite, 'Capture replay Vite server' );
 		vite = null;
@@ -256,7 +262,7 @@ async function main() {
 		}
 		if ( browser ) {
 
-			try { await browser.close(); } catch ( error ) { cleanupErrors.push( error ); }
+			try { await closeOwnedEvidenceBrowser( browser ); } catch ( error ) { cleanupErrors.push( error ); }
 
 		}
 		if ( vite ) {

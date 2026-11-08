@@ -40,6 +40,7 @@ class PrecompiledMaterial extends Material {
 	constructor( artifact ) {
 
 		super();
+		this.type = this.constructor.type;
 
 		if ( ! artifact || typeof artifact !== 'object' ) {
 

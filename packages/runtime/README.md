@@ -18,10 +18,10 @@ pnpm add @tsl-precompile/runtime@alpha
 TypeScript projects must install the matching declarations:
 
 ```sh
-pnpm add -D @types/three@0.185.1 --save-exact
+pnpm add -D @types/three@0.186.0 --save-exact
 ```
 
-The required peer is exactly `three@0.185.1`. `@types/three@0.185.1` is an
+The required peer is exactly `three@0.186.1`. `@types/three@0.186.0` is an
 optional peer for JavaScript consumers and required for TypeScript projects.
 Supporting another Three patch requires the documented re-vendoring,
 compatibility validation, and artifact recapture workflow before widening or
@@ -196,8 +196,10 @@ fallback**. For new Vite apps, the preferred primary renderer is the guarded
 `slim: 'source'` profile; its checked Three r185 minimal and advanced
 regression baselines and caps are single-sourced in
 [`build-tools/slim-budget.json`](build-tools/slim-budget.json).
-`pnpm analyze:slim` reports the current exact values. Features that still need
-live TSL compilation boot a full
+The checked gzip-9 baseline → cap pairs are 186,724 → 194,468 bytes for
+source-minimal, 196,230 → 204,740 bytes for source-advanced, and 277,936 →
+281,669 bytes for the prebuilt renderer. `pnpm analyze:slim` reports
+the current exact values. Features that still need live TSL compilation boot a full
 `WebGPURenderer` on the **same `GPUDevice`** and share GPU textures/buffers back
 into slim.
 

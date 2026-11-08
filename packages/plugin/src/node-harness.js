@@ -24,7 +24,8 @@
 import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js';
 import { computeArtifactContentHash, computeArtifactHash } from './hash.js';
 import { compileTSL, extractArtifact } from './vendor/compileTSL.js';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { captureEmitterOptions, withInstalledCaptureEmitter } from './capture-emitter-identity.js';
+import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { createRenderContextSignature } from '@tsl-precompile/contract/render-context';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
@@ -73,115 +74,139 @@ async function importThree() {
 export async function extractMaterial( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
+	const emitterOptions = captureEmitterOptions( core, opts );
 
 	const renderer = new webgpu.WebGPURenderer( {
 		canvas: makeFakeCanvas(),
 		antialias: false,
 	} );
 	await renderer.init();
+	let ownedGeometry = null;
 
-	const { material, name, objects = [], camera: userCamera, configureRenderer } = await factory( { webgpu, core, tsl } );
+	try {
 
-	// Optional hook so fixtures can flip renderer.shadowMap.enabled = true,
-	// configure tonemapping, etc. before compileTSL runs. Without this hook
-	// shadow-receiving materials never trigger ShadowNode.setupShadow() (it
-	// no-ops when renderer.shadowMap.enabled === false), so the extractor
-	// can't see the shadow uniform references.
-	if ( typeof configureRenderer === 'function' ) {
+		const { material, name, objects = [], camera: userCamera, configureRenderer } = await factory( { webgpu, core, tsl } );
 
-		configureRenderer( renderer );
+		// Optional hook so fixtures can flip renderer.shadowMap.enabled = true,
+		// configure tonemapping, etc. before compileTSL runs. Without this hook
+		// shadow-receiving materials never trigger ShadowNode.setupShadow() (it
+		// no-ops when renderer.shadowMap.enabled === false), so the extractor
+		// can't see the shadow uniform references.
+		if ( typeof configureRenderer === 'function' ) {
 
-	}
+			configureRenderer( renderer );
 
-	const scene = new core.Scene();
-	let sourceObject = null;
-	// Minimal renderable to drive the material through the extractor: unless
-	// the user supplied their own objects, attach a unit mesh.
-	if ( objects.length === 0 ) {
+		}
 
-		const geom = new core.BoxGeometry( 1, 1, 1 );
-		const mesh = new core.Mesh( geom, material );
-		scene.add( mesh );
-		sourceObject = mesh;
+		const scene = new core.Scene();
+		scene.userData.__tslpSyntheticCaptureScene = true;
+		let sourceObject = null;
+		// Minimal renderable to drive the material through the extractor: unless
+		// the user supplied their own objects, attach a unit mesh.
+		if ( objects.length === 0 ) {
 
-	} else {
+			ownedGeometry = new core.BoxGeometry( 1, 1, 1 );
+			const mesh = new core.Mesh( ownedGeometry, material );
+			scene.add( mesh );
+			sourceObject = mesh;
 
-		for ( const obj of objects ) scene.add( obj );
-		sourceObject = objects.find( ( object ) => {
+		} else {
 
-			const materials = Array.isArray( object && object.material ) ? object.material : [ object && object.material ];
-			return materials.includes( material );
+			for ( const obj of objects ) scene.add( obj );
+			sourceObject = objects.find( ( object ) => {
 
-		} ) || objects[ 0 ] || null;
+				const materials = Array.isArray( object && object.material ) ? object.material : [ object && object.material ];
+				return materials.includes( material );
 
-	}
+			} ) || objects[ 0 ] || null;
 
-	const camera = userCamera || new core.PerspectiveCamera( 45, 1, 0.1, 100 );
-	camera.position.set( 0, 0, 3 );
-	camera.lookAt( 0, 0, 0 );
+		}
 
-	const artifacts = await compileTSL( renderer, scene, camera );
+		const camera = userCamera || new core.PerspectiveCamera( 45, 1, 0.1, 100 );
+		camera.position.set( 0, 0, 3 );
+		camera.lookAt( 0, 0, 0 );
 
-	// Pick the artifact matching this material's uuid. `compileTSL` attaches
-	// `artifacts.byMaterialUuid` for fast lookup. Fall back to a shape match
-	// if the user-facing material got wrapped by the renderer.
-	let artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid );
-	if ( ! artifact ) {
+		const artifacts = await compileTSL( renderer, scene, camera );
 
-		for ( const a of artifacts ) {
+		// Pick the artifact matching this material's uuid. `compileTSL` attaches
+		// `artifacts.byMaterialUuid` for fast lookup. Fall back to a shape match
+		// if the user-facing material got wrapped by the renderer.
+		let artifact = artifacts.byMaterialUuid && artifacts.byMaterialUuid.get( material.uuid );
+		if ( ! artifact ) {
 
-			if ( a.materialUuid === material.uuid ) { artifact = a; break; }
+			for ( const a of artifacts ) {
+
+				if ( a.materialUuid === material.uuid ) { artifact = a; break; }
+
+			}
+
+		}
+
+		if ( ! artifact ) {
+
+			throw new Error( `NodeHarness: no artifact extracted for material uuid=${ material.uuid } name=${ JSON.stringify( name ) }. Captured ${ artifacts.length } artifacts. The material likely did not flow through NodeManager.getForRender — are you sure it's attached to a renderable object?` );
+
+		}
+
+		const { threeVersion } = emitterOptions;
+		const toolchainVersion = opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
+		const renderContextSignature = createRenderContextSignature( {
+			renderer,
+			scene,
+			camera,
+			object: sourceObject,
+			material,
+			mrt: typeof renderer.getMRT === 'function' ? renderer.getMRT() : null,
+		} );
+		const sourceGraphHash = computeArtifactHash( material, {
+			name,
+			...emitterOptions,
+			threeVersion,
+			pluginVersion: toolchainVersion,
+			renderContextSignature,
+		} );
+		artifact.sourceGraphHash = sourceGraphHash;
+		artifact.sourceHashVersion = toolchainVersion;
+		artifact.sourceThreeVersion = threeVersion;
+		Object.assign( artifact, createThreeEmitterSourceFields( emitterOptions ) );
+		artifact.renderContextSignature = renderContextSignature;
+		artifact.sourceValidationMode = 'runtime-graph';
+		artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
+		const hash = computeArtifactContentHash( artifact, {
+			shape: `material:${ name }`,
+			...emitterOptions,
+			threeVersion,
+			pluginVersion: toolchainVersion,
+		} );
+
+		artifact.__hash = hash;
+		artifact.__name = name;
+
+		return {
+			artifact,
+			hash,
+			wgslVertex: artifact.vertexShader,
+			wgslFragment: artifact.fragmentShader,
+		};
+
+	} finally {
+
+		// Only the default mesh geometry belongs to the harness. Dispose it
+		// while renderer listeners are still installed, then release renderer
+		// state on every exit after initialization, including factory and
+		// compilation failures.
+		try {
+
+			if ( ownedGeometry ) ownedGeometry.dispose();
+
+		} finally {
+
+			if ( typeof renderer.dispose === 'function' ) await renderer.dispose();
 
 		}
 
 	}
-
-	if ( ! artifact ) {
-
-		throw new Error( `NodeHarness: no artifact extracted for material uuid=${ material.uuid } name=${ JSON.stringify( name ) }. Captured ${ artifacts.length } artifacts. The material likely did not flow through NodeManager.getForRender — are you sure it's attached to a renderable object?` );
-
-	}
-
-	const threeVersion = opts.threeVersion || SLIM_THREE_PACKAGE_VERSION;
-	const toolchainVersion = opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
-	const renderContextSignature = createRenderContextSignature( {
-		renderer,
-		scene,
-		camera,
-		object: sourceObject,
-		material,
-		mrt: typeof renderer.getMRT === 'function' ? renderer.getMRT() : null,
-	} );
-	const sourceGraphHash = computeArtifactHash( material, {
-		name,
-		threeVersion,
-		pluginVersion: toolchainVersion,
-		renderContextSignature,
-	} );
-	artifact.sourceGraphHash = sourceGraphHash;
-	artifact.sourceHashVersion = toolchainVersion;
-	artifact.sourceThreeVersion = threeVersion;
-	artifact.renderContextSignature = renderContextSignature;
-	artifact.sourceValidationMode = 'runtime-graph';
-	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
-	const hash = computeArtifactContentHash( artifact, {
-		shape: `material:${ name }`,
-		threeVersion,
-		pluginVersion: toolchainVersion,
-	} );
-
-	artifact.__hash = hash;
-	artifact.__name = name;
-
-	// Dispose the renderer so repeated harness calls don't accumulate buffers.
-	if ( typeof renderer.dispose === 'function' ) renderer.dispose();
-
-	return {
-		artifact,
-		hash,
-		wgslVertex: artifact.vertexShader,
-		wgslFragment: artifact.fragmentShader,
-	};
 
 }
 

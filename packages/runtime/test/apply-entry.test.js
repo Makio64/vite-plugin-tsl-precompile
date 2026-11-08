@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { MATERIAL_SHADER_FAMILY } from '@tsl-precompile/contract/render-selector';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -8,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import { rollup } from 'rollup';
 
-import { __applyPrecompiled as applyDevelopment } from '../src/apply-precompiled-development.js';
-import { __applyPrecompiled as applyProduction } from '../src/apply-precompiled.js';
+import { __applyPrecompiled as applyDevelopment, __applyPrecompiledCallsite as applyCallsiteDevelopment } from '../src/apply-precompiled-development.js';
+import { __applyPrecompiled as applyProduction, __applyPrecompiledCallsite as applyCallsiteProduction } from '../src/apply-precompiled.js';
 import * as fullApplyEntry from '../src/apply-precompiled-full.js';
 import { getArtifact } from '../src/artifact-loader.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
@@ -99,6 +100,20 @@ test( 'packed runtime includes the full apply implementation and narrow declarat
 
 } );
 
+test( 'call-site apply keeps development schema validation', () => {
+
+	const module = {
+		__hash: 'invalid-callsite-schema', name: 'invalid-callsite-schema', __sourceValidationMode: 'callsite',
+		artifact: {
+			vertexShader: 'v', fragmentShader: 'f',
+			uniformPlan: [ { slots: [ { source: { kind: 'mystery.kind' } } ] } ],
+		},
+	};
+	assert.throws( () => applyCallsiteDevelopment( {}, module, module.__hash ), /unknown source\.kind.*mystery\.kind/s );
+	assert.equal( getArtifact( module.name ), null );
+
+} );
+
 test( 'full apply validates and registers artifacts without replacing the live NodeMaterial', () => {
 
 	assert.deepEqual( Object.keys( fullApplyEntry ), [ '__applyPrecompiled' ] );
@@ -127,6 +142,7 @@ test( 'full apply validates and registers artifacts without replacing the live N
 	assert.equal( material.isNodeMaterial, true );
 	assert.equal( material.isPrecompiledMaterial, undefined );
 	assert.equal( material.colorNode, liveNode );
+	assert.equal( material[ MATERIAL_SHADER_FAMILY ], artifactModule.name );
 	assert.equal( artifactModule.artifact._generatedUpdate, undefined, 'full mode does not retain replay-only updater closures' );
 	assert.deepEqual( getArtifact( artifactModule.name ), {
 		__hash: artifactModule.__hash,
@@ -150,6 +166,32 @@ test( 'full apply validates and registers artifacts without replacing the live N
 	assert.equal( replayed, replayMaterial, 'slim replay preserves the author object identity' );
 	assert.equal( replayMaterial.isPrecompiledMaterial, true, 'slim replay still adopts PrecompiledMaterial behavior' );
 	assert.notEqual( Object.getPrototypeOf( replayMaterial ), originalPrototype );
+
+} );
+
+test( 'slim adoption preserves custom material methods, private state and cloned shader ownership', () => {
+
+	class CustomMaterial {
+
+		#value = 1;
+		setMotion( value ) { this.#value = value; return this; }
+		getMotion() { return this.#value; }
+		clone() { return new CustomMaterial().setMotion( this.#value ); }
+
+	}
+	const source = new CustomMaterial();
+	const module = { name: 'custom-class', __hash: 'custom-class', artifact: { uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' } };
+	const material = applyProduction( source, module, module.__hash );
+	assert.equal( material, source );
+	assert.ok( material instanceof CustomMaterial );
+	assert.equal( material.setMotion( 7 ).getMotion(), 7 );
+	assert.match( material.customProgramCacheKey(), /^tslp:/ );
+	const clone = material.clone();
+	assert.ok( clone instanceof CustomMaterial );
+	assert.equal( clone.getMotion(), 7 );
+	assert.equal( clone.isPrecompiledMaterial, true );
+	assert.equal( clone.precompiledArtifact, material.precompiledArtifact );
+	assert.equal( clone[ MATERIAL_SHADER_FAMILY ], module.name );
 
 } );
 
@@ -179,55 +221,61 @@ test( 'full apply rejects a stale live source graph before registration', () => 
 
 test( 'production apply keeps source freshness while excluding the schema registry', async () => {
 
-	const entry = resolve( RUNTIME_ROOT, 'test/__apply-production-entry.js' );
-	const bundle = await rollup( {
-		input: entry,
-		treeshake: true,
-		plugins: [
-			{
-				name: 'tslp-production-apply-entry-test',
-				resolveId( id ) {
+	for ( const applyName of [ '__applyPrecompiled', '__applyPrecompiledCallsite' ] ) {
 
-					if ( id === entry ) return id;
-					return null;
+		const entry = resolve( RUNTIME_ROOT, 'test/__apply-production-entry.js' );
+		const bundle = await rollup( {
+			input: entry,
+			treeshake: true,
+			plugins: [
+				{
+					name: 'tslp-production-apply-entry-test',
+					resolveId( id ) {
 
+						if ( id === entry ) return id;
+						return null;
+
+					},
+					load( id ) {
+
+						if ( id !== entry ) return null;
+						return `export { ${ applyName } } from '@tsl-precompile/runtime/apply';`;
+
+					},
 				},
-				load( id ) {
+				nodeResolve( { extensions: [ '.js' ], exportConditions: [ 'production' ] } ),
+			],
+			onwarn( warning ) {
 
-					if ( id !== entry ) return null;
-					return "export { __applyPrecompiled } from '@tsl-precompile/runtime/apply';";
+				throw new Error( warning.message );
 
-				},
 			},
-			nodeResolve( { extensions: [ '.js' ], exportConditions: [ 'production' ] } ),
-		],
-		onwarn( warning ) {
+		} );
 
-			throw new Error( warning.message );
+		try {
 
-		},
-	} );
+			const generated = await bundle.generate( { format: 'es' } );
+			const chunk = generated.output.find( ( output ) => output.type === 'chunk' );
+			assert.ok( chunk );
+			const rendered = Object.entries( chunk.modules ).filter( ( [ , info ] ) => info.renderedLength > 0 );
+			const moduleIds = rendered.map( ( [ id ] ) => id.replaceAll( '\\', '/' ) );
+			const runtimeModules = rendered
+				.filter( ( [ id ] ) => resolve( id ).startsWith( `${ RUNTIME_SRC }/` ) )
+				.map( ( [ id ] ) => relative( RUNTIME_SRC, id ).replaceAll( '\\', '/' ) );
 
-	try {
+			assert.equal( runtimeModules.includes( 'apply-precompiled.js' ), true );
+			assert.equal( runtimeModules.includes( 'apply-precompiled-development.js' ), false );
+			assert.equal( /function hashMaterialSync\(/.test( chunk.code ), applyName === '__applyPrecompiled', 'only the ordinary entry retains runtime material graph hashing' );
+			assert.equal( /function mergeArtifactVariantFamily\(/.test( chunk.code ), applyName === '__applyPrecompiled', 'only manual application retains runtime renderer-family merging' );
+			assert.equal( /function createMaterialSourceHashPayload\(/.test( chunk.code ), applyName === '__applyPrecompiled' );
+			assert.equal( moduleIds.some( ( id ) => id.endsWith( '/packages/contract/src/kinds.js' ) ), false );
+			assert.doesNotMatch( chunk.code, /invalid artifact|mystery\.kind|__TSLP_VALIDATE_ARTIFACTS|__applyPrecompiledWithValidation/ );
 
-		const generated = await bundle.generate( { format: 'es' } );
-		const chunk = generated.output.find( ( output ) => output.type === 'chunk' );
-		assert.ok( chunk );
-		const rendered = Object.entries( chunk.modules ).filter( ( [ , info ] ) => info.renderedLength > 0 );
-		const moduleIds = rendered.map( ( [ id ] ) => id.replaceAll( '\\', '/' ) );
-		const runtimeModules = rendered
-			.filter( ( [ id ] ) => resolve( id ).startsWith( `${ RUNTIME_SRC }/` ) )
-			.map( ( [ id ] ) => relative( RUNTIME_SRC, id ).replaceAll( '\\', '/' ) );
+		} finally {
 
-		assert.equal( runtimeModules.includes( 'apply-precompiled.js' ), true );
-		assert.equal( runtimeModules.includes( 'apply-precompiled-development.js' ), false );
-		assert.equal( runtimeModules.includes( 'graph-hash.js' ), true, 'source freshness must stay in production' );
-		assert.equal( moduleIds.some( ( id ) => id.endsWith( '/packages/contract/src/kinds.js' ) ), false );
-		assert.doesNotMatch( chunk.code, /invalid artifact|mystery\.kind|__TSLP_VALIDATE_ARTIFACTS|__applyPrecompiledWithValidation/ );
+			await bundle.close();
 
-	} finally {
-
-		await bundle.close();
+		}
 
 	}
 
@@ -282,6 +330,27 @@ test( 'full production apply excludes replay material classes and Three source c
 	} finally {
 
 		await bundle.close();
+
+	}
+
+} );
+
+
+test( 'call-site auxiliary application requires the generated hook and preserves the source material', () => {
+
+	for ( const shape of [ 'shadow-depth', 'render-pipeline', 'output-transform' ] ) {
+
+		const module = {
+			name: `hook-${ shape }`, __hash: `hook-${ shape }`, __sourceValidationMode: 'callsite',
+			artifact: { materialShape: shape, uniformPlan: [], vertexShader: 'v', fragmentShader: 'f' },
+		};
+		const material = {};
+		assert.throws( () => applyCallsiteProduction( material, module, module.__hash ), /requires its generated registration hook/ );
+		assert.equal( getArtifact( module.name ), null, 'missing hooks fail before registration' );
+		let registered;
+		module.__registerAuxiliary = artifacts => { registered = artifacts; };
+		assert.equal( applyCallsiteProduction( material, module, module.__hash ), material );
+		assert.deepEqual( registered, [ module.artifact ] );
 
 	}
 

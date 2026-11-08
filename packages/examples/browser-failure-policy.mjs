@@ -6,6 +6,7 @@ const POLICY_PATH = fileURLToPath( import.meta.url );
 const HTTP_PROTOCOLS = new Set( [ 'http:', 'https:' ] );
 const INTENTIONAL_NON_NETWORK_PROTOCOLS = new Set( [ 'about:', 'blob:', 'data:' ] );
 const RESOURCE_LOAD_ERROR = /^Failed to load resource(?::[\s\S]*)?$/i;
+const EXACT_ABORTED_NETWORK_ERROR = /^net::ERR_ABORTED$/i;
 
 export const BROWSER_FAILURE_POLICY_SHA256 = createHash( 'sha256' )
 	.update( readFileSync( POLICY_PATH ) )
@@ -59,6 +60,86 @@ function normalizeMessage( value, fallback ) {
 
 	const message = String( value ?? '' ).trim();
 	return message || fallback;
+
+}
+
+function requestKey( method, url ) {
+
+	const parsed = parseUrl( url );
+	if ( ! parsed || ! HTTP_PROTOCOLS.has( parsed.protocol ) ) return null;
+	return JSON.stringify( [ normalizeMethod( method ), url ] );
+
+}
+
+function isSuccessfulHttpStatus( value ) {
+
+	const status = Number( value );
+	return Number.isInteger( status ) && status >= 200 && status < 400;
+
+}
+
+function responseHeaders( response ) {
+
+	try {
+
+		return typeof response?.headers === 'function' ? response.headers() : null;
+
+	} catch {
+
+		return null;
+
+	}
+
+}
+
+function exactPositiveContentLength( headers ) {
+
+	if ( ! headers || typeof headers !== 'object' ) return null;
+	const entry = Object.entries( headers ).find( ( [ name ] ) => name.toLowerCase() === 'content-length' );
+	const value = entry?.[ 1 ];
+	if ( typeof value !== 'string' || ! /^(?:0|[1-9]\d*)$/.test( value ) ) return null;
+	const length = Number( value );
+	return Number.isSafeInteger( length ) && length > 0 ? length : null;
+
+}
+
+async function hasCompleteSameRequestResponse( request, candidate ) {
+
+	if ( ! candidate || candidate.status < 200 || candidate.status >= 300 ) return false;
+	const contentLength = exactPositiveContentLength( candidate.headers );
+	if ( contentLength === null || typeof request?.sizes !== 'function' ) return false;
+	let timing;
+	try {
+
+		timing = typeof request.timing === 'function' ? request.timing() : null;
+
+	} catch {
+
+		return false;
+
+	}
+	const responseStart = Number( timing?.responseStart );
+	const responseEnd = Number( timing?.responseEnd );
+	if ( ! Number.isFinite( responseStart ) || responseStart < 0 ) return false;
+	if ( ! Number.isFinite( responseEnd ) || responseEnd < responseStart ) return false;
+	try {
+
+		const sizes = await request.sizes();
+		return Number.isSafeInteger( sizes?.responseBodySize ) && sizes.responseBodySize === contentLength;
+
+	} catch {
+
+		return false;
+
+	}
+
+}
+
+function reconcilableAbortedRequestKey( entry ) {
+
+	if ( entry?.kind !== 'requestfailed' ) return null;
+	if ( ! EXACT_ABORTED_NETWORK_ERROR.test( entry.message ) ) return null;
+	return requestKey( entry.method, entry.url );
 
 }
 
@@ -154,8 +235,30 @@ function requestUrl( request ) {
 export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 
 	if ( ! page || typeof page.on !== 'function' ) throw new TypeError( 'a Playwright-like page is required' );
-	const failures = [];
+	const failureRecords = [];
+	const requestIdentities = new WeakMap();
+	const successfulResponseRequests = new WeakMap();
+	const successfulCompletions = [];
+	const pendingCompletionProofs = new Set();
+	let nextRequestIdentity = 1;
+	let observationCount = 0;
 	let pendingExactFaviconConsoleError = false;
+	// A response is completion evidence only after Playwright either emits
+	// requestfinished or reports that the failed request received exactly the
+	// declared response body. Response headers alone cannot excuse an abort.
+	const requestIdentity = ( request ) => {
+
+		if ( ! request || ( typeof request !== 'object' && typeof request !== 'function' ) ) return null;
+		let identity = requestIdentities.get( request );
+		if ( identity === undefined ) {
+
+			identity = nextRequestIdentity ++;
+			requestIdentities.set( request, identity );
+
+		}
+		return identity;
+
+	};
 	const handlers = {
 		pageerror( error ) {
 
@@ -187,6 +290,14 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 		},
 		requestfailed( request ) {
 
+			const responseCandidate = request && successfulResponseRequests.get( request );
+
+			if ( request && ( typeof request === 'object' || typeof request === 'function' ) ) {
+
+				successfulResponseRequests.delete( request );
+
+			}
+
 			let requestFailure = null;
 			try {
 
@@ -197,28 +308,73 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 				requestFailure = null;
 
 			}
-			record( {
+			const failureRecord = record( {
 				kind: 'requestfailed',
 				method: requestMethod( request ),
 				url: requestUrl( request ),
 				message: requestFailure?.errorText || 'unknown network failure',
-			} );
+			}, requestIdentity( request ) );
+			const key = failureRecord && reconcilableAbortedRequestKey( failureRecord.failure );
+			if (
+				key &&
+				responseCandidate?.key === key &&
+				responseCandidate.requestIdentity === failureRecord.requestIdentity
+			) {
+
+				let trackedProof;
+				trackedProof = hasCompleteSameRequestResponse( request, responseCandidate )
+					.then( complete => { failureRecord.sameRequestResponseComplete = complete; } )
+					.finally( () => pendingCompletionProofs.delete( trackedProof ) );
+				pendingCompletionProofs.add( trackedProof );
+
+			}
 
 		},
 		response( response ) {
 
 			const request = typeof response?.request === 'function' ? response.request() : null;
+			const method = requestMethod( request );
+			const status = typeof response?.status === 'function' ? response.status() : Number.NaN;
+			const url = typeof response?.url === 'function' ? response.url() : requestUrl( request );
 			record( {
 				kind: 'response',
-				method: requestMethod( request ),
-				status: typeof response?.status === 'function' ? response.status() : Number.NaN,
-				url: typeof response?.url === 'function' ? response.url() : requestUrl( request ),
+				method,
+				status,
+				url,
 			} );
+			if ( request && ( typeof request === 'object' || typeof request === 'function' ) ) {
+
+				const key = isSuccessfulHttpStatus( status ) ? requestKey( method, url ) : null;
+				if ( key ) {
+
+					successfulResponseRequests.set( request, {
+						headers: responseHeaders( response ),
+						key,
+						requestIdentity: requestIdentity( request ),
+						status,
+					} );
+
+				} else {
+
+					successfulResponseRequests.delete( request );
+
+				}
+
+			}
+
+		},
+		requestfinished( request ) {
+
+			if ( ! request || ( typeof request !== 'object' && typeof request !== 'function' ) ) return;
+			const candidate = successfulResponseRequests.get( request );
+			successfulResponseRequests.delete( request );
+			if ( ! candidate || candidate.key !== requestKey( requestMethod( request ), requestUrl( request ) ) ) return;
+			successfulCompletions.push( { ...candidate, sequence: observationCount ++ } );
 
 		},
 	};
 
-	function record( event ) {
+	function record( event, requestIdentity = null ) {
 
 		const method = normalizeMethod( event.method );
 		const exactFavicon = method === 'GET' && isSameOriginExactFaviconUrl( event.url, pageUrl );
@@ -246,7 +402,10 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 
 		}
 		const result = classifyBrowserFailureEvent( event, { pageUrl } );
-		if ( result ) failures.push( result );
+		if ( ! result ) return null;
+		const failureRecord = { failure: result, requestIdentity, sameRequestResponseComplete: false, sequence: observationCount ++ };
+		failureRecords.push( failureRecord );
+		return failureRecord;
 
 	}
 
@@ -254,13 +413,43 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 
 	function uniqueFailuresSince( checkpoint ) {
 
-		if ( ! Number.isSafeInteger( checkpoint ) || checkpoint < 0 || checkpoint > failures.length ) {
+		if ( ! Number.isSafeInteger( checkpoint ) || checkpoint < 0 || checkpoint > observationCount ) {
 
 			throw new RangeError( `invalid browser failure checkpoint: ${ checkpoint }` );
 
 		}
+		const completionsByKey = new Map();
+		for ( const completion of successfulCompletions ) {
+
+			if ( completion.sequence < checkpoint ) continue;
+			const entries = completionsByKey.get( completion.key ) || [];
+			entries.push( completion );
+			completionsByKey.set( completion.key, entries );
+
+		}
+		const reconciled = [];
+		for ( const record of failureRecords ) {
+
+			if ( record.sequence < checkpoint ) continue;
+			if ( record.sameRequestResponseComplete ) continue;
+			const key = reconcilableAbortedRequestKey( record.failure );
+			const completions = key ? completionsByKey.get( key ) || [] : [];
+			const completionIndex = record.requestIdentity === null
+				? - 1
+				: completions.findIndex( completion =>
+					completion.requestIdentity !== record.requestIdentity && completion.sequence > record.sequence,
+				);
+			if ( completionIndex !== - 1 ) {
+
+				completions.splice( completionIndex, 1 );
+				continue;
+
+			}
+			reconciled.push( record.failure );
+
+		}
 		const seen = new Set();
-		return failures.slice( checkpoint ).filter( entry => {
+		return reconciled.filter( entry => {
 
 			const key = JSON.stringify( entry );
 			if ( seen.has( key ) ) return false;
@@ -272,6 +461,15 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 	}
 
 	return {
+		async settle() {
+
+			while ( pendingCompletionProofs.size > 0 ) {
+
+				await Promise.all( [ ...pendingCompletionProofs ] );
+
+			}
+
+		},
 		failures() {
 
 			return uniqueFailuresSince( 0 );
@@ -284,7 +482,7 @@ export function installBrowserFailureCollector( page, { pageUrl } = {} ) {
 		},
 		checkpoint() {
 
-			return failures.length;
+			return observationCount;
 
 		},
 		failuresSince( checkpoint ) {

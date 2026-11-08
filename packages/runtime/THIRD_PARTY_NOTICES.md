@@ -3,15 +3,15 @@
 ## three.js
 
 The prebuilt `@tsl-precompile/runtime/slim` bundle contains transformed and
-bundled portions of three.js release r185 (npm package `three@0.185.1`).
+bundled portions of three.js release r186 (npm package `three@0.186.1`).
 
 - Project: <https://threejs.org/>
-- Source release: <https://github.com/mrdoob/three.js/tree/r185>
-- License source: <https://github.com/mrdoob/three.js/blob/r185/LICENSE>
+- Source release: <https://github.com/mrdoob/three.js/tree/r186>
+- License source: <https://github.com/mrdoob/three.js/blob/r186/LICENSE>
 - License: MIT
 
 The following license text is reproduced verbatim from the official
-`three@0.185.1` `LICENSE` file:
+`three@0.186.1` `LICENSE` file:
 
 ```text
 The MIT License

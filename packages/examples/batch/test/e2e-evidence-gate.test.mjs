@@ -999,7 +999,7 @@ test( 'the runner publishes the gate, merges operation outcomes, and keeps optio
 
 	assert.match( runnerSource, /import \{ createE2EEvidenceGate \} from '\.\/e2e-evidence-gate\.mjs';/ );
 	assert.match( runnerSource, /import \{ installBrowserFailureCollector \} from '\.\.\/browser-failure-policy\.mjs';/ );
-	assert.match( runnerSource, /const browserFailures = installBrowserFailureCollector\( page, \{ pageUrl \} \);/ );
+	assert.match( runnerSource, /\bbrowserFailures = installBrowserFailureCollector\( page, \{ pageUrl \} \);/ );
 	assert.match( runnerSource, /\[ \.\.\.browserFailures\.messages\(\), \.\.\.errors \]/ );
 	assert.match( runnerSource, /browserFailures\.dispose\(\);/ );
 	assert.doesNotMatch( runnerSource, /harness asset failed:/ );

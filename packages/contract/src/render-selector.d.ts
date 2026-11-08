@@ -5,6 +5,7 @@ export const RENDER_BINDING_OWNER_KINDS: Readonly<{
 	SHADOW_CASTER: 'shadow-caster';
 }>;
 export const RENDER_BINDING_OWNER_MATERIAL: symbol;
+export const MATERIAL_SHADER_FAMILY: symbol;
 export const SHADOW_CASTER_COPIED_BINDING_PROPERTIES: readonly string[];
 
 export type RenderBindingOwnerKind = 'render-material' | 'shadow-caster';
@@ -38,6 +39,7 @@ export function createBackgroundCaptureTargetTopologyKey(
 	mrtNode?: unknown,
 ): string;
 export function projectRenderObjectContextSelector( selector: unknown, profile: unknown ): string;
+export function createProjectedRenderObjectContextSelector( renderObject: unknown, renderer?: unknown, profile?: unknown ): string;
 export function describeShadowCasterMaterial( sourceMaterial: unknown ): StringRecord | null;
 export function createShadowCasterTopologySelector( sourceMaterial: unknown ): string;
 export function resolveRenderObjectBindingOwner(

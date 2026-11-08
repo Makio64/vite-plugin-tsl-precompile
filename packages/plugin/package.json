@@ -34,6 +34,10 @@
       "types": "./types/build/slim-rewrite.d.ts",
       "default": "./build-tools/slim-rewrite.js"
     },
+    "./build/capture-request": {
+      "types": "./types/build/capture-request.d.ts",
+      "default": "./build-tools/capture-request.js"
+    },
     "./src/emit-updater.js": {
       "types": "./types/emit-updater.d.ts",
       "default": "./src/emit-updater.js"
@@ -51,13 +55,13 @@
     "types"
   ],
   "scripts": {
-    "test": "node test/run-tier.mjs quick",
-    "test:quick": "node test/run-tier.mjs quick",
-    "test:unit": "node test/run-tier.mjs unit",
-    "test:full": "node test/run-tier.mjs full",
-    "test:generation": "node test/run-tier.mjs generation",
-    "test:rewrite": "node test/run-tier.mjs rewrite",
-    "test:coverage": "node test/run-tier.mjs coverage",
+    "test": "node ../../scripts/test.mjs quick --scope=plugin",
+    "test:quick": "node ../../scripts/test.mjs quick --scope=plugin",
+    "test:unit": "node ../../scripts/test.mjs unit --scope=plugin",
+    "test:full": "node ../../scripts/test.mjs full --scope=plugin",
+    "test:generation": "node ../../scripts/test.mjs generation --scope=plugin",
+    "test:rewrite": "node ../../scripts/test.mjs rewrite --scope=plugin",
+    "test:coverage": "node ../../scripts/test.mjs coverage --scope=plugin",
     "verify": "node src/cli/verify.js",
     "recapture": "node src/cli/recapture.js",
     "install-skill": "node scripts/sync-agent-skill.mjs && node src/cli/install-skill.js",
@@ -67,8 +71,8 @@
   },
   "peerDependencies": {
     "@tsl-precompile/runtime": "workspace:*",
-    "@types/three": "0.185.1",
-    "three": "0.185.1",
+    "@types/three": "0.186.0",
+    "three": "0.186.0 || 0.186.1",
     "vite": ">=6.4.3 <9"
   },
   "peerDependenciesMeta": {

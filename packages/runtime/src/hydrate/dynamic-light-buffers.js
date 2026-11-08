@@ -2,9 +2,22 @@ import { Vector3 } from 'three/src/math/Vector3.js';
 
 const _lightPos = new Vector3();
 
+export function createDynamicLightUniformUpdater( artifact, group ) {
+
+	const plan = getDynamicLightPlan( artifact, group );
+	return plan ? ( view, buffers, frame ) => writeDynamicLightUniforms( plan, view, buffers, frame ) : null;
+
+}
+
 export function updateDynamicLightUniforms( artifact, group, renderView, uniformBuffers, frame ) {
 
 	const plan = getDynamicLightPlan( artifact, group );
+	return writeDynamicLightUniforms( plan, renderView, uniformBuffers, frame );
+
+}
+
+function writeDynamicLightUniforms( plan, renderView, uniformBuffers, frame ) {
+
 	if ( ! plan ) return false;
 	const scene = frame && frame.scene;
 	const camera = frame && frame.camera;

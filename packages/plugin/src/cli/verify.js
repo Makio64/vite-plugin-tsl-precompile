@@ -22,11 +22,16 @@ import { fingerprintArtifactShape } from '@tsl-precompile/contract/artifact-shap
 import { isArtifactCollection, validateArtifact } from '@tsl-precompile/contract/kinds';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from '@tsl-precompile/contract/slim-three-policy';
+import { artifactEmitterHashFields } from '../dev-capture-release.js';
 import { computeArtifactContentHash } from '../hash.js';
 import { loadArtifactDirectory } from '../artifact-directory-loader.js';
 import { collectExpectedMarkerCoverage, parseVerifyArgs, VERIFY_HELP } from './verify-support.js';
 import { normalizeMarkerSourceProvenance } from '../_shared/source-provenance.js';
+
+// Version-only signatures from development builds never identify their emitter: the pinned
+// package version, and the nominal 0.186.0 that Three's dev branch (and the previous pin) carries.
+const DEVELOPMENT_PACKAGE_VERSIONS = new Set( [ THREE_RELEASE_PROFILES.development.packageVersion, '0.186.0' ] );
 
 verifyMain: {
 const rawArgs = process.argv.slice( 2 );
@@ -528,9 +533,9 @@ function formatMissingMarkerCoverageIssue( marker ) {
 
 function validateExpectedAuxProvenance( value, label ) {
 
-	if ( value.threeVersion !== SLIM_THREE_PACKAGE_VERSION ) {
+	if ( ! resolveSlimThreeRelease( { packageVersion: value.threeVersion, revision: value.threeRevision, sourceCommit: value.threeCommit } ) ) {
 
-		issues.push( `${ label }: threeVersion must be exact current baseline ${ SLIM_THREE_PACKAGE_VERSION }` );
+		issues.push( `${ label }: threeVersion must be exact current baseline ${ SLIM_THREE_PACKAGE_VERSION } or the pinned r187dev revision/commit. Recapture with the verified emitter.` );
 
 	}
 	if ( value.pluginVersion !== ARTIFACT_TOOLCHAIN_VERSION ) {
@@ -555,7 +560,7 @@ async function validateAuxManifestEnvelopeAgreement( dir, key, manifestEntry ) {
 
 	}
 	if ( ! envelope || typeof envelope !== 'object' || Array.isArray( envelope ) ) return;
-	for ( const field of [ 'threeVersion', 'pluginVersion' ] ) {
+	for ( const field of [ 'threeVersion', 'pluginVersion', 'threeRevision', 'threeCommit' ] ) {
 
 		if ( envelope[ field ] !== manifestEntry[ field ] ) {
 
@@ -582,6 +587,7 @@ async function validateAuxManifestEnvelopeAgreement( dir, key, manifestEntry ) {
 			issues.push( `${ path}: artifact sourceHashVersion does not match auxiliary envelope pluginVersion` );
 
 		}
+		for ( const field of [ 'Revision', 'Commit' ] ) if ( artifact[ `sourceThree${ field }` ] !== envelope[ `three${ field }` ] ) issues.push( `${ path }: artifact sourceThree${ field } does not match auxiliary envelope three${ field }` );
 
 	}
 
@@ -615,12 +621,18 @@ function validateArtifactContentHash( envelope, path, opts = {} ) {
 		return;
 
 	}
-	const computed = computeArtifactContentHash( artifact, {
-		shape,
-		threeVersion: artifact.sourceThreeVersion,
-		pluginVersion: artifact.sourceHashVersion,
-	} );
-	if ( computed !== envelope.__hash ) issues.push( `${ path }: stored __hash does not match artifact runtime content` );
+	try {
+
+		const identity = artifactEmitterHashFields( artifact );
+		if ( DEVELOPMENT_PACKAGE_VERSIONS.has( artifact.sourceThreeVersion ) && ! identity.threeRevision ) throw new Error( `Development three ${ artifact.sourceThreeVersion } lacks the pinned r187dev revision/commit. Recapture with the verified emitter.` );
+		const computed = computeArtifactContentHash( artifact, { shape, threeVersion: artifact.sourceThreeVersion, pluginVersion: artifact.sourceHashVersion, ...identity } );
+		if ( computed !== envelope.__hash ) issues.push( `${ path }: stored __hash does not match artifact runtime content` );
+
+	} catch ( error ) {
+
+		issues.push( `${ path }: ${ error.message }` );
+
+	}
 
 }
 

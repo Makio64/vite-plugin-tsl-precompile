@@ -17,6 +17,32 @@ function createBinding( texture ) {
 
 }
 
+for ( const createRebinder of [ createArtifactTextureRebinder, createMaterialTextureRebinder ] ) {
+
+	test( `${ createRebinder.name } preserves a target owner while its binding is pending`, () => {
+
+		const live = { isTexture: true, name: 'output' };
+		live.renderTarget = { textures: [ live ] };
+		const pending = { isTexture: true, name: 'pending' };
+		const source = { textureUuid: 'captured-output', renderTargetSelector: {} };
+		const artifact = { _textureRefs: new Map( [ [ source.textureUuid, live ] ] ) };
+		const binding = createBinding( live );
+		let resolved = pending;
+		const rebinder = createRebinder( [ { artifact, source, binding } ], {
+			resolveTextureBinding: () => resolved,
+		} );
+		rebinder.updateBefore( {} );
+		assert.equal( binding.texture, pending, 'the temporary GPU binding remains usable before the pass' );
+		assert.equal( artifact._textureRefs.get( source.textureUuid ), live, 'the exact future owner remains attached' );
+		resolved = { isTexture: true, name: 'replacement-output' };
+		resolved.renderTarget = { textures: [ resolved ] };
+		rebinder.updateBefore( {} );
+		assert.equal( artifact._textureRefs.get( source.textureUuid ), resolved, 'a real target replacement is retained' );
+
+	} );
+
+}
+
 test( 'material texture rebinder re-resolves material texture bindings', () => {
 
 	const textureA = { uuid: 'a', version: 1 };

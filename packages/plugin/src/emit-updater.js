@@ -36,8 +36,10 @@
  */
 
 import { BLOCKED_KINDS, LIGHT_SLOT_KINDS, blockedKindReason, isBlockedKind } from '@tsl-precompile/contract/kinds';
-import { hasExactLiveUniformOverlayAddress } from '@tsl-precompile/contract/dynamic-bindings';
+import { hasExactLiveUniformOverlayAddress, MATERIAL_UNIFORM_TYPES } from '@tsl-precompile/contract/dynamic-bindings';
 import { normalizeArtifactLightIdentities } from '@tsl-precompile/contract/light-identities';
+import { collectCallerOwnedComputeUniformSlots } from './compute-bindings.js';
+import { frozenJsonLiteral } from './updater-literals.js';
 
 // Back-compat export for older tests/callers. The canonical registry now lives
 // in @tsl-precompile/contract/kinds.
@@ -52,59 +54,6 @@ const GENERATED_LIGHT_SLOT_KINDS = new Set( LIGHT_SLOT_KINDS );
 // property accessor. The legacy switch had ~50 cases that fit this pattern;
 // the tables below let `emitSlotWrite` short-circuit them as a single lookup.
 // Cases not in any table fall through to the switch's per-kind logic.
-
-const MATERIAL_COLOR_KINDS = new Set( [
-	'material.color',
-	'material.emissive',
-	'material.specular',
-	'material.specularColor',
-	'material.sheenColor',
-	'material.attenuationColor',
-] );
-
-const MATERIAL_SCALAR_KINDS = new Set( [
-	'material.scalar',
-	'material.opacity',
-	'material.alphaTest',
-	'material.roughness',
-	'material.metalness',
-	'material.ior',
-	'material.emissiveIntensity',
-	'material.aoMapIntensity',
-	'material.lightMapIntensity',
-	'material.envMapIntensity',
-	'material.specularIntensity',
-	'material.shininess',
-	'material.size',
-	'material.rotation',
-	'material.clearcoat',
-	'material.clearcoatRoughness',
-	'material.sheen',
-	'material.sheenRoughness',
-	'material.transmission',
-	'material.thickness',
-	'material.attenuationDistance',
-	'material.iridescence',
-	'material.iridescenceIOR',
-	'material.anisotropy',
-	'material.anisotropyRotation',
-	'material.dispersion',
-	'material.reflectivity',
-	'material.refractionRatio',
-	'material.bumpScale',
-	'material.displacementScale',
-	'material.displacementBias',
-	'material.linewidth',
-	'material.scale',
-	'material.dashSize',
-	'material.gapSize',
-	'material.dashOffset',
-] );
-
-const MATERIAL_VEC2_KINDS = new Set( [
-	'material.normalScale',
-	'material.clearcoatNormalScale',
-] );
 
 const SCENE_FOG_SCALAR_KINDS = new Set( [
 	'scene.fog.near',
@@ -213,25 +162,12 @@ function emitFromWriterTable( kind, src, off, usedWriters, rendererHelpers ) {
 		return `{ const _v = _tslpVelocity${ velocity.record }(frame); if (_v) writeMat4(view, ${ off }, _v.${ velocity.property }); }`;
 
 	}
-	if ( MATERIAL_COLOR_KINDS.has( kind ) ) {
+	const materialWriter = { color: 'writeColor', f32: 'writeF32', vec2: 'writeVec2' }[ MATERIAL_UNIFORM_TYPES[ kind ] ];
+	if ( materialWriter ) {
 
 		const prop = src.property || kind.split( '.' )[ 1 ];
-		usedWriters.add( 'writeColor' );
-		return `writeColor(view, ${ off }, material.${ prop });`;
-
-	}
-	if ( MATERIAL_SCALAR_KINDS.has( kind ) ) {
-
-		const prop = src.property || kind.split( '.' )[ 1 ];
-		usedWriters.add( 'writeF32' );
-		return `writeF32(view, ${ off }, material.${ prop });`;
-
-	}
-	if ( MATERIAL_VEC2_KINDS.has( kind ) ) {
-
-		const prop = src.property || kind.split( '.' )[ 1 ];
-		usedWriters.add( 'writeVec2' );
-		return `writeVec2(view, ${ off }, material.${ prop });`;
+		usedWriters.add( materialWriter );
+		return `${ materialWriter }(view, ${ off }, material.${ prop });`;
 
 	}
 	if ( SCENE_FOG_SCALAR_KINDS.has( kind ) ) {
@@ -293,14 +229,6 @@ function frozenLightIdentityTableDeclaration( lightIdentities ) {
 
 }
 
-function frozenJsonLiteral( value ) {
-
-	if ( Array.isArray( value ) ) return `Object.freeze([${ value.map( frozenJsonLiteral ).join( ',' ) }])`;
-	if ( value && typeof value === 'object' ) return `Object.freeze({${ Object.entries( value ).map( ( [ key, item ] ) => `${ JSON.stringify( key ) }:${ frozenJsonLiteral( item ) }` ).join( ',' ) }})`;
-	return JSON.stringify( value );
-
-}
-
 /**
  * Generate the source text of an updater module for a single artifact.
  *
@@ -325,6 +253,7 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 	// Tracks which three.js classes need to be imported and scratched for
 	// renderer-side uniforms (screen size / viewport / DPR).
 	const rendererHelpers = new Set();
+	const computeUniformSlots = collectCallerOwnedComputeUniformSlots( normalizedArtifact );
 
 	for ( const group of plan ) {
 
@@ -336,7 +265,9 @@ export function emitUpdaterSource( artifact, opts = {} ) {
 
 		for ( const slot of group.slots ) {
 
-			const writer = emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers, lightSourceRefs );
+			const writer = computeUniformSlots.has( slot ) && slot.source?.kind === 'uniform.live'
+				? '/* Caller-owned uniform: the compute runner writes this exact slot before dispatch. */'
+				: emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, rendererHelpers, lightSourceRefs );
 			lines.push( '    ' + writer );
 
 		}
@@ -700,17 +631,19 @@ function emitSlotWrite( slot, usedWriters, constants, unsupportedKinds, renderer
 			return `writeEnvironmentRotation(view, ${ off }, material, frame.scene);`;
 
 		case 'pmrem.maxMip':
+		case 'pmrem.maxLod':
+		case 'pmrem.size':
 		case 'pmrem.texelWidth':
 		case 'pmrem.texelHeight':
-			usedWriters.add( 'writePMREMScalar' );
-			return `writePMREMScalar(view, ${ off }, ${ JSON.stringify( kind ) }, material && material.precompiledArtifact, material, frame, ${ JSON.stringify( src ) });`;
-
 		case 'texture.uvFlipY': {
 
-			usedWriters.add( 'writeTextureUVFlip' );
-			const sourceRef = `__textureUVFlipSource${ constants.length }`;
+			const pmrem = kind !== 'texture.uvFlipY';
+			usedWriters.add( pmrem ? 'writePMREMScalar' : 'writeTextureUVFlip' );
+			const sourceRef = `${ pmrem ? '__pmremSource' : '__textureUVFlipSource' }${ constants.length }`;
 			constants.push( `const ${ sourceRef } = ${ frozenJsonLiteral( src ) };` );
-			return `writeTextureUVFlip(view, ${ off }, material && material.precompiledArtifact, ${ sourceRef });`;
+			return pmrem
+				? `writePMREMScalar(view, ${ off }, ${ JSON.stringify( kind ) }, material && material.precompiledArtifact, material, frame, ${ sourceRef });`
+				: `writeTextureUVFlip(view, ${ off }, material && material.precompiledArtifact, ${ sourceRef });`;
 
 		}
 

@@ -259,6 +259,13 @@ test( 'extractUniformPlan maps object-owned UniformNode properties', () => {
 	assert.equal( plan[ 0 ].slots[ 0 ].source.kind, 'object3d.nodeUniform' );
 	assert.equal( plan[ 0 ].slots[ 0 ].source.property, 'distortionScale' );
 	assert.deepEqual( plan[ 0 ].slots[ 0 ].source.valueSnapshot, { type: 'number', data: 3.7 } );
+	const material = { distortionScaleNode: distortionScale };
+	const actual = extractUniformPlan( state, { object: { distortionScale }, material } );
+	const synthetic = extractUniformPlan( state, { object: {}, material } );
+	assert.deepEqual( actual, synthetic, 'an exact material alias has stable provenance on real and synthetic meshes' );
+	assert.equal( actual[ 0 ].slots[ 0 ].source.kind, 'uniform.live' );
+	const unrelated = extractUniformPlan( state, { object: { distortionScale }, material: { distortionScaleNode: { ...distortionScale } } } );
+	assert.equal( unrelated[ 0 ].slots[ 0 ].source.kind, 'object3d.nodeUniform', 'matching values are not ownership' );
 
 } );
 

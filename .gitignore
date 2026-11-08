@@ -42,6 +42,8 @@ packages/examples/**/artifacts/
 # checkout must have their captured material and renderer-output artifacts.
 !packages/examples/wow-showcase/artifacts/
 !packages/examples/wow-showcase/artifacts/**
+!packages/examples/performance/artifacts/
+!packages/examples/performance/artifacts/**
 packages/examples/**/.tsl-precompile-cache/
 packages/site/public/live/
 packages/site/public/live-examples.json

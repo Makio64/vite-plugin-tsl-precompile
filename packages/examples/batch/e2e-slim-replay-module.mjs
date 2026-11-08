@@ -1,4 +1,5 @@
 import { selectLateRenderTargetTexturePair } from './late-render-target-textures.mjs';
+import { createReplayRenderPipelineContext, collectReplayRenderPipelineCallbacks } from './replay-render-pipeline-context.mjs';
 
 /**
  * Hold presentation frames at the same loader-readiness boundary used by
@@ -314,7 +315,7 @@ export class ${ name } {
 import * as Slim from ${ JSON.stringify( SLIM_BUNDLE_BROWSER_MODULE ) };
 import { TSL as FullTSL, TextureNode as FullTextureNode, BlendMode as FullBlendMode, TempNode as FullTempNode, NodeUpdateType as FullNodeUpdateType, NodeMaterial as FullNodeMaterial, MeshBasicNodeMaterial as FullMeshBasicNodeMaterial, MeshStandardNodeMaterial as FullMeshStandardNodeMaterial, MeshPhysicalNodeMaterial as FullMeshPhysicalNodeMaterial, MeshLambertNodeMaterial as FullMeshLambertNodeMaterial, MeshPhongNodeMaterial as FullMeshPhongNodeMaterial, MeshToonNodeMaterial as FullMeshToonNodeMaterial, MeshNormalNodeMaterial as FullMeshNormalNodeMaterial, MeshMatcapNodeMaterial as FullMeshMatcapNodeMaterial, MeshSSSNodeMaterial as FullMeshSSSNodeMaterial, VolumeNodeMaterial as FullVolumeNodeMaterial, LineBasicNodeMaterial as FullLineBasicNodeMaterial, LineDashedNodeMaterial as FullLineDashedNodeMaterial, Line2NodeMaterial as FullLine2NodeMaterial, PointsNodeMaterial as FullPointsNodeMaterial, SpriteNodeMaterial as FullSpriteNodeMaterial, ShadowNodeMaterial as FullShadowNodeMaterial, RenderTarget as FullRenderTarget, DepthTexture as FullDepthTexture, ArrayCamera as FullArrayCamera, Controls as FullControls, MOUSE as FullMOUSE, MathUtils as FullMathUtils, Plane as FullPlane, Quaternion as FullQuaternion, Ray as FullRay, Spherical as FullSpherical, TOUCH as FullTOUCH, QuadMesh as FullQuadMesh, RendererUtils as FullRendererUtils, Vector2 as FullVector2, Vector3 as FullVector3, CubeRenderTarget as FullCubeRenderTarget, TextureLoader as FullTextureLoader, CubeTextureLoader as FullCubeTextureLoader, DataTextureLoader as FullDataTextureLoader, ImageBitmapLoader as FullImageBitmapLoader } from '/build/three.webgpu.js';
 import { createLiveSceneIndex, textureImageReady as __sharedTextureImageReady, textureImageSrc as __sharedTextureImageSrc, newFallbackTextureImage as __sharedNewFallbackTextureImage } from '/__tslp_runtime/slim-support/live-scene-index.js';
-import { artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
+import { cloneSceneForPMREM as __sharedCloneSceneForPMREM, artifactNeedsPMREM as __sharedArtifactNeedsPMREM, artifactPMREMSourceUuids as __sharedArtifactPMREMSourceUuids, attachPMREMRefsByOrder as __sharedAttachPMREMRefsByOrder, collectPMREMSourceTexturesFromMaterial as __sharedCollectPMREMSourceTexturesFromMaterial, collectPMREMSourceTexturesInNode as __sharedCollectPMREMSourceTexturesInNode, createPMREMSupport as __sharedCreatePMREMSupport, isPMREMArtifactTextureSource as __sharedIsPMREMArtifactTextureSource, isPMREMTexture as __sharedIsPMREMTexture, selectPMREMTexturesForArtifact as __sharedSelectPMREMTexturesForArtifact, textureListSignature as __sharedTextureListSignature } from '/__tslp_runtime/slim-support/pmrem.js';
 import { clearTextureViewCache as __sharedClearTextureViewCache, isBorrowedShadowRenderTargetTexture as __sharedIsBorrowedShadowRenderTargetTexture, markTextureInitialized as __sharedMarkTextureInitialized, shareGPUTextureEntry as __sharedShareGPUTextureEntry, sharePMREMGPUTexture as __sharedSharePMREMGPUTexture, shareShadowGPUTextureIntoSlim as __sharedShareShadowGpuTextureIntoSlim } from '/__tslp_runtime/slim-support/gpu-texture-share.js';
 import { computeNodeUsesStorageTexture as __sharedComputeNodeUsesStorageTexture, computeSyncNeedsPresentation as __sharedComputeSyncNeedsPresentation, hasAnonymousStorageResourceIdentity as __sharedHasAnonymousStorageResourceIdentity, invokeAlignedFullCompute as __sharedInvokeAlignedFullCompute, shareComputeSampledInputs as __sharedShareComputeSampledInputs, syncComputeStorageOutputs as __sharedSyncComputeStorageOutputs, syncComputeStorageOutputsPerPass as __sharedSyncComputeStorageOutputsPerPass, wireArtifactStorageBuffersFromAttributes as __sharedWireArtifactStorageBuffersFromAttributes, pingPongInvalidate as __sharedPingPongInvalidate, shareInstancedAttributeBufferIntoSlim as __sharedShareInstancedAttributeBufferIntoSlim } from '/__tslp_runtime/slim-support/compute-sync.js';
 import { AUTO_COMPUTE_MATERIAL_PROPERTIES as __AUTO_COMPUTE_SLOTS, createAutoComputeDispatcher as __sharedCreateAutoComputeDispatcher } from '/__tslp_runtime/slim-support/auto-compute.js';
@@ -333,7 +334,7 @@ import { POSTPROCESS_FRAME_ROLES as __POSTPROCESS_FRAME_ROLES, createPostprocess
 import { getLiveNodeDependencies as __sharedGetLiveNodeDependencies } from '/__tslp_runtime/slim-support/node-dependencies.js';
 import { installVelocityProjectionLifecycle as __installVelocityProjectionLifecycle } from '/__tslp_runtime/slim-support/velocity-projection-lifecycle.js';
 import { createPostprocessExecutionPlan as __sharedCreatePostprocessExecutionPlan, postprocessGraphContains as __sharedPostprocessGraphContains } from '/__tslp_runtime/slim-support/postprocess-execution-plan.js';
-import { renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
+import { withMappedSceneMaterials as __sharedWithMappedSceneMaterials, renderOffscreenOverrideWithFullRenderer as __sharedRenderOffscreenOverrideWithFullRenderer } from '/__tslp_runtime/slim-support/pass-render-fallback.js';
 import { findAux as __runtimeFindAux } from '/__tslp_runtime/aux-loader.js';
 import { inspectRuntimeMaterialComputeFamily as __sharedInspectRuntimeMaterialComputeFamily } from '/__tslp_runtime/hydrate/material-compute-ownership.js';
 import { MATERIAL_TEXTURE_PROPS as __TEXTURE_PROPS, MATERIAL_NODE_TEXTURE_KEYS as __NODE_GRAPH_KEYS } from '/__tslp_contract/texture-props.js';
@@ -369,6 +370,8 @@ const __selectReplayPostprocessAuxEntry = ${ selectReplayPostprocessAuxEntry.toS
 const __capturedDebugShaderResult = ${ capturedDebugShaderResult.toString() };
 const __shouldInitializeSharedDeviceFallback = ${ shouldInitializeSharedDeviceFallback.toString() };
 const __selectLateRenderTargetTexturePair = ${ selectLateRenderTargetTexturePair.toString() };
+const __createReplayRenderPipelineContext = ${ createReplayRenderPipelineContext.toString() };
+const __collectReplayRenderPipelineCallbacks = ${ collectReplayRenderPipelineCallbacks.toString() };
 let __replayOperationSequence = 0;
 function __replayOperationNow() {
 	try { return typeof window.__tslpRealNow === 'function' ? window.__tslpRealNow() : Date.now(); } catch ( _ ) { return 0; }
@@ -945,49 +948,12 @@ function __materialForBackdropFullPass( sourceMaterial ) {
 }
 
 function __withSourceMaterialsForFullPass( scene, callback, options = {} ) {
-	const materialForSource = options && typeof options.materialForSource === 'function' ? options.materialForSource : __materialForFullPass;
-	const swaps = [];
-	const swapOne = ( object ) => {
-		const material = object && object.material;
-		if ( ! material ) return;
-		if ( Array.isArray( material ) ) {
-			let changed = false;
-			const next = material.map( ( mat ) => {
-				if ( mat && mat.isPrecompiledMaterial === true && mat.__tslpSourceMaterial ) {
-					changed = true;
-					return materialForSource( mat.__tslpSourceMaterial );
-				}
-				return mat;
-			} );
-			if ( changed ) {
-				swaps.push( { object, material } );
-				object.material = next;
-			}
-		} else if ( material.isPrecompiledMaterial === true && material.__tslpSourceMaterial ) {
-			swaps.push( { object, material } );
-			object.material = materialForSource( material.__tslpSourceMaterial );
-		}
-	};
-	try {
-		if ( scene && scene.overrideMaterial && scene.overrideMaterial.isPrecompiledMaterial === true && scene.overrideMaterial.__tslpSourceMaterial ) {
-			swaps.push( { object: scene, material: scene.overrideMaterial, override: true } );
-			const sourceOverrideMaterial = scene.overrideMaterial.__tslpSourceMaterial;
-			// Keep live node overrides intact. Cloning these through
-			// __materialForFullPass() can change renderer-owned position nodes while
-			// the same override is applied across heterogeneous scene objects.
-			scene.overrideMaterial = sourceOverrideMaterial.isNodeMaterial === true
-				? sourceOverrideMaterial
-				: materialForSource( sourceOverrideMaterial );
-		}
-		if ( scene && typeof scene.traverse === 'function' ) scene.traverse( swapOne );
-		return callback();
-	} finally {
-		for ( let i = swaps.length - 1; i >= 0; i -- ) {
-			const swap = swaps[ i ];
-			if ( swap.override ) swap.object.overrideMaterial = swap.material;
-			else swap.object.material = swap.material;
-		}
-	}
+	const materialForSource = typeof options.materialForSource === 'function' ? options.materialForSource : __materialForFullPass;
+	return __sharedWithMappedSceneMaterials( scene, callback, ( material, { override } ) => {
+		const source = material && material.isPrecompiledMaterial && material.__tslpSourceMaterial;
+		if ( ! source ) return material;
+		return override && source.isNodeMaterial === true ? source : materialForSource( source );
+	} );
 }
 
 function __sharePassRenderTargetFromFullRenderer( slimRenderer, fullRenderer, passNode ) {
@@ -1517,7 +1483,7 @@ function __equivalentBackgroundAuxFallbackHash( auxList ) {
 	return backgrounds[ 0 ].configHash;
 }
 const __backgroundEquivalentFallbackHash = __equivalentBackgroundAuxFallbackHash( __data.aux );
-Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [] );
+Slim.registerAuxArtifacts( Array.isArray( __data.aux ) ? __data.aux : [], renderer => new Slim.PMREMGenerator( renderer ) );
 // Counter for in-flight async PMREM generations. Playwright waits for this to
 // reach 0 (alongside __tslpFrozen) before taking a screenshot so PMREM-based
 // IBL textures are resolved and re-hydrated before capture.
@@ -1617,232 +1583,11 @@ let __pmremRunning = 0;
 // (and the explicit RTT/effect drives, already in flight at depth 0) when nested.
 let __renderDepth = 0;
 
-function __makeFullRoomEnvironment( Three ) {
-	if ( ! Three ) return null;
-	const {
-		BackSide,
-		BoxGeometry,
-		InstancedMesh,
-		Mesh,
-		MeshLambertMaterial,
-		MeshStandardMaterial,
-		PointLight,
-		Scene,
-		Object3D,
-	} = Three;
-	if ( ! Scene || ! BoxGeometry || ! Mesh || ! MeshStandardMaterial || ! MeshLambertMaterial ) return null;
-
-	const scene = new Scene();
-	scene.name = 'RoomEnvironment';
-	scene.position.y = - 3.5;
-
-	const geometry = new BoxGeometry();
-	geometry.deleteAttribute( 'uv' );
-
-	const roomMaterial = new MeshStandardMaterial( { side: BackSide } );
-	const boxMaterial = new MeshStandardMaterial();
-
-	const mainLight = new PointLight( 0xffffff, 900, 28, 2 );
-	mainLight.position.set( 0.418, 16.199, 0.300 );
-	scene.add( mainLight );
-
-	const room = new Mesh( geometry, roomMaterial );
-	room.position.set( - 0.757, 13.219, 0.717 );
-	room.scale.set( 31.713, 28.305, 28.591 );
-	scene.add( room );
-
-	const boxes = new InstancedMesh( geometry, boxMaterial, 6 );
-	const transform = new Object3D();
-	const boxTransforms = [
-		[ [ - 10.906, 2.009, 1.846 ], [ 0, - 0.195, 0 ], [ 2.328, 7.905, 4.651 ] ],
-		[ [ - 5.607, - 0.754, - 0.758 ], [ 0, 0.994, 0 ], [ 1.970, 1.534, 3.955 ] ],
-		[ [ 6.167, 0.857, 7.803 ], [ 0, 0.561, 0 ], [ 3.927, 6.285, 3.687 ] ],
-		[ [ - 2.017, 0.018, 6.124 ], [ 0, 0.333, 0 ], [ 2.002, 4.566, 2.064 ] ],
-		[ [ 2.291, - 0.756, - 2.621 ], [ 0, - 0.286, 0 ], [ 1.546, 1.552, 1.496 ] ],
-		[ [ - 2.193, - 0.369, - 5.547 ], [ 0, 0.516, 0 ], [ 3.875, 3.487, 2.986 ] ],
-	];
-	boxTransforms.forEach( ( [ position, rotation, scale ], index ) => {
-		transform.position.set( position[ 0 ], position[ 1 ], position[ 2 ] );
-		transform.rotation.set( rotation[ 0 ], rotation[ 1 ], rotation[ 2 ] );
-		transform.scale.set( scale[ 0 ], scale[ 1 ], scale[ 2 ] );
-		transform.updateMatrix();
-		boxes.setMatrixAt( index, transform.matrix );
-	} );
-	scene.add( boxes );
-
-	const createAreaLightMaterial = ( intensity ) => new MeshLambertMaterial( {
-		color: 0x000000,
-		emissive: 0xffffff,
-		emissiveIntensity: intensity,
-	} );
-	const areaLights = [
-		[ 50, [ - 16.116, 14.37, 8.208 ], [ 0.1, 2.428, 2.739 ] ],
-		[ 50, [ - 16.109, 18.021, - 8.207 ], [ 0.1, 2.425, 2.751 ] ],
-		[ 17, [ 14.904, 12.198, - 1.832 ], [ 0.15, 4.265, 6.331 ] ],
-		[ 43, [ - 0.462, 8.89, 14.520 ], [ 4.38, 5.441, 0.088 ] ],
-		[ 20, [ 3.235, 11.486, - 12.541 ], [ 2.5, 2.0, 0.1 ] ],
-		[ 100, [ 0.0, 20.0, 0.0 ], [ 1.0, 0.1, 1.0 ] ],
-	];
-	for ( const [ intensity, position, scale ] of areaLights ) {
-		const light = new Mesh( geometry, createAreaLightMaterial( intensity ) );
-		light.position.set( position[ 0 ], position[ 1 ], position[ 2 ] );
-		light.scale.set( scale[ 0 ], scale[ 1 ], scale[ 2 ] );
-		scene.add( light );
-	}
-
-	scene.dispose = function () {
-		const resources = new Set();
-		this.traverse( ( object ) => {
-			if ( object && object.isMesh ) {
-				resources.add( object.geometry );
-				resources.add( object.material );
-			}
-		} );
-		for ( const resource of resources ) {
-			try { resource.dispose && resource.dispose(); } catch ( _ ) {}
-		}
-	};
-
-	return scene;
-}
-
-function __copyFullObjectState( source, target ) {
-	if ( ! source || ! target ) return;
-	target.name = source.name || target.name;
-	target.visible = source.visible !== false;
-	if ( source.position && target.position && typeof target.position.copy === 'function' ) target.position.copy( source.position );
-	if ( source.quaternion && target.quaternion && typeof target.quaternion.copy === 'function' ) target.quaternion.copy( source.quaternion );
-	if ( source.scale && target.scale && typeof target.scale.copy === 'function' ) target.scale.copy( source.scale );
-	if ( source.rotation && target.rotation && typeof target.rotation.copy === 'function' ) target.rotation.copy( source.rotation );
-	if ( source.matrix && target.matrix && typeof target.matrix.copy === 'function' ) target.matrix.copy( source.matrix );
-	if ( source.matrixWorld && target.matrixWorld && typeof target.matrixWorld.copy === 'function' ) target.matrixWorld.copy( source.matrixWorld );
-	target.matrixAutoUpdate = source.matrixAutoUpdate !== false;
-	target.matrixWorldAutoUpdate = source.matrixWorldAutoUpdate !== false;
-}
-
-function __copyFullTextureState( source, target ) {
-	if ( ! source || ! target ) return;
-	target.name = source.name || target.name;
-	for ( const key of [ 'mapping', 'channel', 'wrapS', 'wrapT', 'wrapR', 'magFilter', 'minFilter', 'anisotropy', 'format', 'internalFormat', 'type', 'generateMipmaps', 'premultiplyAlpha', 'flipY', 'unpackAlignment', 'colorSpace', 'compareFunction' ] ) {
-		if ( source[ key ] !== undefined ) {
-			try { target[ key ] = source[ key ]; } catch ( _ ) {}
-		}
-	}
-	for ( const key of [ 'offset', 'repeat', 'center', 'matrix' ] ) {
-		if ( source[ key ] && target[ key ] && typeof target[ key ].copy === 'function' ) {
-			try { target[ key ].copy( source[ key ] ); } catch ( _ ) {}
-		}
-	}
-	try { target.rotation = source.rotation || 0; } catch ( _ ) {}
-	try { target.matrixAutoUpdate = source.matrixAutoUpdate !== false; } catch ( _ ) {}
-}
-
-function __cloneTextureForFullRenderer( Three, source, createdTextures ) {
-	if ( ! Three || ! source || source.isTexture !== true ) return source || null;
-	let texture = null;
-	try {
-		const image = source.image;
-		if ( source.isCubeTexture === true && Three.CubeTexture ) {
-			texture = new Three.CubeTexture( image );
-		} else if ( source.isDataTexture === true && Three.DataTexture && image && image.data && Number.isFinite( image.width ) && Number.isFinite( image.height ) ) {
-			texture = new Three.DataTexture( image.data, image.width, image.height, source.format, source.type, source.mapping, source.wrapS, source.wrapT, source.magFilter, source.minFilter, source.anisotropy, source.colorSpace );
-		} else if ( source.isCompressedTexture === true && Three.CompressedTexture && image && Array.isArray( image.mipmaps ) && Number.isFinite( image.width ) && Number.isFinite( image.height ) ) {
-			texture = new Three.CompressedTexture( image.mipmaps, image.width, image.height, source.format, source.type, source.mapping, source.wrapS, source.wrapT, source.magFilter, source.minFilter, source.anisotropy, source.colorSpace );
-		} else if ( Three.Texture ) {
-			texture = new Three.Texture( image );
-		}
-	} catch ( _ ) {
-		texture = null;
-	}
-	if ( ! texture ) return source;
-	__copyFullTextureState( source, texture );
-	texture.needsUpdate = true;
-	if ( createdTextures ) createdTextures.add( texture );
-	return texture;
-}
-
-function __makeFullPMREMMaterial( Three, source, createdTextures ) {
-	if ( ! Three || ! source ) return null;
-	const Ctor = ( source.isMeshPhysicalMaterial || source.isMeshPhysicalNodeMaterial ) && Three.MeshPhysicalMaterial ? Three.MeshPhysicalMaterial
-		: ( source.isMeshStandardMaterial || source.isMeshStandardNodeMaterial ) && Three.MeshStandardMaterial ? Three.MeshStandardMaterial
-			: ( source.isMeshLambertMaterial || source.isMeshLambertNodeMaterial ) && Three.MeshLambertMaterial ? Three.MeshLambertMaterial
-				: ( source.isMeshBasicMaterial || source.isMeshBasicNodeMaterial ) && Three.MeshBasicMaterial ? Three.MeshBasicMaterial
-					: null;
-	if ( ! Ctor ) return null;
-	const material = new Ctor();
-	for ( const key of [ 'side', 'transparent', 'opacity', 'alphaTest', 'depthTest', 'depthWrite', 'toneMapped', 'blending', 'premultipliedAlpha', 'wireframe', 'roughness', 'metalness' ] ) {
-		if ( source[ key ] !== undefined ) {
-			try { material[ key ] = source[ key ]; } catch ( _ ) {}
-		}
-	}
-	for ( const key of [ 'color', 'emissive', 'specular' ] ) {
-		if ( source[ key ] && material[ key ] && typeof material[ key ].copy === 'function' ) {
-			try { material[ key ].copy( source[ key ] ); } catch ( _ ) {}
-		}
-	}
-	for ( const key of [ 'map', 'envMap', 'emissiveMap', 'alphaMap', 'aoMap', 'lightMap' ] ) {
-		if ( source[ key ] && source[ key ].isTexture === true ) material[ key ] = __cloneTextureForFullRenderer( Three, source[ key ], createdTextures );
-	}
-	material.needsUpdate = true;
-	return material;
-}
-
-function __makeFullSceneForPMREM( scene, Three ) {
-	if ( ! scene || ! Three || ! Three.Scene || ! Three.Mesh || ! Three.Group ) return null;
-	const createdMaterials = new Set();
-	const createdTextures = new Set();
-	const fullScene = new Three.Scene();
-	__copyFullObjectState( scene, fullScene );
-	if ( scene.background && scene.background.isColor && Three.Color ) {
-		fullScene.background = new Three.Color().copy( scene.background );
-	} else {
-		fullScene.background = __cloneTextureForFullRenderer( Three, scene.background, createdTextures ) || scene.background || null;
-	}
-	fullScene.environment = __cloneTextureForFullRenderer( Three, scene.environment, createdTextures ) || scene.environment || null;
-
-	const cloneNode = ( source ) => {
-		if ( ! source || source.visible === false ) return null;
-		if ( source.isSkinnedMesh === true || source.isInstancedMesh === true ) return null;
-		let target = null;
-		if ( source.isMesh === true ) {
-			const material = __makeFullPMREMMaterial( Three, Array.isArray( source.material ) ? source.material[ 0 ] : source.material, createdTextures );
-			if ( ! material ) return null;
-			createdMaterials.add( material );
-			target = new Three.Mesh( __cloneGeometryForFullRenderer( source.geometry ), material );
-		} else if ( source.isGroup === true || Array.isArray( source.children ) ) {
-			target = new Three.Group();
-		} else {
-			return null;
-		}
-		__copyFullObjectState( source, target );
-		for ( const child of source.children || [] ) {
-			const cloned = cloneNode( child );
-			if ( cloned ) target.add( cloned );
-		}
-		return target;
-	};
-
-	for ( const child of scene.children || [] ) {
-		const cloned = cloneNode( child );
-		if ( ! cloned && child && child.visible !== false ) return null;
-		if ( cloned ) fullScene.add( cloned );
-	}
-	fullScene.dispose = function () {
-		for ( const material of createdMaterials ) {
-			try { material.dispose && material.dispose(); } catch ( _ ) {}
-		}
-		for ( const texture of createdTextures ) {
-			try { texture.dispose && texture.dispose(); } catch ( _ ) {}
-		}
-	};
-	return fullScene;
-}
-
 function __preparePMREMArgsForFullRenderer( method, args ) {
 	if ( method !== 'fromScene' || ! args || ! args[ 0 ] ) return args;
 	const scene = args[ 0 ];
 	const isRoomEnvironment = scene.name === 'RoomEnvironment' || scene.constructor && scene.constructor.name === 'RoomEnvironment';
-	const fullScene = isRoomEnvironment ? __makeFullRoomEnvironment( __fullThreeMod ) : __makeFullSceneForPMREM( scene, __fullThreeMod );
+	const fullScene = __sharedCloneSceneForPMREM( scene, __fullThreeMod );
 	try {
 		const diag = __pmremDiagnostics();
 		diag.syncFullSceneClone = ( diag.syncFullSceneClone || 0 ) + ( fullScene ? 1 : 0 );
@@ -1991,49 +1736,7 @@ function __runPMREMGeneratorMethod( self, method, args ) {
 		if ( typeof orig !== 'function' ) continue;
 		__pmremOriginalMethods.set( method, orig );
 		PG.prototype[ method ] = function ( ...args ) {
-			__pmremRunning ++;
-			const slimRenderer = this._renderer;
-			const fullRenderer = __computeRenderer;
-			const FullPMREMGenerator = __fullThreeMod && __fullThreeMod.PMREMGenerator;
-			const useFull = fullRenderer && fullRenderer !== slimRenderer && slimRenderer && slimRenderer.backend && typeof FullPMREMGenerator === 'function';
-			try {
-				const diag = __pmremDiagnostics();
-				diag.syncCalls = ( diag.syncCalls || 0 ) + 1;
-				diag.syncUseFull = ( diag.syncUseFull || 0 ) + ( useFull ? 1 : 0 );
-				diag.syncFallback = ( diag.syncFallback || 0 ) + ( useFull ? 0 : 1 );
-				diag.syncMethods = diag.syncMethods || {};
-				diag.syncMethods[ method ] = ( diag.syncMethods[ method ] || 0 ) + 1;
-				diag.syncLast = { method, hasFullRenderer: !! fullRenderer, hasFullMod: !! __fullThreeMod, hasFullPMREMGenerator: typeof FullPMREMGenerator === 'function', hasSlimRenderer: !! slimRenderer, hasSlimBackend: !! ( slimRenderer && slimRenderer.backend ) };
-			} catch ( _ ) {}
-			try {
-				let target;
-				let fullArgs = args;
-				if ( useFull ) {
-					const gen = new FullPMREMGenerator( fullRenderer );
-					try {
-						fullArgs = __preparePMREMArgsForFullRenderer( method, args );
-						target = gen[ method ]( ...fullArgs );
-					} finally {
-						try { gen.dispose && gen.dispose(); } catch ( _ ) {}
-						if ( fullArgs !== args && fullArgs[ 0 ] && typeof fullArgs[ 0 ].dispose === 'function' ) {
-							try { fullArgs[ 0 ].dispose(); } catch ( _ ) {}
-						}
-					}
-				} else {
-					target = orig.apply( this, args );
-				}
-				if ( useFull && target && target.texture && target.texture.isTexture === true ) {
-					__sharePMREMGPUTexture( slimRenderer, fullRenderer, target.texture );
-					// Self-cache: __wireEnvironmentPMREM does __pmremCache.get(scene.environment)
-					// where scene.environment IS this PMREM texture. Identity-map it so the
-					// existing wiring path picks it up without needing a separate source key.
-					__pmremCache.set( target.texture, target.texture );
-					Slim.registerLiveTexture( target.texture );
-				}
-				return target;
-			} finally {
-				__pmremRunning --;
-			}
+			return __runPMREMGeneratorMethod( this, method, args );
 		};
 	}
 } )();
@@ -7405,7 +7108,7 @@ function __syncStorageBuffers( computeNode, fullRenderer, slimRenderer ) {
 // slim-support/full-renderer-fallback. The fallback owns the shared-device
 // init, the de-duplicated promise, and the shadowMap.enabled flip; we keep
 // __computeRenderer and __fullThreeMod as in-page references because
-// other harness helpers (__makeFullSceneForPMREM, __rememberStorageAttr,
+// other harness helpers (__rememberStorageAttr,
 // __convertGeometryToFullThree) read them synchronously.
 let __computeRenderer = null;
 let __fullThreeMod = null;
@@ -10743,7 +10446,7 @@ function __collectRTTNodesInGraph( node, out = [], seen = new Set(), depth = 0 )
 	}
 
 	function __makeBloomPrecompiledMaterial( shape, sourceMaterial, name, bloomNode = null ) {
-		const artifact = __cloneAuxArtifact( Slim.loadAux( shape, 'tslp-e2e-bypass' ) );
+		const artifact = __cloneAuxArtifact( __loadAuxArtifactByShape( shape ) );
 		if ( shape === 'bloom-composite' ) __wireBloomCompositeUniforms( artifact, bloomNode );
 		else {
 			__wireLiveNodeSidecarsToArtifact( artifact, sourceMaterial );
@@ -11670,7 +11373,7 @@ function __renderRTTNodeWithPrecompiledSlim( rttNode, renderer ) {
 			rttNode.renderTarget.texture.type = renderer.getOutputBufferType();
 		}
 		const node = rttNode._rttNode || rttNode.node;
-		let artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
+		let artifact = __loadAuxArtifactByShape( shape );
 		const passNodes = __collectPassNodesInGraph( node );
 		const bloomNodes = __collectBloomNodesInGraph( node );
 		for ( const passNode of passNodes ) __preparePassNodeForReplay( renderer, passNode );
@@ -12800,12 +12503,13 @@ function __auxShapeAvailable( shape ) {
 }
 
 function __loadAuxArtifactByShape( shape ) {
-	try {
-		const artifact = Slim.loadAux( shape, 'tslp-e2e-bypass' );
-		if ( artifact ) return artifact;
-	} catch ( _ ) {}
 	const entry = Array.isArray( __data.aux ) ? __data.aux.find( ( item ) => item && ( item.shape === shape || item.artifact && item.artifact.materialShape === shape ) ) : null;
-	return entry && ( entry.artifact || entry ) || null;
+	if ( entry ) return entry.artifact || entry;
+	try {
+		return Slim.loadAux( shape, 'tslp-stub:' + shape + ':fallback' ) || null;
+	} catch ( _ ) {
+		return null;
+	}
 }
 
 function __nameTRAATextures( traaNode ) {
@@ -13510,7 +13214,7 @@ function __prepareFrameEffectNodeForReplay( node, fullRenderer, context ) {
 
 			const handler = __sharedFindEffectHandler( node );
 			const result = __sharedPrepareEffectNodeForReplay( handler, node, {
-				loadAux: ( shape ) => Slim.loadAux( shape, 'tslp-e2e-bypass' ),
+				loadAux: ( shape ) => __loadAuxArtifactByShape( shape ),
 				PrecompiledMaterial: Slim.PrecompiledMaterial,
 				renderer: fullRenderer,
 				sharedContext: context || {},
@@ -14174,7 +13878,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				} );
 				usedUserPipelineArtifact = !! ( boundPostprocessConfigHash && metadataEntry );
 				try {
-					artifact = metadataEntry && metadataEntry.artifact || Slim.loadAux( shape, 'tslp-e2e-bypass' );
+					artifact = metadataEntry && metadataEntry.artifact || __loadAuxArtifactByShape( shape );
 				} catch ( err ) {
 					auxError = err;
 				}
@@ -14278,12 +13982,7 @@ export class RenderPipeline extends Slim.RenderPipeline {
 					};
 				} catch ( _ ) {}
 				const passNode = passNodes[ 0 ] || null;
-				const context = {
-					renderPipeline: this,
-					passNodes,
-					onBeforeRenderPipeline: null,
-					onAfterRenderPipeline: null,
-				};
+				const context = __createReplayRenderPipelineContext( this, passNodes );
 				if ( this.outputColorTransform !== true ) {
 					context.toneMapping = this._toneMapping;
 					context.outputColorSpace = this._outputColorSpace;
@@ -14318,8 +14017,8 @@ export class RenderPipeline extends Slim.RenderPipeline {
 				for ( const node of ssrNodes ) __prepareSSRNodeForReplay( node, context );
 				for ( const node of dofNodes ) __prepareDOFNodeForReplay( node, context );
 				for ( const node of traaNodes ) __prepareTRAANodeForReplay( node, context );
-					const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;
-					const effectAfterRenderPipeline = context.onAfterRenderPipeline;
+					const effectBeforeRenderPipeline = __collectReplayRenderPipelineCallbacks( context, 'before' );
+					const effectAfterRenderPipeline = __collectReplayRenderPipelineCallbacks( context, 'after' );
 					let replayPipelineFrameActive = false;
 					const replayAfterRenderPipeline = typeof effectAfterRenderPipeline === 'function'
 						? () => {

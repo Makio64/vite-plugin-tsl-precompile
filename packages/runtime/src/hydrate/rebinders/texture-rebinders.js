@@ -1,3 +1,4 @@
+import { rendererRenderTargetTextureAttachments } from '@tsl-precompile/contract/render-target-texture';
 import {
 	invalidateOnTextureResourceChange,
 	invalidateTextureBindingTarget,
@@ -9,6 +10,11 @@ function updateArtifactTextureRef( artifact, source, texture ) {
 
 	const textureUuid = source && source.textureUuid;
 	if ( ! artifact || typeof textureUuid !== 'string' || textureUuid.length === 0 || ! texture || texture.isTexture !== true ) return;
+	// Hydration can temporarily bind a placeholder before an upstream pass
+	// allocates its target. That placeholder is not the live owner: storing it
+	// here would erase the preferred attachment needed by the next resolution.
+	if ( source.renderTargetSelector && ! rendererRenderTargetTextureAttachments( texture.renderTarget )
+		.some( attachment => attachment.texture === texture ) ) return;
 	const current = artifact._textureRefs instanceof Map ? artifact._textureRefs : null;
 	if ( current && current.get( textureUuid ) === texture ) return;
 	if ( current ) {

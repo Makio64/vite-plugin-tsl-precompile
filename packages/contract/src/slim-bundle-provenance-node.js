@@ -12,6 +12,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 
 import { stableJsonStringify } from './stable-json.js';
+import { THREE_RELEASE_PROFILES, resolveSlimThreeRelease } from './slim-three-policy.js';
 
 export const SLIM_BUNDLE_SOURCE_SCHEMA = 'tslp-slim-bundle-sources@1';
 export const SLIM_BUNDLE_PROVENANCE_SCHEMA = 'tslp-slim-bundle-provenance@1';
@@ -23,6 +24,7 @@ const STAMP_PREFIX = '/*!@tsl-precompile/slim-bundle:';
 const STAMP_SUFFIX = '*/';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VERSION_KEYS = [ 'three', 'policy', 'artifactToolchain', 'buildToolchain' ];
+const FILE_READ_CONCURRENCY = 64;
 
 export const SLIM_BUNDLE_PROVENANCE_ERROR_CODES = Object.freeze( {
 	INPUT_MISSING: 'SLIM_BUNDLE_INPUT_MISSING',
@@ -42,6 +44,67 @@ export class SlimBundleProvenanceError extends Error {
 		this.code = code;
 
 	}
+
+}
+
+/** Identify a pinned development renderer even when a package install omits Git. */
+export async function computeThreeReleaseFingerprint( packageRoot ) {
+
+	const [ srcFiles, buildFiles ] = await Promise.all( [
+		listFiles( resolve( packageRoot, 'src' ) ),
+		listFiles( resolve( packageRoot, 'build' ) ),
+	] );
+	const files = [ ...srcFiles, ...buildFiles ]
+		.map( file => ( { file, path: normalizeLogicalPath( relative( packageRoot, file ) ) } ) )
+		.sort( ( a, b ) => compareCodeUnits( a.path, b.path ) );
+	const hash = createHash( 'sha256' );
+	let bytes = 0;
+	for ( let i = 0; i < files.length; i += FILE_READ_CONCURRENCY ) {
+
+		const batch = files.slice( i, i + FILE_READ_CONCURRENCY );
+		const contentsBatch = await Promise.all( batch.map( entry => readFile( entry.file ) ) );
+		for ( let j = 0; j < batch.length; j ++ ) {
+
+			const contents = contentsBatch[ j ];
+			bytes += contents.length;
+			hash.update( `${ batch[ j ].path }\0${ contents.length }\0${ sha256Bytes( contents ) }\n` );
+
+		}
+
+	}
+	return { sha256: hash.digest( 'hex' ), fileCount: files.length, bytes };
+
+}
+
+/** Version-only matching cannot distinguish Three's pre-release source branch. */
+export async function readSlimThreeReleaseProfile( packageRoot, { sourceCommit } = {} ) {
+
+	const [ pkgRaw, constants ] = await Promise.all( [
+		readFile( resolve( packageRoot, 'package.json' ), 'utf8' ),
+		readFile( resolve( packageRoot, 'src/constants.js' ), 'utf8' ),
+	] );
+	const pkg = JSON.parse( pkgRaw );
+	const revision = /export\s+const\s+REVISION\s*=\s*['"]([^'"]+)['"]/.exec( constants )?.[ 1 ];
+	if ( pkg.name !== 'three' || ! revision ) throw new Error( `Invalid Three source root: ${ packageRoot }` );
+	if ( pkg.version === THREE_RELEASE_PROFILES.stable.packageVersion ) {
+
+		const profile = resolveSlimThreeRelease( { packageVersion: pkg.version, revision, sourceCommit } );
+		if ( profile ) return profile;
+
+	} else {
+
+		const fingerprint = await computeThreeReleaseFingerprint( packageRoot );
+		const candidate = resolveSlimThreeRelease( { packageVersion: pkg.version, revision, sourceCommit } ) ||
+			( sourceCommit === undefined && pkg.version !== '0.186.0'
+				? resolveSlimThreeRelease( { packageVersion: pkg.version, revision, sourceCommit: 'ec2b7458eae7bf3718b10a4d7b867fb746a2b70a' } )
+				: null ) ||
+			( sourceCommit === undefined && fingerprint.sha256 === THREE_RELEASE_PROFILES.development.sourceFingerprint
+				? THREE_RELEASE_PROFILES.development
+				: null );
+		if ( candidate && fingerprint.sha256 === candidate.sourceFingerprint && ( sourceCommit === undefined || sourceCommit === candidate.gitCommit ) ) return candidate;
+
+	}
+	throw new Error( `Unsupported Three source ${ pkg.version } / ${ revision } at ${ packageRoot }; use the pinned r186 release or r187dev snapshot.` );
 
 }
 
@@ -77,6 +140,21 @@ export function createSlimBundleSourceInputs( {
 		runtimeSourceDirectory: resolve( runtimePackageRoot, 'src' ),
 		contractSourceDirectory: resolve( contractPackageRoot, 'src' ),
 		rewriteImplementationFiles: [
+			...[
+				'three-rewrite-ast.js',
+				'three-rewrite-node-primitives.js',
+				'three-rewrite-renderer-lifecycle.js',
+				'three-rewrite-webgpu-bindings.js',
+				'three-rewrite-webgpu-only.js',
+				'three-rewrite-pipeline-async-scope.js',
+			].map( name => ( {
+				name: `src/${ name }`,
+				file: resolve( pluginPackageRoot, 'src', name ),
+			} ) ),
+			{
+				name: 'src/three-rewrite-compilation-loop.js',
+				file: resolve( pluginPackageRoot, 'src/three-rewrite-compilation-loop.js' ),
+			},
 			{
 				name: 'build-tools/slim-rewrite.js',
 				file: resolve( pluginPackageRoot, 'build-tools/slim-rewrite.js' ),
@@ -104,6 +182,8 @@ export function createSlimBundleSourceInputs( {
 
 export function createSlimBundleVersionIdentity( {
 	threeVersion,
+	threeRevision,
+	threeCommit,
 	policyVersion,
 	artifactToolchainVersion,
 	buildToolchainVersion = SLIM_BUNDLE_BUILD_TOOLCHAIN_VERSION,
@@ -111,6 +191,8 @@ export function createSlimBundleVersionIdentity( {
 
 	return normalizeVersions( {
 		three: threeVersion,
+		...( threeRevision === undefined ? {} : { threeRevision } ),
+		...( threeCommit === undefined ? {} : { threeCommit } ),
 		policy: policyVersion,
 		artifactToolchain: artifactToolchainVersion,
 		buildToolchain: buildToolchainVersion,
@@ -418,10 +500,6 @@ async function hashFileGroup( name, entries ) {
 	} ).sort( ( a, b ) => compareCodeUnits( a.name, b.name ) );
 
 	const seen = new Set();
-	const hash = createHash( 'sha256' );
-	writeHashFrame( hash, `tslp-slim-source-group@1:${ name }` );
-	let bytes = 0;
-
 	for ( const entry of normalized ) {
 
 		if ( seen.has( entry.name ) ) {
@@ -431,19 +509,30 @@ async function hashFileGroup( name, entries ) {
 		}
 		seen.add( entry.name );
 
-		let contents;
-		try {
+	}
 
-			contents = await readFile( entry.file );
+	const hash = createHash( 'sha256' );
+	writeHashFrame( hash, `tslp-slim-source-group@1:${ name }` );
+	let bytes = 0;
 
-		} catch ( cause ) {
+	for ( let i = 0; i < normalized.length; i += FILE_READ_CONCURRENCY ) {
 
-			throw provenanceError( SLIM_BUNDLE_PROVENANCE_ERROR_CODES.INPUT_MISSING, `cannot read required ${ name } input ${ entry.file }`, cause );
+		const batch = normalized.slice( i, i + FILE_READ_CONCURRENCY );
+		const settled = await Promise.allSettled( batch.map( ( entry ) => readFile( entry.file ) ) );
+		for ( let j = 0; j < batch.length; j ++ ) {
+
+			const result = settled[ j ];
+			if ( result.status === 'rejected' ) {
+
+				throw provenanceError( SLIM_BUNDLE_PROVENANCE_ERROR_CODES.INPUT_MISSING, `cannot read required ${ name } input ${ batch[ j ].file }`, result.reason );
+
+			}
+			const contents = result.value;
+			bytes += contents.length;
+			writeHashFrame( hash, batch[ j ].name );
+			writeHashFrame( hash, contents );
 
 		}
-		bytes += contents.length;
-		writeHashFrame( hash, entry.name );
-		writeHashFrame( hash, contents );
 
 	}
 
@@ -458,27 +547,17 @@ async function hashFileGroup( name, entries ) {
 
 async function listFiles( directory ) {
 
-	const entries = await readdir( directory, { withFileTypes: true } );
-	const files = [];
-	for ( const entry of entries.sort( ( a, b ) => compareCodeUnits( a.name, b.name ) ) ) {
+	const entries = ( await readdir( directory, { withFileTypes: true } ) )
+		.sort( ( a, b ) => compareCodeUnits( a.name, b.name ) );
+	const nested = await Promise.all( entries.map( ( entry ) => {
 
 		const path = join( directory, entry.name );
-		if ( entry.isDirectory() ) {
+		if ( entry.isDirectory() ) return listFiles( path );
+		if ( entry.isFile() ) return [ path ];
+		return Promise.reject( new Error( `unsupported non-file input ${ path }` ) );
 
-			files.push( ...await listFiles( path ) );
-
-		} else if ( entry.isFile() ) {
-
-			files.push( path );
-
-		} else {
-
-			throw new Error( `unsupported non-file input ${ path }` );
-
-		}
-
-	}
-	return files;
+	} ) );
+	return nested.flat();
 
 }
 
@@ -530,13 +609,21 @@ function normalizeVersions( versions, code = SLIM_BUNDLE_PROVENANCE_ERROR_CODES.
 	}
 	const normalized = {};
 	for ( const key of VERSION_KEYS ) normalized[ key ] = assertNonEmptyString( versions[ key ], `${ label }.${ key }`, code );
+	if ( versions.threeRevision !== undefined || versions.threeCommit !== undefined ) {
+
+		const profile = resolveSlimThreeRelease( { packageVersion: normalized.three, revision: versions.threeRevision, sourceCommit: versions.threeCommit } );
+		if ( ! profile || profile.channel !== 'development' ) throw provenanceError( code, `${ label } has an unverified development Three identity` );
+		normalized.threeRevision = profile.revision;
+		normalized.threeCommit = profile.gitCommit;
+
+	}
 	return normalized;
 
 }
 
 function assertVersionIdentity( actual, expected, label, code ) {
 
-	for ( const key of VERSION_KEYS ) {
+	for ( const key of [ ...VERSION_KEYS, 'threeRevision', 'threeCommit' ] ) {
 
 		if ( actual[ key ] === expected[ key ] ) continue;
 		throw provenanceError(

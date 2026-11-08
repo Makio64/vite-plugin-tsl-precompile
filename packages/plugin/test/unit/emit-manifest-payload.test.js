@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
 import { collectArtifactDynamicBindings } from '@tsl-precompile/contract/dynamic-bindings';
 
-import { emitArtifactModule } from '../../src/emit-manifest.js';
+import { emitArtifactModule, prepareAuxArtifactForEmission } from '../../src/emit-manifest.js';
 
 function textureGroup( name, binding, source, textureType = '2d' ) {
 
@@ -58,13 +58,14 @@ test( 'generated artifact modules omit redundant dynamicBindings literals and re
 
 	assert.doesNotMatch( source, /"dynamicBindings":/ );
 	assert.doesNotMatch( source, /redundant-(?:root|variant)-binding-payload/ );
-	assert.match( source, /artifact\.dynamicBindings = \[/, 'derive the root compatibility view after the artifact literal' );
-	assert.match( source, /artifact\.variants\["variant"\]\.dynamicBindings = \[/, 'derive each variant compatibility view' );
+	assert.match( source, /artifact\.dynamicBindings = __tslp_collectDynamicBindings\(artifact\);/, 'derive the root compatibility view after the artifact literal' );
+	assert.match( source, /artifact\.variants\["variant"\]\.dynamicBindings = __tslp_collectDynamicBindings\(artifact\.variants\["variant"\]\);/, 'derive each variant compatibility view' );
 	assert.match( source, /export const dynamicBindings = artifact\.dynamicBindings;/, 'keep the virtual-module export shape' );
 	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
-	assert.doesNotMatch( source, /^import /m, 'the execution fixture is self-contained' );
+	assert.equal( source.match( /from "@tsl-precompile\/contract\/dynamic-bindings"/g )?.length, 1 );
 
-	const generated = await import( `data:text/javascript;base64,${ Buffer.from( source ).toString( 'base64' ) }` );
+	const executable = source.replace( '"@tsl-precompile/contract/dynamic-bindings"', JSON.stringify( import.meta.resolve( '@tsl-precompile/contract/dynamic-bindings' ) ) );
+	const generated = await import( `data:text/javascript;base64,${ Buffer.from( executable ).toString( 'base64' ) }` );
 	assert.equal( generated.dynamicBindings, generated.artifact.dynamicBindings );
 	assert.equal( generated.default.dynamicBindings, generated.dynamicBindings );
 	assert.equal( generated.default.artifact, generated.artifact );
@@ -140,5 +141,65 @@ test( 'full-mode emission retains generated updateGroup for standalone compute a
 	assert.match( source, /function __generatedUpdateGroup/ );
 	assert.match( source, /export const updateGroup = __generatedUpdateGroup;/ );
 	assert.doesNotMatch( source, /export const updateGroup = null;/ );
+
+} );
+
+
+test( 'only generated renderer-owned callsites retain an auxiliary registration hook', () => {
+
+	for ( const slim of [ 'source', true, false ] ) for ( const shape of [ 'shadow-depth', 'render-pipeline', 'output-transform', 'mesh-basic', 'post-process' ] ) {
+
+		const { source } = emitArtifactModule( { name: 'registry-routing', hash: 'x' }, {
+			__sourceOwners: [ { path: 'scene.js' } ],
+			artifact: { materialShape: shape, uniformPlan: [] },
+		}, { slim } );
+		parse( source, { sourceType: 'module' } );
+		const auxiliary = !! slim && [ 'shadow-depth', 'render-pipeline', 'output-transform' ].includes( shape );
+		assert.equal( source.includes( 'registerPrecompiledArtifacts as __registerAuxiliary' ), auxiliary );
+		assert.equal( source.includes( 'dynamicBindings, __registerAuxiliary }' ), auxiliary );
+		if ( auxiliary ) assert.ok( source.includes( `from "@tsl-precompile/runtime/slim${ slim === 'source' ? '/source' : '' }"` ) );
+
+	}
+
+} );
+
+test( 'prepareAuxArtifactForEmission strips live-bound PMREM and cube-render-target texture snapshots without mutating the input', () => {
+
+	const snapshot = { width: 4, height: 4, arrayType: 'Uint8Array', data: new Array( 64 ).fill( 255 ) };
+	const pmremArtifact = {
+		internalPass: {
+			family: 'pmrem',
+			pass: 'equirect',
+			inputs: [ { kind: 'texture', group: 'object', binding: 'envMap' } ],
+		},
+		dynamicBindings: [ { marker: 'redundant' } ],
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'envMap', source: { kind: 'artifact.texture', snapshot } },
+				{ name: 'lutMap', source: { kind: 'artifact.texture', snapshot } },
+			],
+		} ],
+	};
+	const preparedPmrem = prepareAuxArtifactForEmission( pmremArtifact, 'pmrem-equirect' );
+	assert.equal( preparedPmrem.dynamicBindings, undefined );
+	assert.equal( preparedPmrem.uniformPlan[ 0 ].textures[ 0 ].source.snapshot, undefined );
+	assert.deepEqual( preparedPmrem.uniformPlan[ 0 ].textures[ 1 ].source.snapshot, snapshot );
+	assert.deepEqual( pmremArtifact.uniformPlan[ 0 ].textures[ 0 ].source.snapshot, snapshot, 'persisted artifact stays intact' );
+
+	const cubeArtifact = {
+		uniformPlan: [ {
+			name: 'object',
+			slots: [],
+			textures: [
+				{ name: 'nodeUniform0', source: { kind: 'artifact.texture', snapshot } },
+				{ name: 'userMap', source: { kind: 'material.map', snapshot } },
+			],
+		} ],
+	};
+	const preparedCube = prepareAuxArtifactForEmission( cubeArtifact, 'cube-render-target' );
+	assert.equal( preparedCube.uniformPlan[ 0 ].textures[ 0 ].source.snapshot, undefined );
+	assert.deepEqual( preparedCube.uniformPlan[ 0 ].textures[ 1 ].source.snapshot, snapshot );
 
 } );

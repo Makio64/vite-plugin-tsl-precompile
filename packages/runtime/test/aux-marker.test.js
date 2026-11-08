@@ -16,6 +16,7 @@ import { collectArtifactVariantCandidates } from '@tsl-precompile/contract/artif
 import { createCubeRenderTargetAuxConfig } from '@tsl-precompile/contract/cube-render-target';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import { assertInternalPassArtifact } from '@tsl-precompile/contract/internal-pass';
 import {
 	createVSMSupportConfig,
@@ -25,8 +26,67 @@ import {
 import { createMockGPUCanvasContext, installMockWebGPU } from '../../plugin/src/mock-webgpu.js';
 import { compileTSL as compileRealTSL } from '../../plugin/src/vendor/compileTSL.js';
 import { beginRenderObjectHarvest } from '../../plugin/src/vendor/render-object-observer.js';
+import { REVISION } from 'three';
+
+// r186 CubeUV-atlas PMREM expectations; the pinned r187dev cube PMREM family is exercised against
+// the same installed build by pmrem-native-family.test.js.
+const PMREM_ATLAS = REVISION === '186' ? {} : { skip: `three r${ REVISION } uses cube PMREM (see pmrem-native-family.test.js)` };
 
 const auxMarkerSource = readFileSync( new URL( '../src/aux-marker.js', import.meta.url ), 'utf8' );
+
+test( 'backdrop capture releases its sphere geometry after success and extraction failure', async ( t ) => {
+
+	t.mock.method( console, 'info', () => {} );
+	t.mock.method( globalThis, 'fetch', async () => ( { ok: true } ) );
+	for ( const fail of [ false, true ] ) {
+
+		__resetAuxRegistryForTests();
+		const geometries = [];
+		class SphereGeometry {
+
+			constructor() { this.disposeCalls = 0; geometries.push( this ); }
+			dispose() { this.disposeCalls ++; }
+
+		}
+		class Mesh {
+
+			constructor( geometry, material ) { this.geometry = geometry; this.material = material; }
+
+		}
+		class Scene {
+
+			constructor() { this.children = []; this.userData = {}; }
+			add( object ) { this.children.push( object ); }
+			traverse( visitor ) { for ( const child of this.children ) visitor( child ); }
+
+		}
+		const material = {
+			uuid: 'borrowed-backdrop-material',
+			backdropNode: { isNode: true, uuid: 'backdrop-node' },
+			dispose() { assert.fail( 'capture must preserve the borrowed material' ); },
+		};
+		const scene = new Scene();
+		scene.add( new Mesh( {}, material ) );
+		const results = await precompileAuxiliary( {}, scene, {}, {
+			devEndpoint: '/capture', threeVersion: '0.185.1',
+			three: { Scene, Mesh, SphereGeometry },
+			compileTSL: async ( _renderer, captureScene ) => {
+
+				if ( captureScene === scene ) return [];
+				assert.equal( captureScene.userData.__tslpSyntheticCaptureScene, true );
+				if ( fail ) throw new Error( 'expected backdrop extraction failure' );
+				return [ { materialUuid: material.uuid, vertexShader: 'vertex', fragmentShader: 'fragment', uniformPlan: [] } ];
+
+			},
+		} );
+		assert.equal( geometries.length, 1 );
+		assert.equal( geometries[ 0 ].disposeCalls, 1 );
+		assert.equal( results.find( ( result ) => result.shape === 'backdrop' ).ok, ! fail );
+
+	}
+	__resetAuxRegistryForTests();
+
+} );
 
 test( 'postprocess capture prepares effect resources before isolated pipeline update', () => {
 
@@ -992,8 +1052,9 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 
 		compileCalls ++;
 		const material = captureScene.children && captureScene.children[ 0 ] && captureScene.children[ 0 ].material;
-		if ( Array.isArray( options.skipNodeUpdatesForMaterials ) ) {
+		if ( options.rendererStateOverride ) {
 
+			assert.equal( options.fullscreenQuad, captureScene.children[ 0 ], 'final pipeline capture uses the native isolated fullscreen quad' );
 			assert.equal( options.noGlobalMRT, true );
 			assert.equal( options.skipWarmupRender, true );
 			assert.deepEqual( options.skipNodeUpdatesForMaterials, [ material ] );
@@ -1075,6 +1136,9 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		assert.equal( renderPipeline._context, livePipelineContext );
 		assert.equal( pipelineMaterial.fragmentNode, liveFragmentNode );
 		assert.notEqual( material, material.sourceMaterial, 'synthetic effect capture compiles a clone' );
+		assert.deepEqual( options.materials, [ material ], 'unrelated cached programs are outside the sub-pass capture' );
+		assert.deepEqual( options.skipNodeUpdatesForMaterials, [ material ], 'sub-pass capture cannot run live upstream effects' );
+		assert.equal( options.skipWarmupRender, true );
 		assert.notEqual( material.uuid, material.sourceMaterial.uuid, 'effect clone has a private cache identity' );
 		assert.match( material.customProgramCacheKey(), /tslp-isolated-capture:/ );
 		if ( ! pausedEffectCapture ) {
@@ -1191,6 +1255,7 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 		] );
 		assert.deepEqual( payloads.map( ( payload ) => payload.materialShape ), results.map( ( result ) => result.shape ) );
 		assert.equal( payloads[ 0 ].name, 'effects-pipeline-a' );
+		assert.equal( payloads[ 5 ].name, 'effects-pipeline-a--effect-gtao-0-0' );
 		assert.equal( payloads[ 0 ].artifact.replayConfig.outputColorTransform, true );
 		assert.equal( payloads[ 0 ].artifact.replayConfig.logarithmicDepthBuffer, true );
 		assert.equal( Object.hasOwn( payloads[ 0 ].artifact.replayConfig, 'reversedDepthBuffer' ), false );
@@ -1266,6 +1331,9 @@ test( 'precompileAuxiliary captures effects observed only through live update no
 			payloads[ 8 ].configHash,
 			'semantically named pipelines remain distinct when their normalized graphs match',
 		);
+
+		assert.equal( payloads[ 13 ].name, 'effects-pipeline-b--effect-gtao-0-0' );
+		assert.notEqual( payloads[ 5 ].configHash, payloads[ 13 ].configHash, 'internal passes retain named pipeline ownership' );
 
 		const lazyBloomArray = [];
 		bloom._highPassFilterMaterial = null;
@@ -1405,14 +1473,16 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 	} );
 	const directionalSelector = '{"target":{"surface":"offscreen-2d"}}';
 	const pointSelector = '{"target":{"surface":"offscreen-cube"}}';
+	const reusedDirectionalSelector = '{"shadowCaster":{"alphaTest":true},"target":{"surface":"offscreen-2d"}}';
+	const reusedPointSelector = '{"shadowCaster":{"alphaTest":true},"target":{"surface":"offscreen-cube"}}';
 	const directionalOnly = '{"shadowCaster":{"customDepth":true}}';
 	const pointOnly = '{"shadowCaster":{"map":true},"target":{"surface":"offscreen-cube"}}';
 	const sharedDirectional = shadowArtifact( 'shared-key', directionalSelector, 'shared-shadow' );
 	const sharedPoint = shadowArtifact( 'shared-key', pointSelector, 'shared-shadow' );
 	const directional = shadowArtifact( 'directional-key', directionalOnly, 'directional-shadow' );
 	const point = shadowArtifact( 'point-key', pointOnly, 'point-shadow' );
-	const reused2D = shadowArtifact( 'r185-reused-key', directionalSelector, 'r185-shadow' );
-	const reusedCube = shadowArtifact( 'r185-reused-key', pointSelector, 'r185-shadow' );
+	const reused2D = shadowArtifact( 'r185-reused-key', reusedDirectionalSelector, 'r185-shadow' );
+	const reusedCube = shadowArtifact( 'r185-reused-key', reusedPointSelector, 'r185-shadow' );
 	const vsmSupportConfig = createVSMSupportConfig();
 	const vsmArtifact = ( stage ) => {
 
@@ -1477,7 +1547,7 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 	};
 	const vsmVertical = vsmArtifact( 'vertical' );
 	const vsmHorizontal = vsmArtifact( 'horizontal' );
-	reused2D.renderState = { depthWrite: true, transparent: true };
+	reused2D.renderState = { depthWrite: false, transparent: true };
 	reusedCube.renderState = { depthWrite: true };
 	sharedDirectional.variants = {
 		'shared-key': { ...sharedDirectional },
@@ -1492,6 +1562,11 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 	const compileTSL = async ( _renderer, _scene, _camera, options = {} ) => {
 
 		if ( options.captureRendererOutput ) throw new Error( 'no renderer output in focused shadow fixture' );
+		assert.equal( options.deferShadowFamilyMerge, true );
+		assert.deepEqual( options.materialShapes, [ 'shadow-depth', 'shadow-vsm-vertical', 'shadow-vsm-horizontal' ] );
+		assert.ok( lights.every( light => light.shadow.needsUpdate === true ), 'static shadows are explicitly drawn for capture' );
+		assert.equal( options.freshShadowFrame, true, 'capture bypasses the already-painted frame guard' );
+		assert.equal( receiver.frustumCulled, false, 'capture includes receivers beyond the opening view' );
 		receivedHarvest = options.renderObjectHarvest;
 		return [ sharedDirectional, directional, sharedPoint, point, reused2D, reusedCube, vsmVertical, vsmHorizontal ];
 
@@ -1500,11 +1575,12 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 		{ isLight: true, type: 'DirectionalLight', castShadow: true, shadow: { mapSize: { width: 512, height: 512 } } },
 		{ isLight: true, isPointLight: true, type: 'PointLight', castShadow: true, shadow: { mapSize: { width: 256, height: 256 } } },
 	];
+	const receiver = { isMesh: true, frustumCulled: true };
 	const scene = {
 		background: null,
 		backgroundNode: null,
 		userData: {},
-		traverse( callback ) { lights.forEach( callback ); },
+		traverse( callback ) { lights.forEach( callback ); callback( receiver ); },
 	};
 	const originalFetch = globalThis.fetch;
 	const payloads = [];
@@ -1529,14 +1605,16 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 	publishRenderObjectHarvest( renderer, scene, renderObjectHarvest );
 	try {
 
-		await precompileAuxiliary( renderer, scene, {}, {
+		const captureResults = await precompileAuxiliary( renderer, scene, {}, {
 			devEndpoint: '/capture',
 			threeVersion: '0.185.1',
 			compileTSL,
 		} );
 		assert.equal( receivedHarvest, resolvedRenderObjectHarvest, 'shadow capture consumes the resolved staged real-render harvest' );
+		assert.equal( receiver.frustumCulled, true );
+		assert.ok( lights.every( light => light.shadow.needsUpdate === undefined ), 'capture restores the application shadow policy' );
 		assert.equal( takeRenderObjectHarvest( renderer, scene ), null, 'the staged harvest is one-shot' );
-		assert.equal( familyTransactions.length, 1 );
+		assert.equal( familyTransactions.length, 1, JSON.stringify( captureResults ) );
 		assert.equal( familyTransactions[ 0 ].auxiliaryFamily, 'shadow-vsm' );
 		assert.deepEqual(
 			familyTransactions[ 0 ].members.map( ( member ) => member.materialShape ).sort(),
@@ -1557,9 +1635,10 @@ test( 'precompileAuxiliary preserves shadow families, unions equivalent keys, an
 			.map( ( key ) => payload.artifact.variants[ key ] );
 		assert.equal( rekeyed.length, 2, 'divergent payloads receive distinct durable keys' );
 		assert.deepEqual( rekeyed.map( ( candidate ) => candidate.renderState.transparent ).sort(), [ true, undefined ] );
+		assert.deepEqual( rekeyed.map( ( candidate ) => candidate.renderState.depthWrite ).sort(), [ false, true ] );
 		assert.deepEqual(
 			rekeyed.flatMap( ( candidate ) => candidate.renderContextSelectors ).sort(),
-			[ directionalSelector, pointSelector ].sort(),
+			[ reusedDirectionalSelector, reusedPointSelector ].sort(),
 			'the signed target selectors remain authoritative after rekeying',
 		);
 		const vsmPayloads = payloads
@@ -2341,6 +2420,31 @@ test( 'precompileAuxiliary separates texture and scene PMREM operation families 
 
 } );
 
+test( 'precompileAuxiliary captures retained original PMREM inputs once when the scene owns only a CubeUV result', async () => {
+
+	const source = pmremSourceTexture( 'equirect', 128 );
+	const generated = { isTexture: true, mapping: 306, image: { width: 336, height: 256 } };
+	const scene = { background: null, environment: generated, traverse() {} };
+	const { state } = await runPMREMDiscoveryCapture( scene, { pmremSourceTextures: [ source, source ] } );
+	assert.equal( state.generators.length, 1 );
+	assert.equal( state.generators[ 0 ].calls[ 0 ].method, 'fromEquirectangular' );
+	assert.equal( state.generators[ 0 ].calls[ 0 ].source, source );
+	assert.equal( scene.environment, generated );
+
+} );
+
+test( 'precompileAuxiliary rejects invalid explicit PMREM inputs without inventing a source', async () => {
+
+	for ( const pmremSourceTextures of [ {}, [ { isTexture: true, mapping: 306 } ] ] ) {
+
+		const { state, results } = await runPMREMDiscoveryCapture( { traverse() {} }, { pmremSourceTextures } );
+		assert.equal( state.generators.length, 0 );
+		assert.ok( results.some( result => result.ok === false && /pmremSourceTextures/.test( result.error ) ) );
+
+	}
+
+} );
+
 test( 'precompileAuxiliary discovers PMREM sources in scene.environmentNode and material node graphs', async () => {
 
 	const environmentNodeSource = pmremSourceTexture( 'equirect', 64 );
@@ -2604,6 +2708,51 @@ test( 'precompileAuxiliary rejects root three PMREMGenerator before it can captu
 
 } );
 
+test( 'precompileAuxiliary rejects an unverified cubemap PMREM generator before capture draws and disposes it', async () => {
+
+	const fixture = pmremDiscoveryCaptureFixture();
+	let sourceDraws = 0;
+	let harvests = 0;
+	let disposed = false;
+	fixture.three.PMREMGenerator = class {
+
+		constructor() {
+
+			this._integrationMaterial = null;
+			this._cubeCamera = {};
+			this._boxMesh = { isMesh: true };
+
+		}
+		fromEquirectangular() { sourceDraws ++; throw new Error( 'unsupported draw must not start' ); }
+		dispose() { disposed = true; }
+
+	};
+	__resetAuxRegistryForTests();
+	try {
+
+		const results = await precompileAuxiliary( fixture.renderer, {
+			background: null, environment: pmremSourceTexture( 'equirect', 64 ), traverse() {},
+		}, {}, {
+			devEndpoint: '/capture', threeVersion: '0.186.0',
+			compileTSL: fixture.compileTSL, three: fixture.three,
+			beginRenderObjectHarvest() { harvests ++; return fixture.beginHarvest(); },
+		} );
+		const failure = results.find( ( result ) => result.shape === 'pmrem' );
+		assert.equal( failure.ok, false );
+		assert.match( failure.error, /r187|cubemap/i );
+		assert.match( failure.error, /verified.*generator shape/ );
+		assert.equal( sourceDraws, 0 );
+		assert.equal( harvests, 0 );
+		assert.equal( disposed, true );
+
+	} finally {
+
+		__resetAuxRegistryForTests();
+
+	}
+
+} );
+
 test( 'precompileAuxiliary captures fromScene without fabricating a bridge texture', async () => {
 
 	const scene = {
@@ -2718,7 +2867,7 @@ function pmremSelectorDepthKinds( artifact ) {
 
 }
 
-test( 'precompileAuxiliary captures a selector-complete internal-pass family for an explicit fromScene-only layout', async () => {
+test( 'precompileAuxiliary captures a selector-complete internal-pass family for an explicit fromScene-only layout', PMREM_ATLAS, async () => {
 
 	installMockWebGPU();
 	const webgpu = await import( 'three/webgpu' );
@@ -2771,14 +2920,14 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 
 		const results = await precompileAuxiliary( renderer, scene, camera, {
 			devEndpoint: '/capture',
-			threeVersion: '0.185.1',
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 			compileTSL: compilePMREMOnly,
 			beginRenderObjectHarvest,
 			three: webgpu,
 			pmremSceneSizes: [ 64 ],
 		} );
 		const pmremResults = results.filter( ( result ) => result.shape.startsWith( 'pmrem-' ) );
-		assert.equal( familyTransactions.length, 1 );
+		assert.equal( familyTransactions.length, 1, JSON.stringify( results ) );
 		assert.equal( familyTransactions[ 0 ].auxiliaryFamily, 'pmrem' );
 		assert.deepEqual(
 			pmremResults.map( ( result ) => [ result.shape, result.ok ] ).sort(),
@@ -2799,7 +2948,7 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 			byShape.get( 'pmrem-ggx' ).artifact.internalPass.config,
 			{
 				shape: 'pmrem',
-				threeVersion: '0.185.1',
+				threeVersion: SLIM_THREE_PACKAGE_VERSION,
 				pluginVersion: '0.1.0',
 			},
 		);
@@ -2819,6 +2968,7 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 				schema: 'pmrem-support@1',
 				profile: 'scene',
 				layout: artifact.replayConfig,
+				blur: { algorithm: 'spherical-gaussian', samples: 20 },
 			} );
 			assert.equal( Object.hasOwn( artifact.internalPass.config, 'source' ), false );
 			for ( const candidate of collectArtifactVariantCandidates( artifact ) ) {
@@ -2874,17 +3024,22 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 		assert.equal( globalThis.__tslpSyntheticRenderActive | 0, 0, 'the nested render capability returns to baseline' );
 
 		const blur = byShape.get( 'pmrem-blur' ).artifact;
-		const weightsDescriptor = blur.internalPass.inputs.find( ( input ) => input.role === 'weights' );
-		const weightsNames = new Set();
+		assert.deepEqual( blur.internalPass.uniforms.map( ( entry ) => [ entry.role, entry.binding ] ), [
+			[ 'mip-int', 'nodeUniform1' ],
+			[ 'sigma', 'nodeUniform0' ],
+		] );
+		assert.deepEqual( blur.internalPass.inputs.map( ( entry ) => [ entry.role, entry.binding ] ), [
+			[ 'env-map', 'nodeUniform2' ],
+		] );
 		for ( const candidate of collectArtifactVariantCandidates( blur ) ) {
 
 			const objectPlan = candidate.uniformPlan.find( ( group ) => group.name === 'object' );
 			const weights = objectPlan.orderedBindings.filter( ( binding ) => binding.type === 'buffer-uniform' );
-			assert.equal( weights.length, 1 );
-			weightsNames.add( weights[ 0 ].ref.name );
+			assert.equal( weights.length, 0, 'the native Gaussian shader must not acquire legacy weights bindings' );
+			assert.equal( /for\s*\(\s*var i\s*:\s*i32\s*=\s*0;\s*i\s*<\s*20;/.test( candidate.fragmentShader ), true,
+				'the captured native Gaussian shader retains its fixed 20 sample loop' );
 
 		}
-		assert.deepEqual( [ ...weightsNames ], [ weightsDescriptor.binding ], 'weights metadata is canonical across the selector family' );
 
 	} finally {
 
@@ -2898,7 +3053,7 @@ test( 'precompileAuxiliary captures a selector-complete internal-pass family for
 
 } );
 
-test( 'PMREM auxiliary-family HTTP failures retain profile and configHash in capture diagnostics', async () => {
+test( 'PMREM auxiliary-family HTTP failures retain profile and configHash in capture diagnostics', PMREM_ATLAS, async () => {
 
 	installMockWebGPU();
 	const webgpu = await import( 'three/webgpu' );
@@ -2934,13 +3089,13 @@ test( 'PMREM auxiliary-family HTTP failures retain profile and configHash in cap
 
 		const results = await precompileAuxiliary( renderer, scene, camera, {
 			devEndpoint: '/capture',
-			threeVersion: '0.185.1',
+			threeVersion: SLIM_THREE_PACKAGE_VERSION,
 			compileTSL: compilePMREMOnly,
 			beginRenderObjectHarvest,
 			three: webgpu,
 			pmremSceneSizes: [ 64 ],
 		} );
-		assert.equal( familyPayloads.length, 1 );
+		assert.equal( familyPayloads.length, 1, JSON.stringify( results ) );
 		const expectedConfigHash = familyPayloads[ 0 ].members[ 0 ].configHash;
 		assert.match( expectedConfigHash, /^[a-f0-9]{64}$/ );
 

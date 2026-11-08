@@ -3,7 +3,8 @@
  *
  * Three's RangeNode normally fills large anonymous instance attributes with
  * Math.random(). A captured shader artifact then has no reproducible source
- * for those values and must embed every Float32. For the version-checked r185
+ * for those values and must embed every Float32. For the verified r185/r186
+ * and pinned r187 development
  * physical-attribute branch, dev capture builds the equivalent node with a
  * local deterministic stream and attaches a private recipe sidecar for the
  * extractor. Math.random is never read or replaced, so capture cannot consume
@@ -17,7 +18,7 @@ import {
 } from '@tsl-precompile/contract/attribute-generators';
 
 const PATCHED = Symbol.for( '@tsl-precompile/range-node-capture-patched@1' );
-const SUPPORTED_THREE_REVISION = '185';
+const SUPPORTED_THREE_REVISIONS = new Set( [ '185', '186', '187dev', '187' ] );
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
@@ -84,11 +85,11 @@ function arraysAreIdentical( left, right ) {
 
 }
 
-function deterministicRecipeSeed( builder, bounds, ordinal ) {
+function deterministicRecipeSeed( builder, bounds, ordinal, revision ) {
 
 	const object = builder && builder.object || {};
 	const parts = [
-		SUPPORTED_THREE_REVISION,
+		revision,
 		// Node/Object ids and UUIDs are allocation-order identities. Capture
 		// loads instrumentation modules that stock rendering does not, so the
 		// same authored RangeNode can receive different identities in the two
@@ -165,7 +166,7 @@ function createPhysicalRangeOutput( three, node, builder, bounds, ordinal ) {
 		|| typeof node.getNodeType !== 'function' ) return null;
 
 	const recipe = createRangeAttributeGenerator(
-		deterministicRecipeSeed( builder, bounds, ordinal ),
+		deterministicRecipeSeed( builder, bounds, ordinal, String( three.REVISION ) ),
 		bounds.min,
 		bounds.max,
 	);
@@ -191,7 +192,7 @@ export function installRangeAttributeCapture( three ) {
 
 	const RangeNode = three && three.RangeNode;
 	const prototype = RangeNode && RangeNode.prototype;
-	if ( String( three && three.REVISION ) !== SUPPORTED_THREE_REVISION ) return false;
+	if ( ! SUPPORTED_THREE_REVISIONS.has( String( three && three.REVISION ) ) ) return false;
 	if ( typeof three.InstancedBufferAttribute !== 'function'
 		|| ! three.TSL
 		|| typeof three.TSL.instancedBufferAttribute !== 'function' ) return false;

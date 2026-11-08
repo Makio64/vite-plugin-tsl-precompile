@@ -24,9 +24,11 @@
 
 import { Matrix4 } from 'three/src/math/Matrix4.js';
 import { Vector3 } from 'three/src/math/Vector3.js';
-import { WebGPUCoordinateSystem } from 'three/src/constants.js';
+import { REVISION, WebGPUCoordinateSystem } from 'three/src/constants.js';
 import { linkedLightIdentityForSource } from './light-identities.js';
 import { writeMat4, writeNumber, writeSnapshot, writeVec2, writeVec3 } from './snapshot-writers.js';
+
+const RECT_AREA_WORLD_SPACE_HALF_EXTENTS = Number.parseInt( REVISION, 10 ) >= 187;
 
 // Module-scoped scratch — reused per frame to avoid GC pressure. These are
 // distinct from the material-writers scratch so the per-frame interleaving
@@ -903,20 +905,36 @@ export function writeLightValue( view, offset, kind, source, frame ) {
 			writeNumber( view, offset, light.shadow && light.shadow.__tslpDisableReplayShadow === true ? 0 : light.shadow && Number.isFinite( light.shadow.intensity ) ? light.shadow.intensity : null, source.valueSnapshot );
 			return;
 		case 'light.halfWidth':
-			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+			if ( light.matrixWorld && ( RECT_AREA_WORLD_SPACE_HALF_EXTENTS || ( frame.camera && frame.camera.matrixWorldInverse ) ) ) {
 
-				_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
-				_m4rot.extractRotation( _mwi );
+				if ( RECT_AREA_WORLD_SPACE_HALF_EXTENTS ) {
+
+					_m4rot.extractRotation( light.matrixWorld );
+
+				} else {
+
+					_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
+					_m4rot.extractRotation( _mwi );
+
+				}
 				_lvec.set( light.width * 0.5, 0, 0 ).applyMatrix4( _m4rot );
 				writeVec3( view, offset, _lvec );
 
 			} else writeSnapshot( view, offset, source.valueSnapshot );
 			return;
 		case 'light.halfHeight':
-			if ( light.matrixWorld && frame.camera && frame.camera.matrixWorldInverse ) {
+			if ( light.matrixWorld && ( RECT_AREA_WORLD_SPACE_HALF_EXTENTS || ( frame.camera && frame.camera.matrixWorldInverse ) ) ) {
 
-				_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
-				_m4rot.extractRotation( _mwi );
+				if ( RECT_AREA_WORLD_SPACE_HALF_EXTENTS ) {
+
+					_m4rot.extractRotation( light.matrixWorld );
+
+				} else {
+
+					_mwi.copy( light.matrixWorld ).premultiply( frame.camera.matrixWorldInverse );
+					_m4rot.extractRotation( _mwi );
+
+				}
 				_lvec.set( 0, light.height * 0.5, 0 ).applyMatrix4( _m4rot );
 				writeVec3( view, offset, _lvec );
 

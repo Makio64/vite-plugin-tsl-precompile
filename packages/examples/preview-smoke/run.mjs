@@ -179,6 +179,7 @@ async function probe( url ) {
 		writeFileSync( resolve( resultsDir, 'frame-b.png' ), b );
 
 		const failures = [];
+		await failureCollector.settle();
 		const browserFailures = failureCollector.failures();
 		const pageErrors = browserFailures
 			.filter( failure => failure.kind === 'pageerror' )

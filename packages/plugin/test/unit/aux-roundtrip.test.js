@@ -16,18 +16,21 @@
  */
 
 import { test } from 'node:test';
+import { REVISION } from 'three';
+import { SLIM_THREE_PACKAGE_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
+import { createThreeEmitterHashFields, createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 
-import { extractBackgroundArtifact } from '../../src/aux-capture.js';
+import { extractBackgroundArtifact, extractPMREMArtifact } from '../../src/aux-capture.js';
 import { attachDevCapture } from '../../src/dev-capture-server.js';
 import { VIRTUAL_AUX_MODULE_ID } from '../../src/_shared/constants.js';
 import { computeArtifactContentHash } from '../../src/hash.js';
 import tslPrecompile from '../../src/index.js';
-import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
+import { ARTIFACT_CONTENT_HASH_VERSION, stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
 import {
 	registerAuxArtifact,
 	registerAuxArtifacts,
@@ -35,6 +38,19 @@ import {
 	listAux,
 	__resetAuxRegistryForTests,
 } from '../../../runtime/src/aux-loader.js';
+
+// Fixtures sign with the installed emitter: stable r186, or the pinned r187dev package whose
+// artifacts also carry its verified revision/commit.
+const INSTALLED_RELEASE = REVISION === THREE_RELEASE_PROFILES.development.revision
+	? THREE_RELEASE_PROFILES.development
+	: THREE_RELEASE_PROFILES.stable;
+const EMITTER = INSTALLED_RELEASE.channel === 'development'
+	? { threeVersion: INSTALLED_RELEASE.packageVersion, threeRevision: INSTALLED_RELEASE.revision, threeCommit: INSTALLED_RELEASE.gitCommit }
+	: { threeVersion: SLIM_THREE_PACKAGE_VERSION };
+// The checked-in prebuilt slim bundle is built against the stable release only.
+const PREBUILT_SLIM = INSTALLED_RELEASE === THREE_RELEASE_PROFILES.stable
+	? {}
+	: { skip: `the checked prebuilt slim bundle targets three ${ SLIM_THREE_PACKAGE_VERSION }` };
 
 function makeFakeViteServer() {
 
@@ -72,7 +88,7 @@ async function spinUpServer( viteServer ) {
 async function postJSON( port, path, body ) {
 
 	const payload = typeof body.materialShape === 'string' ? {
-		threeVersion: '0.185.1',
+		...EMITTER,
 		pluginVersion: '0.1.0',
 		...body,
 	} : body;
@@ -93,13 +109,14 @@ function signedAuxEnvelope( shape, configHash, artifact, name = `aux-${ shape }`
 
 	const signedArtifact = {
 		...artifact,
-		sourceThreeVersion: '0.185.1',
+		sourceThreeVersion: EMITTER.threeVersion,
+		...createThreeEmitterSourceFields( EMITTER ),
 		sourceHashVersion: '0.1.0',
 		artifactContentHashVersion: ARTIFACT_CONTENT_HASH_VERSION,
 	};
 	const hash = computeArtifactContentHash( signedArtifact, {
 		shape,
-		threeVersion: signedArtifact.sourceThreeVersion,
+		...EMITTER,
 		pluginVersion: signedArtifact.sourceHashVersion,
 	} );
 	return {
@@ -108,6 +125,7 @@ function signedAuxEnvelope( shape, configHash, artifact, name = `aux-${ shape }`
 		__hash: hash,
 		__name: name,
 		threeVersion: signedArtifact.sourceThreeVersion,
+		...createThreeEmitterHashFields( EMITTER ),
 		pluginVersion: signedArtifact.sourceHashVersion,
 		artifact: signedArtifact,
 	};
@@ -146,7 +164,7 @@ test( 'aux-roundtrip: capture → POST → disk → manifest → virtual module 
 	__resetAuxRegistryForTests();
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
 	const vite = makeFakeViteServer();
-	attachDevCapture( vite, { artifactsDir } );
+	attachDevCapture( vite, { artifactsDir, verifiedThreeRelease: INSTALLED_RELEASE } );
 	const { http, port } = await spinUpServer( vite );
 
 	try {
@@ -208,7 +226,7 @@ test( 'aux-roundtrip: red vs green backgrounds → two entries, each looks up to
 	__resetAuxRegistryForTests();
 	const artifactsDir = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
 	const vite = makeFakeViteServer();
-	attachDevCapture( vite, { artifactsDir } );
+	attachDevCapture( vite, { artifactsDir, verifiedThreeRelease: INSTALLED_RELEASE } );
 	const { http, port } = await spinUpServer( vite );
 
 	try {
@@ -244,7 +262,7 @@ test( 'aux-roundtrip: red vs green backgrounds → two entries, each looks up to
 
 } );
 
-test( 'slim build: user modules import the aux registry even without material markers', async () => {
+test( 'slim build: user modules import the aux registry even without material markers', PREBUILT_SLIM, async () => {
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
 	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: true } );
@@ -255,6 +273,27 @@ test( 'slim build: user modules import the aux registry even without material ma
 		const out = await plugin.transform.call( makePluginContext(), 'console.log( "boot" );\n', join( root, 'src/main.js' ) );
 		assert.ok( out, 'slim build should touch user modules to load aux artifacts' );
 		assert.match( out.code, /^import "virtual:tsl-precompile\/__aux";\n/ );
+
+	} finally {
+
+		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'slim build does not inject aux registration into workspace-linked runtime code', async () => {
+
+	const root = mkdtempSync( join( tmpdir(), 'tslp-workspace-aux-' ) );
+	const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: 'source' } );
+	await plugin.configResolved( { root, command: 'build' } );
+	try {
+
+		const code = 'const registry = new Map(); export function register(value) { registry.set(value.id, value); }';
+		const linkedRuntime = join( root, '../linked-runtime/src/aux-loader.js' );
+		assert.equal( await plugin.transform.call( makePluginContext(), code, linkedRuntime ), null );
+		const app = await plugin.transform.call( makePluginContext(), 'import "linked-runtime";', join( root, 'main.js' ) );
+		assert.match( app.code, /^import "virtual:tsl-precompile\/__aux";/ );
 
 	} finally {
 
@@ -307,7 +346,7 @@ test( 'production virtual aux module rejects missing or mismatched persisted pro
 	for ( const provenance of [
 		{},
 		{ threeVersion: '0.184.0', pluginVersion: '0.1.0' },
-		{ threeVersion: '0.185.1', pluginVersion: 'old-toolchain' },
+		{ ...EMITTER, pluginVersion: 'old-toolchain' },
 	] ) {
 
 		const root = mkdtempSync( join( tmpdir(), 'tslp-aux-provenance-' ) );
@@ -318,7 +357,8 @@ test( 'production virtual aux module rejects missing or mismatched persisted pro
 			__configHash: 'provenance',
 			__hash: 'provenance',
 			...provenance,
-			artifact: { version: 3, materialShape: 'background', uniformPlan: [] },
+			// The artifact itself is signed by the installed emitter; only the envelope provenance varies.
+			artifact: { version: 3, materialShape: 'background', uniformPlan: [], sourceThreeVersion: EMITTER.threeVersion, ...createThreeEmitterSourceFields( EMITTER ) },
 		} ) );
 
 		const plugin = tslPrecompile( { artifactsDir: 'artifacts' } );
@@ -341,7 +381,7 @@ test( 'production virtual aux module rejects missing or mismatched persisted pro
 
 } );
 
-test( 'slim build: virtual aux module registers into the slim runtime registry', async () => {
+test( 'slim build: virtual aux module registers into the slim runtime registry', PREBUILT_SLIM, async () => {
 
 	const root = mkdtempSync( join( tmpdir(), 'tslp-rt-' ) );
 	const artifactsDir = join( root, 'artifacts' );
@@ -376,21 +416,69 @@ test( 'slim build: virtual aux module registers into the slim runtime registry',
 
 		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
 		const source = await plugin.load.call( makePluginContext(), id );
-		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim";/ );
+		assert.match( source, /import \{ __registerAuxArtifactsOnly as registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim";/ );
 		assert.match( source, /"configHash"\s*:\s*"abc123"/ );
-		assert.match( source, /"threeVersion"\s*:\s*"0\.185\.1"/ );
+		assert.match( source, new RegExp( `"threeVersion"\\s*:\\s*"${ EMITTER.threeVersion.replaceAll( '.', '\\.' ) }"` ) );
 		assert.match( source, /"pluginVersion"\s*:\s*"0\.1\.0"/ );
 		assert.match( source, /materializeArtifactAttributeDescriptors as __tslp_materializeAttributes/ );
 			assert.match( source, /from "@tsl-precompile\/contract\/attribute-generators"/ );
-			assert.ok( source.indexOf( '__tslp_materializeAttributes( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
+			assert.ok( source.indexOf( '__tslp_materializeAttributes( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries, null, true );' ) );
 			assert.match( source, /materializeArtifactVariantSelectorAdapters as __tslp_materializeVariantSelectors/ );
 			assert.match( source, /from "@tsl-precompile\/contract\/variant-selector-adapter"/ );
-			assert.ok( source.indexOf( '__tslp_materializeVariantSelectors( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries );' ) );
-			assert.match( source, /registerAuxArtifacts\( __auxEntries \);/ );
+			assert.ok( source.indexOf( '__tslp_materializeVariantSelectors( __auxEntries );' ) < source.indexOf( 'registerAuxArtifacts( __auxEntries, null, true );' ) );
+			assert.match( source, /registerAuxArtifacts\( __auxEntries, null, true \);/ );
 
 	} finally {
 
 		rmSync( root, { recursive: true, force: true } );
+
+	}
+
+} );
+
+test( 'slim PMREM tables inject the generator without retaining it for ordinary tables', PREBUILT_SLIM, async () => {
+
+	for ( const shape of [ 'pmrem-ggx', 'post-process' ] ) {
+
+		const root = mkdtempSync( join( tmpdir(), 'tslp-aux-pmrem-factory-' ) );
+		mkdirSync( join( root, 'artifacts' ) );
+		if ( shape === 'pmrem-ggx' ) {
+
+			let texture;
+			const captured = await extractPMREMArtifact( ( { core } ) => {
+
+				texture = new core.DataTexture( new Uint8Array( 64 * 32 * 4 ), 64, 32, core.RGBAFormat );
+				texture.mapping = core.EquirectangularReflectionMapping;
+				texture.needsUpdate = true;
+				return { sourceTexture: texture, kind: 'equirect', name: 'factory' };
+
+			} );
+			texture.dispose();
+			for ( const artifact of Object.values( captured.artifacts ) ) writeFileSync(
+				join( root, 'artifacts', `aux-${ artifact.materialShape }.json` ),
+				JSON.stringify( signedAuxEnvelope( artifact.materialShape, captured.configHash, JSON.parse( stringifyArtifactJson( artifact ) ) ) ),
+			);
+
+		} else writeFileSync( join( root, 'artifacts', `aux-${ shape }.json` ), JSON.stringify(
+			signedAuxEnvelope( shape, 'factory', { version: 3, materialShape: shape, uniformPlan: [] }, `aux-${ shape }` ),
+		) );
+		const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim: true } );
+		await plugin.configResolved( { root, command: 'build' } );
+		try {
+
+			const source = await plugin.load.call( makePluginContext(), plugin.resolveId( VIRTUAL_AUX_MODULE_ID ) );
+			if ( shape === 'pmrem-ggx' ) {
+
+				assert.match( source, /import \{ PMREMGenerator as __tslp_PMREMGenerator \} from "@tsl-precompile\/runtime\/slim"/ );
+				assert.match( source, /registerAuxArtifacts\( __auxEntries, renderer => new __tslp_PMREMGenerator\( renderer \), true \)/ );
+
+			} else assert.doesNotMatch( source, /PMREMGenerator/ );
+
+		} finally {
+
+			rmSync( root, { recursive: true, force: true } );
+
+		}
 
 	}
 
@@ -425,7 +513,7 @@ test( 'source slim build registers aux artifacts into the source runtime instanc
 
 		const id = plugin.resolveId( VIRTUAL_AUX_MODULE_ID );
 		const source = await plugin.load.call( makePluginContext(), id );
-		assert.match( source, /import \{ registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim\/source";/ );
+		assert.match( source, /import \{ __registerAuxArtifactsOnly as registerAuxArtifacts \} from "@tsl-precompile\/runtime\/slim\/source";/ );
 		assert.doesNotMatch( source, /from "@tsl-precompile\/runtime\/slim";/ );
 		assert.match(
 			plugin.resolveId( '@tsl-precompile/contract/variant-selector-adapter' ),
@@ -434,6 +522,10 @@ test( 'source slim build registers aux artifacts into the source runtime instanc
 		assert.match(
 			plugin.resolveId( '@tsl-precompile/contract/attribute-generators' ),
 			/\/packages\/contract\/src\/attribute-generators\.js$/,
+		);
+		assert.match(
+			plugin.resolveId( '@tsl-precompile/contract/dynamic-bindings' ),
+			/\/packages\/contract\/src\/dynamic-bindings\.js$/,
 		);
 
 	} finally {
@@ -508,3 +600,40 @@ function makePluginContext() {
 	};
 
 }
+
+
+test( 'generated tables with renderer-owned shapes retain the full registry', async () => {
+
+	// `slim: true` selects the checked prebuilt bundle, which only accepts the stable release.
+	const slimModes = PREBUILT_SLIM.skip ? [ 'source' ] : [ true, 'source' ];
+	for ( const slim of slimModes ) for ( const shape of [ 'shadow-depth', 'render-pipeline', 'output-transform' ] ) {
+
+		const root = mkdtempSync( join( tmpdir(), 'tslp-aux-renderer-registry-' ) );
+		try {
+
+			const artifactsDir = join( root, 'artifacts' );
+			mkdirSync( artifactsDir );
+			writeFileSync( join( artifactsDir, 'aux-pass.json' ), JSON.stringify( signedAuxEnvelope(
+				shape, 'renderer-registry', { version: 3, materialShape: shape, uniformPlan: [] },
+			) ) );
+			const plugin = tslPrecompile( { artifactsDir: 'artifacts', slim } );
+			await plugin.configResolved( { root, command: 'build', logger: { warn() {} } } );
+			const source = await plugin.load.call( makePluginContext(), plugin.resolveId( VIRTUAL_AUX_MODULE_ID ) );
+			assert.match( source, /import \{ registerAuxArtifacts \} from/ );
+			assert.doesNotMatch( source, /__registerAuxArtifactsOnly/ );
+			if ( shape === 'shadow-depth' ) {
+
+				assert.match( source, /createPrecompiledShadowSupport as __tslp_createShadowSupport/ );
+				assert.match( source, /registerAuxArtifacts\( __auxEntries, null, renderer => __tslp_createShadowSupport\( \{ renderer \} \) \);/ );
+
+			} else assert.doesNotMatch( source, /__tslp_createShadowSupport/ );
+
+		} finally {
+
+			rmSync( root, { recursive: true, force: true } );
+
+		}
+
+	}
+
+} );

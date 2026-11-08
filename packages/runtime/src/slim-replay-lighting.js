@@ -7,7 +7,6 @@
 import { LightsNode } from './slim-replay-lights-node.js';
 
 const defaultLights = /*@__PURE__*/ new LightsNode();
-const lightsByScene = /*@__PURE__*/ new WeakMap();
 
 class Lighting {
 
@@ -15,12 +14,16 @@ class Lighting {
 
 		this.enabled = true;
 		this._cache = [];
+		this._lightsNodes = [];
+		this._lightsByScene = new WeakMap();
 
 	}
 
 	createNode( lights = [] ) {
 
-		return new LightsNode().setLights( lights );
+		const node = new LightsNode().setLights( lights );
+		this._lightsNodes.push( new WeakRef( node ) );
+		return node;
 
 	}
 
@@ -30,11 +33,11 @@ class Lighting {
 		// scene-light family.
 		if ( scene && scene.isQuadMesh === true ) return defaultLights;
 
-		let node = lightsByScene.get( scene );
+		let node = this._lightsByScene.get( scene );
 		if ( node === undefined ) {
 
 			node = this.createNode();
-			lightsByScene.set( scene, node );
+			this._lightsByScene.set( scene, node );
 
 		}
 		return node;
@@ -50,6 +53,19 @@ class Lighting {
 	finishRender( scene ) {
 
 		this.getNode( scene ).setLights( this._cache.pop() );
+
+	}
+
+	dispose() {
+
+		for ( const ref of this._lightsNodes ) {
+
+			const node = ref.deref();
+			if ( node ) node.dispose();
+
+		}
+		this._lightsNodes.length = 0;
+		this._lightsByScene = new WeakMap();
 
 	}
 

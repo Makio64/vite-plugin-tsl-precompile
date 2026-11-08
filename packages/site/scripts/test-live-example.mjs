@@ -91,6 +91,7 @@ try {
 
 	const initialFailureCheckpoint = browserFailures.checkpoint();
 	await page.goto( examplesPageUrl, { waitUntil: 'networkidle', timeout: 30000 } );
+	await browserFailures.settle();
 	const initialBrowserFailures = browserFailures.messagesSince( initialFailureCheckpoint );
 	if ( initialBrowserFailures.length > 0 ) throw new Error( `examples page:\n${ initialBrowserFailures.join( '\n' ) }` );
 	const verified = liveManifest.examples.filter( entry => entry.runtimeMode === 'pure-slim' && entry.buildVerified === true );
@@ -240,6 +241,7 @@ try {
 		// renderer callback complete with the iframe navigation. Check failures
 		// only after the browsing context has actually reached about:blank.
 		await page.waitForTimeout( 50 );
+		await browserFailures.settle();
 		const routeBrowserFailures = browserFailures.messagesSince( failureCheckpoint );
 		if ( routeBrowserFailures.length > 0 ) throw new Error( `${ entry.id }:\n${ routeBrowserFailures.join( '\n' ) }` );
 		console.log( `[site-live-test] ${ entry.id } ready; RGB deviation ${ maxRgbDeviation.toFixed( 2 ) }; ${( motion.changedFraction * 100 ).toFixed( 2 )}% pixels moved` );

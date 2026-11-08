@@ -2,10 +2,133 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compileTSL } from '../../src/vendor/compileTSL.js';
-import { createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
+import { createMockGPU, createMockGPUCanvasContext, installMockWebGPU } from '../../src/mock-webgpu.js';
 import { beginRenderObjectHarvest } from '../../src/vendor/render-object-observer.js';
 import { VIEWPORT_TEXTURE_IDENTITY_SCHEMA } from '@tsl-precompile/contract/dynamic-bindings';
 import { RENDER_BINDING_OWNER_KINDS } from '@tsl-precompile/contract/render-selector';
+import { assertFullscreenQuadCapture, renderCapturedFullscreenQuad } from '../../src/vendor/capture-fullscreen-quad.js';
+
+// r187dev compact Fn layouts emit generic `fnN` WGSL names; match the operator bodies as well.
+const REINHARD = /reinhardToneMapping|\/ \( (\w+) \+ vec3<f32>\( 1\.0 \) \)/i;
+const NEUTRAL = /neutralToneMapping|< 0\.76 \)/i;
+// r186 keys Renderer._quadCache by the output texture, r187dev by its RenderTarget.
+const cachedQuad = ( renderer, target ) => renderer._quadCache.get( target ) || renderer._quadCache.get( target.texture );
+
+test( 'isolated fullscreen capture preserves native r186 screen samples and explicit offscreen MSAA', async () => {
+
+	installMockWebGPU();
+	const [ core, webgpu, tsl ] = await Promise.all( [ import( 'three' ), import( 'three/webgpu' ), import( 'three/tsl' ) ] );
+	async function capture( native, offscreen ) {
+
+		const device = await ( await createMockGPU().requestAdapter() ).requestDevice();
+		device.features.add( 'core-features-and-limits' );
+		const renderer = new webgpu.WebGPURenderer( { canvas: makeCanvas(), antialias: true, device } );
+		await renderer.init();
+		renderer.toneMapping = native ? core.NoToneMapping : core.ACESFilmicToneMapping;
+		renderer.outputColorSpace = native ? core.ColorManagement.workingColorSpace : core.SRGBColorSpace;
+		const material = new webgpu.NodeMaterial();
+		material.fragmentNode = tsl.vec4( 1, 0.2, 0.3, 1 );
+		const quad = new webgpu.QuadMesh( material );
+		const scene = new core.Scene();
+		scene.add( quad );
+		const target = offscreen ? new core.RenderTarget( 16, 16, { samples: 4 } ) : null;
+		let session;
+		try {
+
+			assert.equal( renderer.samples, 4 );
+			if ( native ) {
+
+				renderer.setRenderTarget( target );
+				session = beginRenderObjectHarvest( renderer );
+				quad.render( renderer );
+				const harvest = await session.finish();
+				const family = harvest.familiesByMaterial.get( material );
+				assert.ok( family );
+				return { shaders: family.variants.map( variant => [ variant.nodeBuilderState.vertexShader, variant.nodeBuilderState.fragmentShader ] ) };
+
+			}
+			let sceneCompiles = 0;
+			const compileAsync = renderer.compileAsync;
+			renderer.compileAsync = function ( ...args ) { sceneCompiles ++; return compileAsync.apply( this, args ); };
+			const originalVertexNode = material.vertexNode;
+			const artifacts = await compileTSL( renderer, scene, quad.camera, {
+				fullscreenQuad: quad, materials: [ material ], noGlobalMRT: true,
+				skipWarmupRender: true, skipNodeUpdatesForMaterials: [ material ],
+				rendererStateOverride: { toneMapping: core.NoToneMapping, currentColorSpace: core.ColorManagement.workingColorSpace },
+				...( target ? { renderTargetOverride: target } : {} ),
+			} );
+			assert.equal( sceneCompiles, 0, 'uses the exact native quad draw, not compileAsync(Scene)' );
+			assert.equal( material.vertexNode, originalVertexNode );
+			assert.equal( renderer.samples, 4, 'host MSAA setting survives capture' );
+			assert.equal( renderer.toneMapping, core.ACESFilmicToneMapping );
+			assert.equal( renderer.outputColorSpace, core.SRGBColorSpace );
+			assert.equal( renderer.getRenderTarget(), null );
+			const artifact = artifacts.find( artifact => artifact.materialUuid === material.uuid );
+			assert.ok( artifact );
+			for ( const selector of artifact.renderContextSelectors ) assert.equal( JSON.parse( selector ).target.sampleCount, offscreen ? 4 : 1 );
+			return { shaders: [ [ artifact.vertexShader, artifact.fragmentShader ] ] };
+
+		} finally {
+
+			if ( session?.active ) await session.finish();
+			renderer.setRenderTarget( null );
+			target?.dispose();
+			material.dispose();
+			await renderer.dispose();
+
+		}
+
+	}
+	for ( const offscreen of [ false, true ] ) assert.deepEqual( ( await capture( false, offscreen ) ).shaders, ( await capture( true, offscreen ) ).shaders );
+
+} );
+
+test( 'fullscreen capture rejects ambiguous ownership and restores native vertex state after failure', () => {
+
+	const original = { id: 'authored vertex' };
+	const material = { vertexNode: original };
+	const quad = { isQuadMesh: true, material, render() { material.vertexNode = { id: 'native fullscreen' }; throw new Error( 'draw rejected' ); } };
+	const options = { skipNodeUpdatesForMaterials: [ material ] };
+	assert.doesNotThrow( () => assertFullscreenQuadCapture( quad, { children: [ quad ] }, options ) );
+	assert.throws( () => assertFullscreenQuadCapture( quad, { children: [ quad, {} ] }, options ), /sole native QuadMesh/ );
+	assert.throws( () => assertFullscreenQuadCapture( quad, { children: [ quad ] }, {} ), /suppress the isolated material/ );
+	assert.throws( () => renderCapturedFullscreenQuad( {}, quad ), /draw rejected/ );
+	assert.equal( material.vertexNode, original );
+
+} );
+
+test( 'repeated native fullscreen captures release material and object dispose listeners', async () => {
+
+	installMockWebGPU();
+	const [ core, webgpu, tsl ] = await Promise.all( [ import( 'three' ), import( 'three/webgpu' ), import( 'three/tsl' ) ] );
+	const renderer = new webgpu.WebGPURenderer( { canvas: makeCanvas(), antialias: false } );
+	await renderer.init();
+	renderer.outputColorSpace = core.ColorManagement.workingColorSpace;
+	const material = new webgpu.NodeMaterial();
+	material.fragmentNode = tsl.vec4( 0.2, 0.3, 0.4, 1 );
+	const quad = new webgpu.QuadMesh( material );
+	const scene = new core.Scene();
+	scene.add( quad );
+	const counts = [];
+	try {
+
+		for ( let index = 0; index < 4; index ++ ) {
+
+			await compileTSL( renderer, scene, quad.camera, { fullscreenQuad: quad, materials: [ material ], noGlobalMRT: true, skipWarmupRender: true, skipNodeUpdatesForMaterials: [ material ] } );
+			counts.push( { material: material._listeners?.dispose?.length || 0, object: quad._listeners?.dispose?.length || 0, geometry: quad.geometry._listeners?.dispose?.length || 0 } );
+
+		}
+		assert.deepEqual( counts.map( count => [ count.material, count.object ] ), [ [ 0, 0 ], [ 0, 0 ], [ 0, 0 ], [ 0, 0 ] ] );
+		assert.equal( new Set( counts.map( count => count.geometry ) ).size, 1, 'shared native quad geometry does not retain each capture' );
+
+	} finally {
+
+		material.dispose();
+		await renderer.dispose();
+
+	}
+
+} );
 
 test( 'compileTSL lets an awaiting owner restore temporary state before the next queued compile enters', async ( t ) => {
 
@@ -534,7 +657,7 @@ test( 'compileTSL correlates the active renderer output across stale caches and 
 			captureRendererOutput: true,
 		} );
 		assert.ok( first.renderOutputCapture, 'fresh capture produces an exact renderer-output sidecar' );
-		assert.match( first.renderOutputCapture.artifact.fragmentShader, /reinhardToneMapping/i );
+		assert.match( first.renderOutputCapture.artifact.fragmentShader, REINHARD );
 
 		renderer.setOutputRenderTarget( secondOutput );
 		renderer.toneMapping = core.NeutralToneMapping;
@@ -546,13 +669,24 @@ test( 'compileTSL correlates the active renderer output across stale caches and 
 		} );
 
 		const outputArtifacts = second.filter( ( artifact ) => artifact.materialShape === 'output-transform' );
-		assert.equal( outputArtifacts.length, 2, 'the accumulated cache still contains the stale first output' );
-		assert.match( outputArtifacts[ 0 ].fragmentShader, /reinhardToneMapping/i );
-		assert.match( second.renderOutputCapture.artifact.fragmentShader, /neutralToneMapping/i );
-		assert.equal( second.renderOutputCapture.artifact.materialUuid, renderer._quadCache.get( renderer._frameBufferTargets.get( secondOutput ).texture ).quad.material.uuid );
+		// r186 still harvests the stale first output from its accumulated cache. The r187dev harvest
+		// holds only the active output's quad; either way the active output must be selected below.
+		const staleOutputHarvested = core.REVISION === '186';
+		assert.equal( outputArtifacts.length, staleOutputHarvested ? 2 : 1, 'harvested renderer outputs' );
+		if ( staleOutputHarvested ) assert.match( outputArtifacts[ 0 ].fragmentShader, REINHARD );
+		assert.match( second.renderOutputCapture.artifact.fragmentShader, NEUTRAL );
+		assert.equal( second.renderOutputCapture.artifact.materialUuid, cachedQuad( renderer, renderer._frameBufferTargets.get( secondOutput ) ).quad.material.uuid );
 		assert.equal( renderer.getRenderTarget(), offscreen, 'capture restores the caller-owned offscreen target' );
 		assert.equal( renderer.getActiveCubeFace(), 3, 'capture restores the caller-owned cube face' );
 		assert.equal( renderer.getActiveMipmapLevel(), 2, 'capture restores the caller-owned mip level' );
+		const owner = scene.children[ 0 ].material;
+		const scoped = await compileTSL( renderer, scene, camera, { noGlobalMRT: true, materials: [ owner ] } );
+		assert.ok( scoped.length > 0 );
+		assert.equal( scoped.every( artifact => artifact.materialUuid === owner.uuid ), true,
+			'material capture excludes unrelated renderer output programs from the accumulated cache' );
+		const outputOnly = await compileTSL( renderer, scene, camera, { noGlobalMRT: true, materialShapes: [ 'output-transform' ] } );
+		assert.ok( outputOnly.length > 0 );
+		assert.equal( outputOnly.every( artifact => artifact.materialShape === 'output-transform' ), true );
 		assert.equal( renderer.currentColorSpace, core.ColorManagement.workingColorSpace );
 		assert.equal( second.renderOutputCapture.replayConfig.currentColorSpace, renderer.outputColorSpace );
 

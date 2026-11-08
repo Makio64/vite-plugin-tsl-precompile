@@ -42,11 +42,17 @@ jobs:
             echo "TSLP_SITE_BROWSER_OUT=$RUNNER_TEMP/deploy-site-browser"
           } >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select shared stable Three release
+        id: three-release
+        run: >-
+          node --input-type=module -e
+          "import { THREE_RELEASE_PROFILES } from './packages/contract/src/slim-three-policy.js';
+          console.log('commit=' + THREE_RELEASE_PROFILES.stable.gitCommit);" >> "$GITHUB_OUTPUT"
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: mrdoob/three.js
-          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          ref: ${{ steps.three-release.outputs.commit }}
           path: three.js
           fetch-depth: 1
           sparse-checkout: |
@@ -67,13 +73,13 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: Build the exact slim bundle with rewrite warnings fatal
         run: TSLP_FAIL_ON_REWRITE_WARNING=1 pnpm --filter @tsl-precompile/runtime build:slim
-      - name: Run the canonical 209-case stock-renderer sweep
+      - name: Run the canonical upstream stock-renderer sweep
         run: >-
           xvfb-run -a node packages/examples/batch/run.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"
           --output-root="$TSLP_STOCK_OUT"
           --canonical-evidence
-      - name: Run the exact 254-case capture/replay campaign
+      - name: Run the exact catalogue capture/replay campaign
         run: >-
           xvfb-run -a node packages/examples/batch/run-evidence-campaign.mjs
           --three-repo="$GITHUB_WORKSPACE/three.js"

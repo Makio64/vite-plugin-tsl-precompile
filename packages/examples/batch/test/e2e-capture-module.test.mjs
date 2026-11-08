@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { withMappedSceneMaterials } from '@tsl-precompile/runtime/slim-support/pass-render-fallback';
 import { createCubeCapturePrearmRegistry, isVerifiedCubeRenderTarget } from '../cube-capture-prearm.mjs';
+import {
+	isRendererOwnedBackgroundMaterial,
+	isRendererOwnedVsmMaterial,
+} from '../e2e-direct-node-material-policy.mjs';
 import { resolveE2EHarnessSourceFiles } from '../e2e-evidence.mjs';
 import { createLayeredCapturePrearmRegistry, isVerifiedLayeredRenderTarget } from '../layered-capture-prearm.mjs';
 
@@ -245,6 +250,113 @@ test( 'capture module retains the renderer that discovered each material context
 
 } );
 
+test( 'capture promotes a rendered stock-material alias before topology capture', () => {
+
+	const markStart = source.indexOf( 'function __mark( material,' );
+	const markEnd = source.indexOf( 'function __findParentScene(', markStart );
+	assert.ok( markStart >= 0 && markEnd > markStart, 'expected the generated material marker' );
+	const marker = source.slice( markStart, markEnd );
+	const representativeLookup = marker.indexOf( 'const topologyRepresentative =' );
+	const candidateRemember = marker.indexOf( '__rememberTopologyCaptureCandidate( topologyRepresentative,' );
+	assert.ok( representativeLookup >= 0 && candidateRemember > representativeLookup );
+
+	const rendererStart = source.indexOf( 'export class WebGPURenderer extends Original.WebGPURenderer' );
+	const renderObjectStart = source.indexOf( 'renderObject( object, scene, camera, geometry, material', rendererStart );
+	const renderObjectEnd = source.indexOf( '\n\tasync init(', renderObjectStart );
+	const renderObject = source.slice( renderObjectStart, renderObjectEnd );
+	assert.match( renderObject, /__renderObjectAndObserveMaterial\(/ );
+
+	const observerStart = source.indexOf( 'function __renderObjectAndObserveMaterial(' );
+	const observerEnd = source.indexOf( '\n\nexport class WebGPURenderer', observerStart );
+	assert.ok( observerStart >= 0 && observerEnd > observerStart, 'expected the successful-dispatch observer' );
+	const observer = source.slice( observerStart, observerEnd );
+	const dispatch = observer.indexOf( 'const renderResult = dispatch();' );
+	const observed = observer.indexOf( '__observedMaterials.add( material );' );
+	const promote = observer.indexOf( '__promoteObservedTopologyCaptureCandidate( pendingItem, __observedMaterials );' );
+	assert.ok( dispatch >= 0 && observed > dispatch && promote > observed );
+
+	const flushStart = source.indexOf( 'async function __flush(' );
+	const flushEnd = source.indexOf( '// Capture every explicit color sibling first.', flushStart );
+	const flush = source.slice( flushStart, flushEnd );
+	assert.match( flush, /for \( const item of pendingItems \) __promoteObservedTopologyCaptureCandidate\( item, __observedMaterials \);/ );
+
+} );
+
+test( 'capture explicitly replays discovered pass boundaries after arming observation', () => {
+
+	const flushStart = source.indexOf( 'async function __flush(' );
+	const flushEnd = source.indexOf( 'function __trackAuxCapture(', flushStart );
+	assert.ok( flushStart >= 0 && flushEnd > flushStart, 'expected the generated capture flush' );
+	const flush = source.slice( flushStart, flushEnd );
+	const mainMarkers = flush.indexOf( '// With every shared scene MRT restored, enqueue the main artifact burst.' );
+	const observedPass = flush.indexOf( 'passNode.updateBefore( { renderer: passRenderer } );' );
+	const pipelineRender = flush.indexOf( 'pipeline && typeof pipeline.render ===' );
+	assert.ok( observedPass > mainMarkers, 'the pass draw must run after material markers are armed' );
+	assert.ok( pipelineRender > observedPass, 'the full pipeline burst follows the exact producer pass draw' );
+	assert.match( flush, /const pendingItem = pendingItems\.find\( \( item \) => item\.scene === passNode\.scene \)/ );
+
+} );
+
+test( 'capture does not wait to rediscover materials already observed by renderObject', () => {
+
+	const flushStart = source.indexOf( 'async function __flush(' );
+	const flushEnd = source.indexOf( 'function __trackAuxCapture(', flushStart );
+	const flush = source.slice( flushStart, flushEnd );
+	assert.match(
+		flush,
+		/__tslpObserveNextRender: observedPipelineScenes\.has\( item\.scene \) && item\.observedDirectRender !== true/,
+	);
+
+	const rendererStart = source.indexOf( 'export class WebGPURenderer extends Original.WebGPURenderer' );
+	const renderObjectStart = source.indexOf( 'renderObject( object, scene, camera, geometry, material', rendererStart );
+	const renderObjectEnd = source.indexOf( '\n\tasync init(', renderObjectStart );
+	const renderObject = source.slice( renderObjectStart, renderObjectEnd );
+	const mark = renderObject.indexOf( 'directPendingItem = __mark(' );
+	const render = renderObject.indexOf( '() => super.renderObject(' );
+	const observed = renderObject.indexOf( 'directPendingItem.observedDirectRender = true;' );
+	assert.ok( mark >= 0 && render > mark && observed > render, 'only a successful renderer dispatch receives observation evidence' );
+
+} );
+
+test( 'a thrown renderObject dispatch leaves material and topology aliases unobserved', () => {
+
+	const observerStart = source.indexOf( 'function __renderObjectAndObserveMaterial(' );
+	const observerEnd = source.indexOf( '\n\nexport class WebGPURenderer', observerStart );
+	assert.ok( observerStart >= 0 && observerEnd > observerStart, 'expected the successful-dispatch observer' );
+	const makeObserver = Function(
+		'__observedMaterials',
+		'__getMaterialContextMap',
+		'__seenMaterialContexts',
+		'__promoteObservedTopologyCaptureCandidate',
+		`"use strict";\n${ source.slice( observerStart, observerEnd ) }\nreturn __renderObjectAndObserveMaterial;`,
+	);
+	const material = {};
+	const pendingItem = {};
+	const observedMaterials = new WeakSet();
+	const seenMaterialContexts = new WeakMap( [ [ material, new Map( [ [ 'context', pendingItem ] ] ) ] ] );
+	const promotions = [];
+	const observe = makeObserver(
+		observedMaterials,
+		( contexts, key ) => contexts.get( key ) || null,
+		seenMaterialContexts,
+		( item, observed ) => promotions.push( { item, observed } ),
+	);
+
+	assert.throws( () => observe( () => {
+
+		throw new Error( 'draw failed' );
+
+	}, material ), /draw failed/ );
+	assert.equal( observedMaterials.has( material ), false );
+	assert.deepEqual( promotions, [] );
+
+	const renderResult = {};
+	assert.equal( observe( () => renderResult, material ), renderResult );
+	assert.equal( observedMaterials.has( material ), true );
+	assert.deepEqual( promotions, [ { item: pendingItem, observed: observedMaterials } ] );
+
+} );
+
 test( 'capture module leaves registered postprocess subpass materials to auxiliary capture', () => {
 
 	const captureStart = source.indexOf( 'function fullWebgpuAutoModule()' );
@@ -264,6 +376,8 @@ test( 'capture module leaves registered postprocess subpass materials to auxilia
 		'__collectRegisteredEffectNodes',
 		'__postProcessingSubpassMaterials',
 		'__nonPostProcessingSubpassMaterials',
+		'__isRendererOwnedVsmMaterial',
+		'Original',
 		'__classNameForMaterial',
 		'__mark',
 		`"use strict";\n${ source.slice( helperStart, helperEnd ) }\nreturn { collect: __collectRegisteredPostprocessSubpassMaterials, mark: __markStandaloneRenderTargetMaterial };`,
@@ -275,6 +389,21 @@ test( 'capture module leaves registered postprocess subpass materials to auxilia
 	const finalPipelineMaterial = {};
 	const lookalikePipelineMaterial = {};
 	const standaloneMaterial = {};
+	const vsmShadowMapType = Symbol( 'VSMShadowMap' );
+	const rgFormat = Symbol( 'RGFormat' );
+	const halfFloatType = Symbol( 'HalfFloatType' );
+	const vsmCamera = {};
+	const vsmMaterial = { name: 'VSMVertical', isNodeMaterial: true, fragmentNode: { isNode: true } };
+	const vsmQuad = { isQuadMesh: true, name: 'VSM blur', material: vsmMaterial, camera: vsmCamera, parent: null };
+	const vsmRenderTarget = {
+		isRenderTarget: true,
+		depthBuffer: false,
+		texture: { isTexture: true, format: rgFormat, type: halfFloatType, name: '' },
+	};
+	const vsmRenderer = {
+		shadowMap: { enabled: true, type: vsmShadowMapType },
+		getRenderTarget: () => vsmRenderTarget,
+	};
 	const bloomNode = {};
 	const observedEffectIndexes = [];
 	const bloomHandler = {
@@ -298,6 +427,8 @@ test( 'capture module leaves registered postprocess subpass materials to auxilia
 		collectEffectNodes,
 		new WeakSet(),
 		new WeakSet(),
+		isRendererOwnedVsmMaterial,
+		{ VSMShadowMap: vsmShadowMapType, RGFormat: rgFormat, HalfFloatType: halfFloatType },
 		() => 'NodeMaterial',
 		( ...args ) => marks.push( args ),
 	);
@@ -313,11 +444,12 @@ test( 'capture module leaves registered postprocess subpass materials to auxilia
 	helpers.mark( finalPipelineQuad, {} );
 	helpers.mark( { isQuadMesh: true, name: 'Render Pipeline', material: lookalikePipelineMaterial }, {} );
 	helpers.mark( { isQuadMesh: true, name: 'Standalone RTT', material: standaloneMaterial }, {} );
+	helpers.mark( vsmQuad, vsmRenderer, vsmCamera );
 
 	assert.deepEqual(
 		marks.map( ( args ) => args[ 0 ] ),
 		[ lookalikePipelineMaterial, standaloneMaterial ],
-		'only exact registered pipeline-owned identities are excluded from user-material capture',
+		'only authored standalone identities enter user-material capture',
 	);
 	assert.ok( observedEffectIndexes.every( ( index ) => index === 0 ), 'effect indexes reset per registered pipeline' );
 
@@ -601,7 +733,7 @@ test( 'opt-in replay operation diagnostics wrap first-frame renderer and blit bo
 
 	const summaries = source.indexOf( 'const auxSummaries = summarizeAuxArtifacts( bucket );' );
 	const dump = source.indexOf( "const debugDir = join( OUT, 'debug-pre-replay' );", summaries );
-	const replay = source.indexOf( "const replay = await visitExample( browser, name, 'replay'", summaries );
+	const replay = source.indexOf( "await visitExample( browser, name, 'replay'", summaries );
 	assert.ok( summaries >= 0 && dump > summaries && replay > dump, 'diagnostic artifacts are persisted before replay can stall' );
 	assert.match( source.slice( dump, replay ), /writeArtifactDebugDump/ );
 	assert.match( source.slice( dump, replay ), /bytes: userDump\.bytes\.length/ );
@@ -663,7 +795,7 @@ test( 'synthetic capture renders stay isolated while pending user renders remain
 	assert.doesNotMatch( renderGuard.slice( 0, maintenanceReturn ), /__markSceneMaterials|__markStandaloneRenderTargetMaterial/ );
 	assert.match(
 		renderGuard.slice( maintenanceReturn ),
-		/__markSceneMaterials\( scene, camera, this \)[\s\S]*__markStandaloneRenderTargetMaterial\( scene, this \)/,
+		/__markSceneMaterials\( scene, camera, this \)[\s\S]*__markStandaloneRenderTargetMaterial\( scene, this, camera \)/,
 		'a genuine user-scene render can discover later helper materials while another capture is pending',
 	);
 
@@ -863,6 +995,55 @@ test( 'capture module never queues Three renderer-owned shadow overrides as user
 
 } );
 
+test( 'capture leaves Three renderer-owned VSM materials to auxiliary shadow capture', () => {
+
+	assert.match( source, /const __isRendererOwnedVsmMaterial = \$\{ isRendererOwnedVsmMaterial\.toString\(\) \};/ );
+
+	const standaloneStart = source.indexOf( 'function __markStandaloneRenderTargetMaterial(' );
+	const standaloneEnd = source.indexOf( 'function __rememberAuxScene(', standaloneStart );
+	assert.ok( standaloneStart >= 0 && standaloneEnd > standaloneStart, 'expected standalone material marker' );
+	const standalone = source.slice( standaloneStart, standaloneEnd );
+	const standaloneVsmGuard = standalone.indexOf( '__isRendererOwnedVsmMaterial(' );
+	const standaloneMark = standalone.indexOf( '__mark( m,' );
+	assert.ok( standaloneVsmGuard >= 0 && standaloneMark > standaloneVsmGuard, 'VSM passes must be rejected before standalone user marking' );
+	assert.match( standalone, /m,[\s\S]*target,[\s\S]*renderer,[\s\S]*camera,[\s\S]*Original\.VSMShadowMap,[\s\S]*Original\.RGFormat,[\s\S]*Original\.HalfFloatType/ );
+
+	const rendererStart = source.indexOf( 'export class WebGPURenderer extends Original.WebGPURenderer' );
+	const renderObjectStart = source.indexOf( 'renderObject( object, scene, camera, geometry, material', rendererStart );
+	const renderObjectEnd = source.indexOf( '\n\tasync init(', renderObjectStart );
+	assert.ok( renderObjectStart >= 0 && renderObjectEnd > renderObjectStart, 'expected capture renderObject boundary' );
+	const renderObject = source.slice( renderObjectStart, renderObjectEnd );
+	assert.match( renderObject, /const rendererOwnedDirectMaterial = __isRendererOwnedVsmMaterial\([\s\S]*material,[\s\S]*object,[\s\S]*this,[\s\S]*camera,[\s\S]*Original\.VSMShadowMap/ );
+	assert.match( renderObject, /if \( ! rendererOwnedDirectMaterial && material &&/ );
+
+	const flushStart = source.indexOf( 'window.__tslpFlushCaptureArtifacts = async function ()' );
+	const flushEnd = source.indexOf( 'export class Scene extends Original.Scene', flushStart );
+	assert.ok( flushStart >= 0 && flushEnd > flushStart, 'expected auxiliary capture flush' );
+	assert.match( source.slice( flushStart, flushEnd ), /precompileAuxiliary\(/, 'VSM stages remain owned by auxiliary shadow capture' );
+
+} );
+
+test( 'capture leaves the exact Three renderer-owned background pair to auxiliary capture', () => {
+
+	assert.match( source, /const __isRendererOwnedBackgroundMaterial = \$\{ isRendererOwnedBackgroundMaterial\.toString\(\) \};/ );
+	assert.equal( isRendererOwnedBackgroundMaterial(
+		{ name: 'Background.material', allowOverride: false },
+		{ name: 'Background.mesh', frustumCulled: false, parent: null },
+	), true );
+
+	const rendererStart = source.indexOf( 'export class WebGPURenderer extends Original.WebGPURenderer' );
+	const renderObjectStart = source.indexOf( 'renderObject( object, scene, camera, geometry, material', rendererStart );
+	const renderObjectEnd = source.indexOf( '\n\tasync init(', renderObjectStart );
+	const renderObject = source.slice( renderObjectStart, renderObjectEnd );
+	assert.match( renderObject, /const rendererOwnedDirectMaterial = __isRendererOwnedVsmMaterial\([\s\S]*__isRendererOwnedBackgroundMaterial\( material, object \)/ );
+	assert.match( renderObject, /if \( ! rendererOwnedDirectMaterial && material &&/ );
+
+	const flushStart = source.indexOf( 'window.__tslpFlushCaptureArtifacts = async function \(\)' );
+	const flushEnd = source.indexOf( 'export class Scene extends Original.Scene', flushStart );
+	assert.match( source.slice( flushStart, flushEnd ), /precompileAuxiliary\(/, 'background capture remains auxiliary-owned' );
+
+} );
+
 test( 'capture claims detached direct NodeMaterial draws with their authored scene', () => {
 
 	const captureModuleStart = source.indexOf( 'function fullWebgpuAutoModule()' );
@@ -925,11 +1106,78 @@ test( 'full offscreen fallback preserves live node override materials', () => {
 	const end = source.indexOf( 'function __sharePassRenderTargetFromFullRenderer(', start );
 	assert.ok( start >= 0 && end > start, 'expected the full-pass source-material wrapper' );
 	const wrapper = source.slice( start, end );
+	const defaultMappings = [];
+	const withSourceMaterials = Function(
+		'__sharedWithMappedSceneMaterials',
+		'__materialForFullPass',
+		`"use strict";\n${ wrapper }\nreturn __withSourceMaterialsForFullPass;`,
+	)( withMappedSceneMaterials, ( material ) => {
 
-	assert.match( wrapper, /const sourceOverrideMaterial = scene\.overrideMaterial\.__tslpSourceMaterial;/ );
-	assert.match( wrapper, /sourceOverrideMaterial\.isNodeMaterial === true[\s\S]*\? sourceOverrideMaterial[\s\S]*: materialForSource\( sourceOverrideMaterial \)/ );
-	assert.match( wrapper, /return materialForSource\( mat\.__tslpSourceMaterial \);/, 'ordinary array object materials still use the full-pass mapper' );
-	assert.match( wrapper, /object\.material = materialForSource\( material\.__tslpSourceMaterial \);/, 'ordinary scalar object materials still use the full-pass mapper' );
+		defaultMappings.push( material );
+		return { mapped: material };
+
+	} );
+
+	for ( const isNodeMaterial of [ true, false ] ) {
+
+		const sourceOverride = { isNodeMaterial };
+		const sourceScalar = { isNodeMaterial: true, name: 'scalar' };
+		const sourceArray = { isNodeMaterial: true, name: 'array' };
+		const precompiled = ( material ) => ( { isPrecompiledMaterial: true, __tslpSourceMaterial: material } );
+		const originalOverride = precompiled( sourceOverride );
+		const originalScalar = precompiled( sourceScalar );
+		const ordinaryMaterial = { name: 'ordinary' };
+		const withoutSource = { isPrecompiledMaterial: true };
+		const originalArray = [ precompiled( sourceArray ), ordinaryMaterial, withoutSource ];
+		const scalarObject = { material: originalScalar };
+		const arrayObject = { material: originalArray };
+		const scene = {
+			overrideMaterial: originalOverride,
+			traverse( visitor ) { visitor( scalarObject ); visitor( arrayObject ); },
+		};
+		const mappings = new Map();
+		const options = {
+			materialForSource( material ) {
+
+				if ( ! mappings.has( material ) ) mappings.set( material, { mapped: material } );
+				return mappings.get( material );
+
+			},
+		};
+		const assertMapped = () => {
+
+			assert.equal( scene.overrideMaterial, isNodeMaterial ? sourceOverride : mappings.get( sourceOverride ) );
+			assert.equal( mappings.has( sourceOverride ), ! isNodeMaterial, 'live node overrides bypass the full-pass mapper' );
+			assert.equal( scalarObject.material, mappings.get( sourceScalar ), 'ordinary scalar node materials use the mapper' );
+			assert.equal( arrayObject.material[ 0 ], mappings.get( sourceArray ), 'ordinary array node materials use the mapper' );
+			assert.equal( arrayObject.material[ 1 ], ordinaryMaterial );
+			assert.equal( arrayObject.material[ 2 ], withoutSource );
+
+		};
+		const assertRestored = () => {
+
+			assert.equal( scene.overrideMaterial, originalOverride );
+			assert.equal( scalarObject.material, originalScalar );
+			assert.equal( arrayObject.material, originalArray, 'the exact original material array is restored' );
+
+		};
+		assert.equal( withSourceMaterials( scene, () => { assertMapped(); return 42; }, options ), 42 );
+		assertRestored();
+		assert.throws( () => withSourceMaterials( scene, () => { assertMapped(); throw new Error( 'render failed' ); }, options ), /render failed/ );
+		assertRestored();
+		assert.deepEqual( defaultMappings, [], 'a caller-supplied mapper replaces the default mapper' );
+		withSourceMaterials( scene, () => {
+
+			assert.equal( scalarObject.material.mapped, sourceScalar );
+			assert.equal( arrayObject.material[ 0 ].mapped, sourceArray );
+			if ( isNodeMaterial ) assert.equal( scene.overrideMaterial, sourceOverride );
+			else assert.equal( scene.overrideMaterial.mapped, sourceOverride );
+
+		} );
+		assertRestored();
+		assert.deepEqual( defaultMappings.splice( 0 ), isNodeMaterial ? [ sourceScalar, sourceArray ] : [ sourceOverride, sourceScalar, sourceArray ] );
+
+	}
 
 } );
 

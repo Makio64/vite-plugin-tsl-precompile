@@ -349,3 +349,41 @@ test( 'GLSL skinned object UBOs use each live bind matrix', () => {
 	assert.deepEqual( Array.from( binding.buffer.slice( 16, 32 ) ), object.bindMatrix.elements );
 
 } );
+
+for ( const generated of [ false, true ] ) test( `material-owned live uniforms stay local to each draw (${ generated ? 'generated' : 'interpreted' } writer)`, () => {
+
+	const materialA = { rangeNode: { isUniformNode: true, value: { x: 1, y: 2 } } };
+	const materialB = { rangeNode: { isUniformNode: true, value: { x: 8, y: 16 } } };
+	const slot = {
+		name: 'range', offset: 0, dtype: 'vec2',
+		source: { kind: 'uniform.live', nodePath: [ 'rangeNode' ], valueSnapshot: { type: 'vec2', data: [ 0.5, 0.5 ] } },
+		_liveNode: materialB.rangeNode,
+		__tslpLiveSidecarOverlay: true,
+	};
+	const artifact = {
+		vertexShader: '', fragmentShader: '',
+		bindings: [ { name: 'object', bindings: [ { name: 'object', kind: 'uniform-buffer', byteLength: 16, visibility: 3 } ] } ],
+		uniformPlan: [ { name: 'object', shared: false, byteLength: 16, slots: [ slot ] } ],
+	};
+	if ( generated ) artifact._generatedUpdateGroup = ( _frame, _material, view ) => {
+
+		view.setFloat32( 0, - 1, true );
+		view.setFloat32( 4, - 1, true );
+
+	};
+	const state = hydrateNodeBuilderState( artifact, materialA );
+	const updater = state.updateNodes.find( ( node ) => node.getUpdateType() === 'object' );
+	const objectA = {}, objectB = {};
+	updater.update( { object: objectA, material: materialA } );
+	const bindingA = bindingByName( state.createBindings(), 'object' );
+	updater.update( { object: objectB, material: materialB } );
+	const bindingB = bindingByName( state.createBindings(), 'object' );
+	assert.deepEqual( Array.from( bindingA.buffer.slice( 0, 2 ) ), [ 1, 2 ] );
+	assert.deepEqual( Array.from( bindingB.buffer.slice( 0, 2 ) ), [ 8, 16 ] );
+	materialA.rangeNode = { isUniformNode: true, value: { x: 3, y: 4 } };
+	updater.update( { object: objectA, material: materialA } );
+	assert.deepEqual( Array.from( bindingA.buffer.slice( 0, 2 ) ), [ 3, 4 ], 'a replacement owner node is read on the next draw' );
+	assert.deepEqual( Array.from( bindingB.buffer.slice( 0, 2 ) ), [ 8, 16 ] );
+	assert.equal( slot._liveNode, materialB.rangeNode, 'shared artifact sidecars are not mutated by a draw' );
+
+} );

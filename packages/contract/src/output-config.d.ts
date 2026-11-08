@@ -6,6 +6,7 @@ export interface RendererOutputConfig {
 	currentColorSpace: OutputTopologyScalar;
 	logarithmicDepthBuffer: boolean;
 	sampledTexture: '2d' | '2d-array';
+	sampledTextureDataType?: Exclude<OutputTopologyScalar, null>;
 	multiview: boolean;
 }
 
@@ -21,3 +22,5 @@ export interface RenderPipelineConfig {
 
 export function createRendererOutputConfig( renderer: unknown, outputTexture: unknown ): RendererOutputConfig;
 export function createRenderPipelineConfig( pipeline: unknown ): RenderPipelineConfig;
+
+export function createEffectPassCaptureName( pipelineName: string | null | undefined, handlerName: string, effectIndex: number, passIndex: number ): string | null;

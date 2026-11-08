@@ -102,6 +102,7 @@ export function writeMat4( view, byteOffset, mat ) {
 }
 
 const _bgRotScratch = { elements: new Float32Array( 16 ) };
+let _bgRotX, _bgRotY, _bgRotZ, _bgRotOrder, _bgRotEnabled;
 let _bgRotImpl = null;
 function _ensureBgRotImpl() {
 
@@ -184,24 +185,30 @@ export function writeMat4FromEuler( view, byteOffset, euler, background ) {
 function _writeEulerMatrix( view, byteOffset, euler, enabled ) {
 
 	const e = _bgRotScratch.elements;
-	if ( enabled && euler ) {
+	const active = !! ( enabled && euler );
+	const x = active ? euler._x ?? euler.x ?? 0 : 0;
+	const y = active ? euler._y ?? euler.y ?? 0 : 0;
+	const z = active ? euler._z ?? euler.z ?? 0 : 0;
+	const order = active ? euler._order ?? euler.order ?? 'XYZ' : '';
+	// A one-entry value cache retains no scene/material and observes mutations
+	// even within one draw. Object.is preserves signed-zero matrix bytes.
+	if ( _bgRotEnabled !== active || ! Object.is( _bgRotX, x ) || ! Object.is( _bgRotY, y ) || ! Object.is( _bgRotZ, z ) || _bgRotOrder !== order ) {
 
-		_ensureBgRotImpl()(
-			e,
-			euler._x ?? euler.x ?? 0,
-			euler._y ?? euler.y ?? 0,
-			euler._z ?? euler.z ?? 0,
-			euler._order ?? euler.order ?? 'XYZ',
-		);
-		// Transpose: matches `_m1.transpose()` in stock SceneProperties.
-		[ e[ 1 ], e[ 4 ] ] = [ e[ 4 ], e[ 1 ] ];
-		[ e[ 2 ], e[ 8 ] ] = [ e[ 8 ], e[ 2 ] ];
-		[ e[ 6 ], e[ 9 ] ] = [ e[ 9 ], e[ 6 ] ];
+		if ( active ) {
 
-	} else {
+			_ensureBgRotImpl()( e, x, y, z, order );
+			// Transpose: matches `_m1.transpose()` in stock SceneProperties.
+			[ e[ 1 ], e[ 4 ] ] = [ e[ 4 ], e[ 1 ] ];
+			[ e[ 2 ], e[ 8 ] ] = [ e[ 8 ], e[ 2 ] ];
+			[ e[ 6 ], e[ 9 ] ] = [ e[ 9 ], e[ 6 ] ];
 
-		// Identity
-		for ( let i = 0; i < 16; i ++ ) e[ i ] = ( i % 5 === 0 ) ? 1 : 0;
+		} else {
+
+			for ( let i = 0; i < 16; i ++ ) e[ i ] = ( i % 5 === 0 ) ? 1 : 0;
+
+		}
+		_bgRotX = x; _bgRotY = y; _bgRotZ = z; _bgRotOrder = order; _bgRotEnabled = active;
+
 
 	}
 	for ( let i = 0; i < 16; i ++ ) view.setFloat32( byteOffset + ( i << 2 ), e[ i ], LE );
@@ -269,7 +276,12 @@ export function writePMREMScalar( view, byteOffset, kind, artifact, material, fr
 	const texture = _pmremTextureForSource( ownerArtifact, source );
 	const imageHeight = texture && texture.image && Number( texture.image.height );
 	let value = NaN;
-	if ( Number.isFinite( imageHeight ) && imageHeight > 0 ) {
+	if ( texture?.isCubeTexture === true && ( kind === 'pmrem.maxLod' || kind === 'pmrem.size' ) ) {
+
+		const mipmaps = texture.isCompressedCubeTexture ? texture.image?.[ 0 ]?.mipmaps : texture.mipmaps;
+		if ( Array.isArray( mipmaps ) && mipmaps.length > 0 ) value = kind === 'pmrem.maxLod' ? mipmaps.length - 1 : Number( mipmaps[ 0 ].width );
+
+	} else if ( Number.isFinite( imageHeight ) && imageHeight > 0 ) {
 
 		const maxMip = Math.log2( imageHeight ) - 2;
 		if ( kind === 'pmrem.maxMip' ) value = maxMip;

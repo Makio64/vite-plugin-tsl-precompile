@@ -2,9 +2,10 @@ import type { PMREMSupportConfig } from './pmrem-config.js';
 import type { VSMSupportConfig } from './vsm-config.js';
 
 export const INTERNAL_PASS_SCHEMA: 'internal-pass@1';
+export function stabilizePMREMInternalPassTextureSources<T extends object>( artifact: T ): T;
 
 export type InternalPassFamily = 'pmrem' | 'shadow-vsm';
-export type PMREMInternalPassStage = 'cubemap' | 'equirect' | 'blur' | 'ggx';
+export type PMREMInternalPassStage = 'cubemap' | 'equirect' | 'blur' | 'ggx' | 'integration';
 export type VSMInternalPassStage = 'vertical' | 'horizontal';
 export type InternalPassStage = PMREMInternalPassStage | VSMInternalPassStage;
 export type InternalPassInputKind = 'texture' | 'buffer';
@@ -114,7 +115,7 @@ export class InternalPassContractError extends Error {
 }
 
 export function internalPassShape( family: string, stage: string ): string | null;
-export function getInternalPassStageDefinition( family: string, stage: string ): InternalPassStageDefinition | null;
+export function getInternalPassStageDefinition( family: string, stage: string, config?: unknown ): InternalPassStageDefinition | null;
 export function validateInternalPassFamilyStages(
 	family: string,
 	stages: Iterable<string>,
@@ -138,3 +139,4 @@ export function assertInternalPassFamily<T extends Record<string, unknown>>(
 	artifacts: Iterable<T>,
 	options?: { family?: string, expectedStages?: Iterable<string>, profile?: string, config?: Record<string, unknown> },
 ): T[];
+export function stabilizeInternalPassUniformBufferNames<T>(artifact: T): T;

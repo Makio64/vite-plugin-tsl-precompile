@@ -18,7 +18,7 @@ export function normalizeSlimRenderFallbackState( state ) {
 		? state.bindings
 		: typeof state.getBindings === 'function' ? state.getBindings() : [];
 	const createBindings = typeof state.createBindings === 'function'
-		? () => state.createBindings()
+		? ( ...args ) => state.createBindings( ...args )
 		: () => cloneFallbackBindings( bindings );
 
 	return {

@@ -374,8 +374,8 @@ test( 'results UI source and operator docs describe run-scoped evidence without 
 	assert.match( source, /--output-root=/ );
 	assert.match( source, /--input-root=/ );
 	assert.doesNotMatch( readme, /\b206\b|results\/shots/ );
-	assert.match( readme, /254-case catalogue/ );
-	assert.match( readme, /209 official Three r185 WebGPU examples plus 45 local routes/ );
+	assert.match( readme, /272-case catalogue/ );
+	assert.match( readme, /224 official Three r186 WebGPU examples plus 48 local routes/ );
 	assert.match( readme, /Schema-2 evidence is run-scoped/ );
 	assert.match( readme, /diagnostic pass/ );
 

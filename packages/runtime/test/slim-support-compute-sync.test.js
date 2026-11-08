@@ -594,10 +594,14 @@ test( 'syncComputeStorageOutputs does not infer automatic mipmaps for r185 Stora
 	full.backend.get( tex ).texture = { __gpu: 'fire-volume' };
 
 	const slim = fakeRenderer( { bindGroupsForNode: () => [ bindGroup ] } );
+	// r185/r186 leave the flag undefined; r187dev textures default it to false. Either way the
+	// sync must not turn automatic mipmaps on.
+	const nativeMipmapsAutoUpdate = tex.mipmapsAutoUpdate;
 	const stats = syncComputeStorageOutputs( 'compute-node', full, slim );
 
 	assert.equal( stats.texturesShared, 1 );
-	assert.equal( tex.mipmapsAutoUpdate, undefined );
+	assert.equal( tex.mipmapsAutoUpdate, nativeMipmapsAutoUpdate );
+	assert.notEqual( tex.mipmapsAutoUpdate, true );
 	assert.deepEqual( slim.generateMipmapsCalls, [] );
 
 } );

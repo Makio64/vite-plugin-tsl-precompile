@@ -31,9 +31,11 @@ import { createLightSourceIdentityMetadata } from '@tsl-precompile/contract/ligh
 import { RENDER_BINDING_OWNER_KINDS, SHADOW_CASTER_COPIED_BINDING_PROPERTIES } from '@tsl-precompile/contract/render-selector';
 import { createRendererRenderTargetTextureSelector } from '@tsl-precompile/contract/render-target-texture';
 import { isObservedVelocityProjectionSource } from '../velocity-projection-observation.js';
+import { PMREM_CUBE_UV_MAPPING } from '@tsl-precompile/contract/pmrem-config';
+import { resolveScreenUniformSource } from './capture-screen-uniform.js';
+import { classifyRendererScalarCallback } from './capture-renderer-uniform.js';
 
 const SHADOW_CASTER_COPIED_BINDING_PROPERTY_SET = new Set( SHADOW_CASTER_COPIED_BINDING_PROPERTIES );
-const PMREM_CUBE_UV_MAPPING = 306;
 
 /**
  * Three r185 decides whether a sampler is a comparison sampler from the
@@ -320,28 +322,20 @@ function resolveFromUpdateNode( node, context = null ) {
 		// without needing a runtime-side callback ledger.
 		const detected = classifyByCallback( node );
 		if ( detected ) return { uniformNode: node, source: detected };
+		const rendererScalar = classifyRendererScalarCallback( node );
+		if ( rendererScalar ) return { uniformNode: node, source: rendererScalar };
 
 		return { uniformNode: node, source: classifyByName( node.name ) };
 
 	}
 
 	// ScreenNode — writes viewport / screen-size / DPR uniforms each frame
-	// from the live renderer. The internal UniformNode is lazily created by
-	// setup() and stored on `node._output`. By the time extractUniformPlan
-	// runs the NodeBuilderState is fully compiled, so `_output` is always set.
-	// Scopes COORDINATE and UV do not drive a UBO slot (they expand to
-	// built-in WGSL expressions), so we return null for them.
+	// from the live renderer. Old releases expose `_output`; new ones retain
+	// only a shared vector that update() passes to renderer getters. Recover
+	// that exact identity without advancing the renderer or inspecting graphs.
 	if ( type === 'ScreenNode' ) {
 
-		const scope = node.scope;
-		let kind = null;
-		if ( scope === 'size' ) kind = 'renderer.size';
-		else if ( scope === 'viewport' ) kind = 'renderer.viewport';
-		else if ( scope === 'dpr' ) kind = 'renderer.dpr';
-
-		if ( kind === null || ! node._output ) return null;
-
-		return { uniformNode: node._output, source: { kind } };
+		return resolveScreenUniformSource( node );
 
 	}
 
@@ -787,8 +781,8 @@ function collectLightUniformSources( state ) {
 
 			if ( typeof lightViewPosition === 'function' ) {
 
-				const u = lightViewPosition( light );
-				if ( u && u.value ) out.set( u, { kind: 'light.viewPosition', ...base } );
+				const u = resolveLightViewPositionUniform( lightViewPosition( light ) );
+				if ( u ) out.set( u, { kind: 'light.viewPosition', ...base } );
 
 			}
 
@@ -923,6 +917,23 @@ function collectShadowUniformSources( state, context = null ) {
 	}
 
 	return out;
+
+}
+
+function resolveLightViewPositionUniform( node ) {
+
+	if ( ! node ) return null;
+	if ( node.value ) return node;
+	// r187dev wraps lightViewPosition(light) in a .once() Fn (VarNode -> CallNode -> ShaderNode);
+	// evaluating its jsFunc with a non-array camera stub returns the underlying UniformNode.
+	const jsFunc = node.node && node.node.shaderNode && node.node.shaderNode.jsFunc;
+	if ( typeof jsFunc === 'function' ) {
+
+		const resolved = jsFunc( { camera: { isArrayCamera: false } } );
+		if ( resolved && resolved.value ) return resolved;
+
+	}
+	return null;
 
 }
 
@@ -1133,15 +1144,28 @@ function collectPointShadowCameraUniformSources( state ) {
  * @param {?Object} object
  * @return {Map<Object, Object>} UniformNode → object source descriptor.
  */
-function collectObjectUniformSources( object ) {
+function collectObjectUniformSources( object, material ) {
 
 	const out = new Map();
 	if ( ! object || typeof object !== 'object' ) return out;
+	// Explicit material aliases survive both real addon meshes and synthetic
+	// capture meshes. Let the ordinary live-uniform path annotate these exact
+	// owners instead of alternating between object and material provenance.
+	const materialAliases = new Set();
+	for ( const property of material ? Object.getOwnPropertyNames( material ) : [] ) {
+
+		if ( ! property.endsWith( 'Node' ) ) continue;
+		const descriptor = Object.getOwnPropertyDescriptor( material, property );
+		const node = descriptor && descriptor.value;
+		if ( node && node.isUniformNode === true ) materialAliases.add( node );
+
+	}
 
 	for ( const property of Object.keys( object ) ) {
 
 		const node = object[ property ];
 		if ( ! node || node.isUniformNode !== true ) continue;
+		if ( materialAliases.has( node ) ) continue;
 		out.set( node, {
 			kind: 'object3d.nodeUniform',
 			property,
@@ -1217,6 +1241,12 @@ function collectPMREMUniformSources( state ) {
 
 		const sourceBase = { textureUuid: texture.uuid };
 
+		if ( texture.isCubeTexture === true && texture.isPMREMTexture === true ) {
+
+			if ( node._maxLod?.isUniformNode === true ) out.set( node._maxLod, { kind: 'pmrem.maxLod', ...sourceBase } );
+			if ( node._size?.isUniformNode === true ) out.set( node._size, { kind: 'pmrem.size', ...sourceBase } );
+
+		}
 		if ( node._maxMip && node._maxMip.isUniformNode === true ) out.set( node._maxMip, { kind: 'pmrem.maxMip', ...sourceBase } );
 		if ( node._width && node._width.isUniformNode === true ) out.set( node._width, { kind: 'pmrem.texelWidth', ...sourceBase } );
 		if ( node._height && node._height.isUniformNode === true ) out.set( node._height, { kind: 'pmrem.texelHeight', ...sourceBase } );
@@ -1425,7 +1455,7 @@ function attachRenderTargetTextureSelector( source, texture ) {
 	// can accidentally match another same-shaped transient atlas.
 	if (
 		source.kind === 'artifact.texture' &&
-		( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' )
+		( source.isPMREMTexture === true || source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' )
 	) return source;
 	const artifactTexture = source.kind === 'artifact.texture';
 	const nonLightDepthTexture = source.kind === 'depth.texture'
@@ -1602,7 +1632,7 @@ export function extractUniformPlan( state, context = null ) {
 	const shadowUniformSources = collectShadowUniformSources( state, context );
 	const highPrecisionShadowModelMatrixSources = collectHighPrecisionShadowModelMatrixSources( state );
 	const pointShadowCameraUniformSources = collectPointShadowCameraUniformSources( state );
-	const objectUniformSources = collectObjectUniformSources( context && context.object || null );
+	const objectUniformSources = collectObjectUniformSources( context && context.object || null, context && context.material || null );
 	const pmremUniformSources = collectPMREMUniformSources( state );
 	const {
 		uniformSources: velocityUniformSources,
@@ -1721,7 +1751,15 @@ export function extractUniformPlan( state, context = null ) {
 		}
 
 		const entry = resolveFromUpdateNode( node, context );
-		if ( ! entry || ! entry.uniformNode ) continue;
+		if ( ! entry ) continue;
+		if ( entry.uniformValue && entry.source ) {
+
+			const previous = screenValueToSource.get( entry.uniformValue );
+			if ( previous && previous.kind !== entry.source.kind ) ambiguousScreenValues.add( entry.uniformValue );
+			else if ( ! previous ) screenValueToSource.set( entry.uniformValue, entry.source );
+
+		}
+		if ( ! entry.uniformNode ) continue;
 
 		// Don't overwrite a pre-seeded light or shadow source — bare
 		// UniformNode classification returns `uniform.live` for unnamed
@@ -2122,6 +2160,13 @@ export function extractUniformPlan( state, context = null ) {
 
 					}
 
+					if ( source?.kind === 'artifact.texture' && boundTexture?.isPMREMTexture === true ) {
+
+						// The native generated resource flag survives caller renaming
+						// and preserves cube-mip PMREM ownership for replay wiring.
+						source = { ...source, isPMREMTexture: true };
+
+					}
 					source = attachRenderTargetTextureSelector( source, boundTexture );
 					if ( binding.isSampledTexture === true && textureNode && textureNode._flipYUniform ) {
 
@@ -2211,6 +2256,7 @@ export function extractUniformPlan( state, context = null ) {
 
 				const sbEntry = {
 					name: binding.name || '',
+					...( binding.nodeUniform?.bufferCount === 0 ? { runtimeSized: true } : {} ),
 					access: binding.access || 'read_write',
 					// Visibility is a GPUShaderStage bitmask. The backend
 					// reads it when building the BindGroupLayout — if we

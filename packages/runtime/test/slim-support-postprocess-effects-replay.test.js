@@ -1,3 +1,4 @@
+import { registerAuxArtifact, __resetAuxRegistryForTests, bindAuxByName, loadAux } from '../src/aux-loader.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -344,6 +345,29 @@ test( 'makePrecompiledAuxMaterial returns null when no aux artifact is registere
 	const loadAux = makeLoadAux( [] );
 	const mat = makePrecompiledAuxMaterial( 'bloom-blur-0', {}, { loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
 	assert.equal( mat, null );
+
+} );
+
+test( 'bloom blur input follows each draw without changing another replay owner', () => {
+
+	const loadAux = makeLoadAux( [ 'bloom-blur-0' ] );
+	const source = { colorTexture: { value: null } };
+	const create = () => makePrecompiledAuxMaterial( 'bloom-blur-0', source, { loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
+	const first = create(), second = create();
+	const bright = { isTexture: true, uuid: 'bright' };
+	const horizontal = { isTexture: true, uuid: 'horizontal' };
+	const nextMip = { isTexture: true, uuid: 'next-mip' };
+	const capturedId = 'tex-bloom-blur-0';
+	second.colorTexture.value = nextMip;
+	for ( const input of [ bright, horizontal, nextMip, bright ] ) {
+
+		first.colorTexture.value = input;
+		assert.equal( first.precompiledArtifact._textureRefs.get( capturedId ), input );
+		assert.equal( second.precompiledArtifact._textureRefs.get( capturedId ), nextMip );
+
+	}
+	assert.equal( source.colorTexture.value, null );
+	assert.equal( loadAux._map.get( 'bloom-blur-0' )._textureRefs, undefined );
 
 } );
 
@@ -1325,5 +1349,44 @@ test( 'bloom handler hooks: wireSubPassTextures attaches composite texture refs 
 	const refs = composite.precompiledArtifact._textureRefs;
 	assert.ok( refs instanceof Map, 'wireSubPassTextures populates _textureRefs' );
 	assert.equal( refs.get( 'orig-rt-v-0' ), node._renderTargetsVertical[ 0 ].texture );
+
+} );
+
+
+test( 'named pipelines select their own internal effect captures', () => {
+
+	__resetAuxRegistryForTests();
+	const handler = {
+		name: 'named-fixture',
+		detect: node => node.isNamedFixture === true,
+		subPasses: node => [ { material: node._material, shape: 'named-fixture' } ],
+	};
+	registerEffectHandler( handler );
+	try {
+
+		for ( const name of [ 'gi-off', 'gi-on' ] ) {
+
+			registerAuxArtifact( 'post-process', name, makeAuxArtifact( 'post-process' ), { name } );
+			registerAuxArtifact( 'named-fixture', `${ name }-effect`, { ...makeAuxArtifact( 'named-fixture' ), owner: name }, {
+				name: `${ name }--effect-named-fixture-0-0`,
+			} );
+
+		}
+		for ( const name of [ 'gi-off', 'gi-on' ] ) {
+
+			const root = { isNode: true, isNamedFixture: true, _material: { name: 'live' } };
+			bindAuxByName( root, 'post-process', name );
+			const result = preparePrecompiledPostprocess( { outputNode: root, loadAux, PrecompiledMaterial: StubPrecompiledMaterial } );
+			assert.deepEqual( result.missed, [] );
+			assert.equal( result.prepared[ 0 ].replacement.precompiledArtifact.owner, name );
+
+		}
+
+	} finally {
+
+		unregisterEffectHandler( handler.name );
+		__resetAuxRegistryForTests();
+
+	}
 
 } );

@@ -160,6 +160,7 @@ export function readCaptureBody( req, maxBytes = DEV_CAPTURE_MAX_BODY_BYTES ) {
 
 			if ( settled ) return;
 			settled = true;
+			chunks.length = 0;
 			if ( error ) reject( error );
 			else resolve( value );
 
@@ -211,7 +212,12 @@ export function readCaptureBody( req, maxBytes = DEV_CAPTURE_MAX_BODY_BYTES ) {
 			chunks.push( chunk );
 
 		} );
-		req.on( 'end', () => finish( null, Buffer.concat( chunks, receivedBytes ).toString( 'utf8' ) ) );
+		req.on( 'end', () => {
+
+			if ( settled ) return;
+			finish( null, Buffer.concat( chunks, receivedBytes ).toString( 'utf8' ) );
+
+		} );
 
 	} );
 

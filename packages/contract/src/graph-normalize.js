@@ -1,7 +1,32 @@
 import { MATERIAL_TEXTURE_PROPS } from './texture-props.js';
 import { ARTIFACT_TOOLCHAIN_VERSION } from './versions.js';
+import { threeEmitterIdentityHashLines } from './three-emitter-identity.js';
 
 export const MAX_GRAPH_DEPTH = 128;
+
+// Keep the original v1 byte encoding, including its handling of undefined.
+// Changing to the stricter stable-json encoder would invalidate existing captures.
+function stringifyLegacyConfig( value ) {
+
+	if ( value === null || typeof value !== 'object' ) return JSON.stringify( value );
+	if ( Array.isArray( value ) ) return '[' + value.map( stringifyLegacyConfig ).join( ',' ) + ']';
+	return '{' + Object.keys( value ).sort().map( ( key ) => JSON.stringify( key ) + ':' + stringifyLegacyConfig( value[ key ] ) ).join( ',' ) + '}';
+
+}
+
+export function createNodeGraphHashPayload( node, options ) {
+
+	const { shape, threeVersion, pluginVersion } = options;
+	return [ 'node-v1', shape, threeVersion, pluginVersion, ...threeEmitterIdentityHashLines( options ), normalizeNode( node, new Set(), 0 ) ].join( '\n' );
+
+}
+
+export function createPlainConfigHashPayload( config, options ) {
+
+	const { shape, threeVersion, pluginVersion } = options;
+	return [ 'plain-v1', shape, threeVersion, pluginVersion, ...threeEmitterIdentityHashLines( options ), stringifyLegacyConfig( config ) ].join( '\n' );
+
+}
 
 /** @type {Map<Function, string>} */
 const USER_MATERIAL_IDENTITIES = new Map();
@@ -208,6 +233,7 @@ export function createMaterialSourceHashPayload( material, opts = {} ) {
 		`tslp-material-source@${ ARTIFACT_TOOLCHAIN_VERSION }`,
 		`name=${ JSON.stringify( name ) }`,
 		`three=${ JSON.stringify( threeVersion ) }`,
+		...threeEmitterIdentityHashLines( opts ),
 		`toolchain=${ JSON.stringify( toolchainVersion ) }`,
 		normalizeMaterialGraph( material ),
 	].join( '\n' );

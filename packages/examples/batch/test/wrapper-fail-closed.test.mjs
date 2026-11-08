@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { SLIM_THREE_POLICY_VERSION, THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { formatSlimBundleStamp } from '@tsl-precompile/contract/slim-bundle-provenance-node';
 import {
 	createSlimPixelGateRunRoot,
@@ -44,8 +45,8 @@ function writeSlimBundle( root ) {
 	const stamp = formatSlimBundleStamp( {
 		sourceFingerprint: 'a'.repeat( 64 ),
 		versions: {
-			three: '0.185.1',
-			policy: 'slim-three-policy@12',
+			three: THREE_RELEASE_PROFILES.stable.packageVersion,
+			policy: SLIM_THREE_POLICY_VERSION,
 			artifactToolchain: '0.1.0',
 			buildToolchain: 'tslp-slim-rollup@1',
 		},
@@ -61,8 +62,8 @@ function writeThreeFixture( root, examples = PIXEL_EXAMPLES ) {
 	const threeRoot = join( root, 'three' );
 	mkdirSync( join( threeRoot, 'examples' ), { recursive: true } );
 	mkdirSync( join( threeRoot, 'src' ), { recursive: true } );
-	writeFileSync( join( threeRoot, 'package.json' ), JSON.stringify( { version: '0.185.1' } ) );
-	writeFileSync( join( threeRoot, 'src/constants.js' ), "export const REVISION = '185';\n" );
+	writeFileSync( join( threeRoot, 'package.json' ), JSON.stringify( { version: THREE_RELEASE_PROFILES.stable.packageVersion } ) );
+	writeFileSync( join( threeRoot, 'src/constants.js' ), `export const REVISION = '${ THREE_RELEASE_PROFILES.stable.revision }';\n` );
 	for ( const name of examples ) writeFileSync( join( threeRoot, 'examples', name ), '<!doctype html>' );
 	return threeRoot;
 

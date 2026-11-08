@@ -156,3 +156,35 @@ test( 'wirePrecompiledPostprocess is idempotent', () => {
 	assert.equal( bloom._compositeMaterial.__tslpAuxShape, 'bloom-composite' );
 
 } );
+
+test( 'named pipelines wire only their own effect pass captures', () => {
+
+	__resetAuxRegistryForTests();
+	try {
+
+		const shapes = [ 'bloom-high-pass', 'bloom-blur-0', 'bloom-composite' ];
+		for ( const name of [ 'first', 'second' ] ) for ( const [ index, shape ] of shapes.entries() ) {
+
+			registerAuxArtifact( shape, `${ name }-${ index }`, { uniformPlan: [], vertexShader: '', fragmentShader: '' }, {
+				name: `${ name }--effect-bloom-0-${ index }`,
+			} );
+
+		}
+		const root = fakeBloomNode( { blurCount: 1 } );
+		root.__tslpAuxName = 'second';
+		const result = wirePrecompiledPostprocess( { outputNode: root } );
+		assert.deepEqual( result.missed, [] );
+		assert.deepEqual( result.wired.map( entry => entry.configHash ), [ 'second-0', 'second-1', 'second-2' ] );
+		const uncaptured = fakeBloomNode( { blurCount: 1 } );
+		uncaptured.__tslpAuxName = 'missing';
+		const missing = wirePrecompiledPostprocess( { outputNode: uncaptured } );
+		assert.equal( missing.wired.length, 0, 'a named graph cannot fall back to another pipeline' );
+		assert.equal( missing.missed.length, 3 );
+
+	} finally {
+
+		__resetAuxRegistryForTests();
+
+	}
+
+} );

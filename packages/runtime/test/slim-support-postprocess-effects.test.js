@@ -10,7 +10,10 @@ import {
 	__resetEffectHandlersForTests,
 } from '../src/slim-support/postprocess-effects.js';
 import { attachLiveNodeDependency } from '../src/slim-support/node-dependencies.js';
+import { wireLiveNodeSidecarsToArtifact } from '../src/slim-support/live-node-sidecars.js';
 import { Node, PassNode } from '../src/slim-stubs.js';
+import GTAONode from 'three/addons/tsl/display/GTAONode.js';
+import { PerspectiveCamera } from 'three/src/cameras/PerspectiveCamera.js';
 
 function bloomLike() {
 
@@ -56,6 +59,28 @@ function gtaoLike() {
 	};
 
 }
+
+test( 'native r186 GTAO is detected with its private resolution owner and retains its AO subpass', () => {
+
+	const node = new GTAONode( null, null, new PerspectiveCamera() );
+	try {
+
+		assert.equal( node.resolution, undefined );
+		assert.equal( node._resolution.isUniformNode, true );
+		const handler = findEffectHandler( node );
+		assert.equal( handler?.name, 'gtao' );
+		const [ pass ] = handler.subPasses( node, 0 );
+		assert.equal( pass.material, node._material );
+		assert.equal( pass.renderTargetHint.format, node._aoRenderTarget.texture.format );
+		assert.equal( pass.shape, 'gtao' );
+
+	} finally {
+
+		node.dispose();
+
+	}
+
+} );
 
 function sssLike() {
 
@@ -105,6 +130,36 @@ function traaLike() {
 	};
 
 }
+
+test( 'built-ins keep their order, protocol and identity through registry edits', () => {
+
+	const original = getEffectHandlers();
+	assert.deepEqual( original.map( handler => handler.name ), [ 'bloom', 'gtao', 'sss', 'outline', 'ssr', 'dof', 'traa' ] );
+	for ( const handler of original ) {
+
+		assert.equal( typeof handler.detect, 'function', handler.name );
+		assert.equal( typeof handler.subPasses, 'function', handler.name );
+
+	}
+	const replacement = { name: 'bloom', detect: node => node === 'custom bloom', subPasses: () => [] };
+	try {
+
+		registerEffectHandler( replacement );
+		assert.equal( getEffectHandlers()[ 0 ], replacement );
+		assert.equal( findEffectHandler( 'custom bloom' ), replacement );
+		assert.equal( unregisterEffectHandler( 'bloom' ), true );
+		assert.equal( findEffectHandler( bloomLike() ), null, 'built-ins are not reinstalled by later lookups' );
+		assert.equal( unregisterEffectHandler( 'bloom' ), false );
+
+	} finally {
+
+		for ( const handler of original ) unregisterEffectHandler( handler.name );
+		for ( const handler of original ) registerEffectHandler( handler );
+
+	}
+	assert.deepEqual( getEffectHandlers(), original );
+
+} );
 
 test( 'built-in handlers detect bloom/gtao/sss/outline/ssr/dof/traa', () => {
 
@@ -282,6 +337,28 @@ test( 'ssr handler subPasses returns trace+blur+copy', () => {
 		sub.map( ( s ) => s.shape ).sort(),
 		[ 'ssr-blur', 'ssr-copy', 'ssr-trace' ]
 	);
+
+} );
+
+test( 'ssr camera uniforms retain exact live owners after serialized capture', () => {
+
+	const node = ssrLike();
+	const matrix = () => ( { isMatrix4: true, elements: [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ] } );
+	node._cameraWorldMatrix = { isNode: true, isUniformNode: true, value: matrix() };
+	node._cameraProjectionMatrix = { isNode: true, isUniformNode: true, value: matrix() };
+	const [ pass ] = findEffectHandler( node ).subPasses( node, 0 );
+	const slots = [ '_cameraWorldMatrix', '_cameraProjectionMatrix' ].map( ( property, liveNodeId ) => ( {
+		name: `nodeUniform${ liveNodeId }`, dtype: 'mat4',
+		source: { kind: 'uniform.live', liveNodeId, nodePath: [ `tslpSSR_${ property }Node` ], valueSnapshot: { type: 'mat4', data: matrix().elements } },
+	} ) );
+	const artifact = JSON.parse( JSON.stringify( { uniformPlan: [ { slots } ] } ) );
+	node._cameraWorldMatrix.value.elements[ 13 ] = 250;
+	node._cameraProjectionMatrix.value.elements[ 0 ] = 2;
+	const wired = wireLiveNodeSidecarsToArtifact( artifact, pass.material, { overlay: pass.liveUniformOverlay } );
+	assert.equal( wired.uniformsMatched, 2 );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 0 ]._liveNode, node._cameraWorldMatrix );
+	assert.equal( artifact.uniformPlan[ 0 ].slots[ 1 ]._liveNode, node._cameraProjectionMatrix );
+	assert.equal( pass.liveUniformOverlay, true );
 
 } );
 

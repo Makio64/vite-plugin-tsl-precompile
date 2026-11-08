@@ -35,6 +35,36 @@ function captureThree( RangeNode, Attribute = null ) {
 
 }
 
+test( 'current stable and pinned development revisions retain deterministic physical recipes', () => {
+
+	for ( const revision of [ '186', '187dev' ] ) {
+
+		class RangeNode {
+
+			constructor() { this.id = 1; this.minNode = { value: 0 }; this.maxNode = { value: 1 }; }
+			getConstNode( node ) { return node; }
+			getNodeType() { return 'float'; }
+			setup() { throw new Error( 'physical capture should use its owned deterministic stream' ); }
+
+		}
+		const three = { ...captureThree( RangeNode ), REVISION: revision };
+		assert.equal( installRangeAttributeCapture( three ), true );
+		let attribute;
+		const builder = {
+			object: { type: 'InstancedMesh', count: 100 },
+			geometry: { setAttribute( _name, value ) { attribute = value; }, getAttribute() { return attribute; } },
+			getUniformBufferLimit: () => 1024,
+		};
+		new RangeNode().setup( builder );
+		const recipe = attribute[ RANGE_ATTRIBUTE_GENERATOR_SIDECAR ];
+		assert.equal( recipe.kind, 'range@1' );
+		assert.deepEqual( attribute.array, generateRangeAttributeArray( recipe, builder.object.count ) );
+
+	}
+	assert.equal( installRangeAttributeCapture( { ...captureThree( class RangeNode { setup() {} } ), REVISION: '188' } ), false );
+
+} );
+
 test( 'development RangeNode capture stamps a byte-exact deterministic recipe', () => {
 
 	class RangeNode {

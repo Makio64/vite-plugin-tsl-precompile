@@ -17,6 +17,8 @@
  */
 
 import { hashArtifactContentSync, hashNodeGraphSync, hashPlainConfigSync } from './graph-hash.js';
+import { createRuntimeCaptureHashOptions, createRuntimeThreeEmitterHashFields } from './three-emitter-identity.js';
+import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { registerAuxArtifact } from './aux-loader.js';
 import {
 	cloneRenderTargetForCapture,
@@ -29,14 +31,10 @@ import {
 } from './auxiliary/cube-render-target-capture.js';
 import { takeRenderObjectHarvest } from './auxiliary/render-object-harvest-handoff.js';
 import { collectEffectNodes } from './slim-support/postprocess-effects.js';
-import {
-	collectPMREMSourceTexturesFromMaterial,
-	collectPMREMSourceTexturesInNode,
-} from './slim-support/pmrem.js';
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { collectPMREMInputs, createPMREMCaptureJobs } from './auxiliary/pmrem-inputs.js';
+import { capturePMREMPrograms } from './auxiliary/pmrem-live-capture.js';
 import { ARTIFACT_CONTENT_HASH_VERSION, stringifyArtifactJson } from '@tsl-precompile/contract/artifact-content';
-import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
-import { stableJsonStringify } from '@tsl-precompile/contract/stable-json';
+import { createRenderPipelineConfig, createEffectPassCaptureName } from '@tsl-precompile/contract/output-config';
 import {
 	collectArtifactVariantCandidates,
 	createArtifactVariantPayloadFingerprint,
@@ -46,13 +44,7 @@ import {
 	assertInternalPassFamily,
 	assertInternalPassFamilyStages,
 } from '@tsl-precompile/contract/internal-pass';
-import {
-	createPMREMLayoutConfig,
-	createPMREMSourceTopologyKey,
-	createPMREMSupportConfig,
-	pmremRequiredStages,
-	pmremSourceInputTopology,
-} from '@tsl-precompile/contract/pmrem-config';
+import { pmremRequiredStages } from '@tsl-precompile/contract/pmrem-config';
 import { createBackgroundCaptureTargetTopologyKey } from '@tsl-precompile/contract/render-selector';
 import { recordDevCaptureOutcome, recordDevCaptureResults } from './dev-capture-outcome.js';
 
@@ -107,8 +99,7 @@ function trackLocalArtifact( shape, configHash, artifact, hashOpts, name = undef
 
 		registerAuxArtifact( shape, configHash, artifact, {
 			name,
-			threeVersion: hashOpts.threeVersion,
-			pluginVersion: hashOpts.pluginVersion,
+			...hashOpts,
 		} );
 
 	} catch ( _ ) { /* tolerate duplicates */ }
@@ -182,10 +173,7 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
 			throw new Error( 'precompileRendererOutput: opts.threeVersion is required.' );
 
 		}
-		const hashOpts = {
-			threeVersion: opts.threeVersion,
-			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-		};
+		const hashOpts = createRuntimeCaptureHashOptions( opts );
 		captureResults = [ await captureAndPublishRendererOutput( renderer, scene, camera, opts, hashOpts ) ];
 		return captureResults;
 
@@ -227,6 +215,8 @@ export async function precompileRendererOutput( renderer, scene, camera, opts = 
  *   `PMREMGenerator.fromScene(..., { size })` sizes used by the application.
  *   This is required for fromScene-only layouts because the generated PMREM
  *   texture does not retain its source scene or requested size.
+ * @param {?Array<Object>} [opts.pmremSourceTextures] - Original cube/equirectangular
+ *   inputs used by PMREMGenerator when the scene only retains generated CubeUV results.
  * @param {?Object} [opts.three] - The `three/webgpu` module namespace.
  * @param {?Object} [opts.tsl] - The `three/tsl` namespace. Loaded lazily when omitted.
  * @param {string} opts.threeVersion - Exact resolved Three package version, e.g. `0.185.1`.
@@ -267,10 +257,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 		throw new Error( 'precompileAuxiliary: opts.threeVersion is required. Pass the exact resolved Three package version (for example, globalThis.__TSLP_THREE_PACKAGE_VERSION__ in Vite).' );
 
 	}
-	const hashOpts = {
-		threeVersion: opts.threeVersion,
-		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-	};
+	const hashOpts = createRuntimeCaptureHashOptions( opts );
 
 	// Register an aux artifact both on the dev server (via POST) AND in the
 	// local runtime registry so the inspector panel sees captures live.
@@ -358,12 +345,12 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 			for ( const extra of extraArtifacts ) {
 
 				if ( ! extra || ! extra.shape || ! extra.configHash || ! extra.artifact ) continue;
-				trackLocal( extra.shape, extra.configHash, extra.artifact );
+				trackLocal( extra.shape, extra.configHash, extra.artifact, extra.name );
 				results.push( await post( opts.devEndpoint, {
 					materialShape: extra.shape,
 					configHash: extra.configHash,
 					artifact: extra.artifact,
-					name: `aux-${ extra.shape }-${ extra.configHash.slice( 0, 12 ) }`,
+					name: extra.name || `aux-${ extra.shape }-${ extra.configHash.slice( 0, 12 ) }`,
 				}, extra.shape, extra.configHash, hashOpts ) );
 
 			}
@@ -706,7 +693,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 					const captured = await capturePMREMLive( renderer, captureJob, opts );
 					const supportConfig = captured.supportConfig;
 					const configHash = hashPlainConfigSync( supportConfig, { shape: 'pmrem', ...hashOpts } );
-					const expectedStages = pmremRequiredStages( supportConfig.profile );
+					const expectedStages = pmremRequiredStages( supportConfig.profile, supportConfig );
 					assertInternalPassFamilyStages(
 						'pmrem',
 						Object.keys( captured ),
@@ -717,7 +704,7 @@ export async function precompileAuxiliary( renderer, scene, camera, opts = {} ) 
 						{ family: 'pmrem', profile: supportConfig.profile, config: supportConfig },
 					);
 					const familyPayloads = [];
-					for ( const subKind of [ 'cubemap', 'equirect', 'blur', 'ggx' ] ) {
+					for ( const subKind of expectedStages ) {
 
 						const subArtifact = captured[ subKind ];
 						if ( ! subArtifact ) continue;
@@ -915,12 +902,9 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 
 		}
 
-		// Never warm or compile the caller's live RenderPipeline material. Three
-		// r185 compileAsync() executes every builder updateBefore node and the
-		// historical renderPipeline warm-up executes the full Pass/GTAO/Bloom graph
-		// again. Both paths can poison backend caches keyed by those live identities.
-		// Build only a private final-quad identity, suppress its update phases, and
-		// capture the handler-owned sub-passes separately below.
+		// Capture only a private native final quad with its update phases
+		// suppressed. Re-running the live pipeline/effect graph can poison
+		// backend caches; handler-owned sub-passes are captured separately below.
 		const Pipeline = renderPipeline && renderPipeline.constructor;
 		if ( typeof Pipeline !== 'function' ) throw new Error( 'capturePostProcessingLive: renderPipeline must expose a constructor' );
 		isolatedPipeline = new Pipeline( renderer, renderPipeline.outputNode );
@@ -969,6 +953,8 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 
 		}
 		artifactsPromise = compileTSL( renderer, captureScene, captureCamera, {
+			materials: [ isolatedMaterial ],
+			fullscreenQuad: isolatedQuad,
 			noGlobalMRT: true,
 			skipWarmupRender: true,
 			skipNodeUpdatesForMaterials: [ isolatedMaterial ],
@@ -1020,10 +1006,7 @@ async function capturePostProcessingLive( renderer, renderPipeline, scene, camer
 	// Restore caller-owned pipeline/effect state before starting the subsequent
 	// clone-isolated captures. Each compile coordinates with the renderer queue
 	// independently and must never inherit this synthetic pipeline context.
-	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, renderPipeline.outputNode, opts, hashOpts || {
-		threeVersion: opts.threeVersion,
-		pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-	}, liveUpdateBeforeNodes );
+	const extraArtifacts = await captureRegisteredEffectArtifactsLive( renderer, renderPipeline.outputNode, opts, hashOpts || createRuntimeCaptureHashOptions( opts ), liveUpdateBeforeNodes );
 	return { artifact: jsonSafe( artifact ), extraArtifacts };
 
 }
@@ -1183,19 +1166,51 @@ async function captureShadowPassesLive( renderer, scene, camera, opts ) {
 		}
 
 	}
-	const artifacts = await compileTSL( renderer, scene, camera, {
-		noGlobalMRT: true,
-		...( renderObjectHarvest ? { renderObjectHarvest } : {} ),
+	// A cached/static shadow or a receiver outside the opening camera's frustum
+	// need not draw in the latest ordinary frame. Capture the complete visible
+	// scene's shadow paths, then restore the application's update/culling policy.
+	const restore = [];
+	scene.traverse( object => {
+
+		if ( object.isLight && object.castShadow && object.shadow ) {
+
+			const shadow = object.shadow;
+			const needsUpdate = shadow.needsUpdate;
+			restore.push( () => { shadow.needsUpdate = needsUpdate; } );
+			shadow.needsUpdate = true;
+
+		}
+		if ( object.isMesh ) {
+
+			const frustumCulled = object.frustumCulled;
+			restore.push( () => { object.frustumCulled = frustumCulled; } );
+			object.frustumCulled = false;
+
+		}
+
 	} );
+	let artifacts;
+	try {
+
+		artifacts = await compileTSL( renderer, scene, camera, {
+			noGlobalMRT: true,
+			materialShapes: [ 'shadow-depth', 'shadow-vsm-vertical', 'shadow-vsm-horizontal' ],
+			freshShadowFrame: true,
+			deferShadowFamilyMerge: true,
+			...( renderObjectHarvest ? { renderObjectHarvest } : {} ),
+		} );
+
+	} finally {
+
+		for ( const reset of restore ) reset();
+
+	}
 	const shadowArtifacts = artifacts.filter( ( artifact ) => artifact && artifact.materialShape === 'shadow-depth' );
 	let depth = null;
 	if ( shadowArtifacts.length > 0 ) {
 
 		shadowArtifacts.sort( ( a, b ) => variantCount( b ) - variantCount( a ) || String( a.cacheKey ).localeCompare( String( b.cacheKey ) ) );
-		const disambiguated = disambiguateShadowVariantCacheKeys( shadowArtifacts, {
-			threeVersion: opts.threeVersion,
-			pluginVersion: opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION,
-		} );
+		const disambiguated = disambiguateShadowVariantCacheKeys( shadowArtifacts, createRuntimeCaptureHashOptions( opts ) );
 		depth = shadowArtifacts[ 0 ];
 		if ( disambiguated ) {
 
@@ -1405,16 +1420,19 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 
 			}
 
-			for ( const subPass of subPasses ) {
+			for ( const [ passIndex, subPass ] of subPasses.entries() ) {
 
 				if ( ! subPass || ! subPass.material || typeof subPass.shape !== 'string' ) {
 
 					throw new Error( `captureRegisteredEffectArtifactsLive: ${ handler.name } returned an invalid sub-pass` );
 
 				}
+				const name = createEffectPassCaptureName( opts.renderPipelineName || opts.postProcessingName, handler.name, effectIndex, passIndex );
+				const config = subPass.config || { type: subPass.shape };
 				jobs.push( {
 					subPass,
-					configHash: hashPlainConfigSync( subPass.config || { type: subPass.shape }, { shape: subPass.shape, ...hashOpts } ),
+					name,
+					configHash: hashPlainConfigSync( name ? { ...config, pipelinePassName: name } : config, { shape: subPass.shape, ...hashOpts } ),
 					captureMaterial: cloneEffectMaterialForCapture( subPass.material, subPass.shape ),
 					started: false,
 				} );
@@ -1443,7 +1461,7 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 
 			for ( const job of jobs ) {
 
-				const { subPass, configHash, captureMaterial } = job;
+				const { subPass, configHash, captureMaterial, name } = job;
 				job.started = true;
 				try {
 
@@ -1457,7 +1475,7 @@ async function captureRegisteredEffectArtifactsLive( renderer, outputNode, opts,
 						subPass.captureOverrides || [],
 						captureMaterial,
 					);
-					out.push( { shape: subPass.shape, configHash, artifact } );
+					out.push( { shape: subPass.shape, configHash, artifact, ...( name ? { name } : {} ) } );
 
 				} catch ( error ) {
 
@@ -1511,7 +1529,12 @@ async function captureNodeMaterialAsAuxLive(
 		// non-default fragment-output shape (DOF's `_CoCMaterial.outputNode =
 		// outputStruct(...)` emits a 2-attachment RedFormat/HalfFloat fragment
 		// that the default 1×1 RGBA8 warm-up RT rejects).
-		const compileOpts = { noGlobalMRT: true };
+		const compileOpts = {
+			noGlobalMRT: true,
+			materials: [ captureMaterial ],
+			skipWarmupRender: true,
+			skipNodeUpdatesForMaterials: [ captureMaterial ],
+		};
 		if ( renderTargetHint && three && typeof three.RenderTarget === 'function' ) {
 
 			try {
@@ -1770,6 +1793,8 @@ async function captureBackdropLive( renderer, material, scene, camera, opts ) {
 	// We copy scene context (environment, background) to make IBL bindings
 	// match the real scene, but avoid mutating the user's scene.
 	const auxScene = new three.Scene();
+	auxScene.userData = auxScene.userData || {};
+	auxScene.userData.__tslpSyntheticCaptureScene = true;
 	if ( scene ) {
 
 		auxScene.environment = scene.environment || null;
@@ -1782,13 +1807,21 @@ async function captureBackdropLive( renderer, material, scene, camera, opts ) {
 	const mesh = new three.Mesh( geo, material );
 	auxScene.add( mesh );
 
-	const artifacts = await compileTSL( renderer, auxScene, camera, { noGlobalMRT: true } );
-	const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid )
-		|| artifacts.find( ( a ) => a.materialShape === 'mesh-standard' || a.materialShape === 'mesh-physical' || a.materialShape === 'node-material' )
-		|| artifacts[ 0 ];
+	try {
 
-	if ( ! artifact ) throw new Error( 'captureBackdropLive: no artifact produced for backdrop material' );
-	return jsonSafe( artifact );
+		const artifacts = await compileTSL( renderer, auxScene, camera, { noGlobalMRT: true } );
+		const artifact = artifacts.find( ( a ) => a.materialUuid === material.uuid )
+			|| artifacts.find( ( a ) => a.materialShape === 'mesh-standard' || a.materialShape === 'mesh-physical' || a.materialShape === 'node-material' )
+			|| artifacts[ 0 ];
+
+		if ( ! artifact ) throw new Error( 'captureBackdropLive: no artifact produced for backdrop material' );
+		return jsonSafe( artifact );
+
+	} finally {
+
+		geo.dispose();
+
+	}
 
 }
 
@@ -1954,181 +1987,6 @@ async function resolveCubeRenderTargetTSL( opts ) {
 }
 
 /**
- * Walk the adopter scene and explicit fromScene seams for PMREM layouts.
- *
- * PMREM's output allocation is grouped by rounded cube-atlas layout, while
- * source conversion is grouped by shader/binding topology. Three caches one
- * private source material per PMREMGenerator, so different source topologies
- * must be driven by independent capture jobs or the first source's WGSL wins.
- * A generated PMREM result (mapping 306) cannot reveal whether it came from a
- * texture or a scene and is therefore excluded; fromScene-only applications
- * declare their source size through `opts.pmremSceneSizes`.
- *
- * @param {?Object} scene
- * @param {Object} opts
- * @return {Array<{ cubeSize: number, sources: Map<'equirect'|'cube', Object>, sourceVariants: Map<string, Map<string, Object>>, explicitScene: boolean }>}
- */
-function collectPMREMInputs( scene, opts = {}, renderer = null ) {
-
-	const layouts = new Map();
-	const ensureLayout = ( requestedSize ) => {
-
-		const cubeSize = normalizePMREMCubeSize( requestedSize );
-		let layout = layouts.get( cubeSize );
-		if ( ! layout ) {
-
-			layout = {
-				cubeSize,
-				sources: new Map(),
-				sourceVariants: new Map(),
-				explicitScene: false,
-			};
-			layouts.set( cubeSize, layout );
-
-		}
-		return layout;
-
-	};
-	const record = ( texture ) => {
-
-		const kind = classifyPMREMSourceTexture( texture );
-		if ( ! kind ) return;
-		const cubeSize = pmremSourceCubeSize( texture, kind );
-		const layout = ensureLayout( cubeSize );
-		const profile = kind === 'cube' ? 'texture-cubemap' : 'texture-equirect';
-		const topologyKey = createPMREMSourceTopologyKey( texture, profile, { renderer } );
-		let variants = layout.sourceVariants.get( kind );
-		if ( ! variants ) {
-
-			variants = new Map();
-			layout.sourceVariants.set( kind, variants );
-
-		}
-		if ( ! variants.has( topologyKey ) ) variants.set( topologyKey, texture );
-		if ( ! layout.sources.has( kind ) ) layout.sources.set( kind, texture );
-
-	};
-
-	if ( scene ) {
-
-		record( scene.background );
-		record( scene.environment );
-
-		// Walk both scene-level node graphs. PMREMNode keeps its original
-		// cubemap/equirectangular source even after its generated CubeUV result
-		// is assigned elsewhere.
-		for ( const node of [ scene.backgroundNode, scene.environmentNode ] ) {
-
-			for ( const source of collectPMREMSourceTexturesInNode( node ) ) record( source );
-
-		}
-
-		if ( typeof scene.traverse === 'function' ) {
-
-			scene.traverse( ( object ) => {
-
-				const material = object && object.material;
-				if ( ! material ) return;
-				const materials = Array.isArray( material ) ? material : [ material ];
-				for ( const candidate of materials ) {
-
-					record( candidate && candidate.envMap );
-					for ( const source of collectPMREMSourceTexturesFromMaterial( candidate ) ) record( source );
-
-				}
-
-			} );
-
-		}
-
-	}
-
-	const sceneSizes = opts.pmremSceneSizes;
-	if ( sceneSizes !== undefined && ! Array.isArray( sceneSizes ) ) {
-
-		throw new TypeError( 'precompileAuxiliary: opts.pmremSceneSizes must be an array of PMREMGenerator.fromScene() sizes.' );
-
-	}
-	for ( const requestedSize of sceneSizes || [] ) {
-
-		const layout = ensureLayout( requestedSize );
-		layout.explicitScene = true;
-
-	}
-
-	return [ ...layouts.values() ].sort( ( left, right ) => left.cubeSize - right.cubeSize );
-
-}
-
-function createPMREMCaptureJobs( layout ) {
-
-	const jobs = [];
-	for ( const kind of [ 'equirect', 'cube' ] ) {
-
-		const variants = layout?.sourceVariants instanceof Map ? layout.sourceVariants.get( kind ) : null;
-		for ( const [ topologyKey, sourceTexture ] of [ ...( variants || [] ) ].sort( ( left, right ) =>
-			left[ 0 ] < right[ 0 ] ? - 1 : left[ 0 ] > right[ 0 ] ? 1 : 0
-		) ) jobs.push( {
-			cubeSize: layout.cubeSize,
-			profile: kind === 'cube' ? 'texture-cubemap' : 'texture-equirect',
-			sourceTexture,
-			topologyKey,
-		} );
-
-	}
-	if ( layout?.explicitScene === true ) jobs.push( {
-		cubeSize: layout.cubeSize,
-		profile: 'scene',
-		sourceTexture: null,
-		topologyKey: null,
-	} );
-	return jobs;
-
-}
-
-function classifyPMREMSourceTexture( texture ) {
-
-	if ( ! texture || texture.isTexture !== true || texture.mapping === 306 ) return null;
-	if ( texture.mapping === 301 || texture.mapping === 302 ) return 'cube';
-	if ( texture.mapping === 303 || texture.mapping === 304 ) return 'equirect';
-	return null;
-
-}
-
-function pmremSourceCubeSize( texture, kind ) {
-
-	if ( kind === 'cube' ) {
-
-		const faces = texture && texture.image;
-		if ( Array.isArray( faces ) && faces.length === 0 ) return 16;
-		const firstFace = Array.isArray( faces ) ? faces[ 0 ] : null;
-		const image = firstFace && firstFace.image || firstFace;
-		return Number( image && image.width || 0 );
-
-	}
-	return Number( texture && texture.image && texture.image.width || 0 ) / 4;
-
-}
-
-function normalizePMREMCubeSize( requestedSize ) {
-
-	const size = Number( requestedSize );
-	if ( ! Number.isFinite( size ) || size < 16 ) {
-
-		throw new RangeError( `precompileAuxiliary: PMREM source resolves to a ${ size || 0 }px cube face; Three r185 requires at least 16px.` );
-
-	}
-	const cubeSize = 2 ** Math.floor( Math.log2( size ) );
-	if ( ! Number.isSafeInteger( cubeSize ) ) {
-
-		throw new RangeError( `precompileAuxiliary: PMREM cube size ${ requestedSize } is outside the supported integer range.` );
-
-	}
-	return cubeSize;
-
-}
-
-/**
  * Live capture of one topology-keyed PMREM operation family. Each source
  * topology receives a fresh Three PMREMGenerator because its private source
  * material is cached after the first compile. Scene support is captured as a
@@ -2143,510 +2001,11 @@ function normalizePMREMCubeSize( requestedSize ) {
  */
 async function capturePMREMLive( renderer, layout, opts ) {
 
-	const three = opts.three || null;
-	const compileTSL = opts.compileTSL || ( await lazyLoadCompileTSL() );
-	const beginRenderObjectHarvest = opts.beginRenderObjectHarvest || cachedBeginRenderObjectHarvest;
-
-	if ( ! three || ! three.PMREMGenerator || ! three.Scene || ! three.OrthographicCamera ) {
-
-		throw new Error( 'capturePMREMLive: opts.three must expose the WebGPU PMREMGenerator plus Scene/OrthographicCamera' );
-
-	}
-	if ( ! three.NodeMaterial || ! three.WebGPURenderer ) {
-
-		throw new Error( 'capturePMREMLive: opts.three must be the `three/webgpu` namespace; root `three`.PMREMGenerator is the incompatible WebGL ShaderMaterial implementation.' );
-
-	}
-	if ( typeof beginRenderObjectHarvest !== 'function' ) {
-
-		throw new Error( 'capturePMREMLive: the dev extractor does not expose beginRenderObjectHarvest(); exact PMREM capture cannot fall back to synthetic geometry.' );
-
-	}
-
-	let pmrem = null;
-	let harvestSession = null;
-	const renderTargets = [];
-	const profile = layout && layout.profile;
-	const expectedStages = pmremRequiredStages( profile );
-	const sourceTexture = layout && layout.sourceTexture || null;
-	if ( expectedStages.length === 0 ) throw new Error( `capturePMREMLive: unsupported PMREM profile ${ JSON.stringify( profile ) }` );
-	if ( profile !== 'scene' && ( ! sourceTexture || sourceTexture.isTexture !== true ) ) {
-
-		throw new Error( `capturePMREMLive: ${ profile } requires one real source texture` );
-
-	}
-	let previousTarget = null;
-	let previousFace = 0;
-	let previousMip = 0;
-	let previousAutoClear;
-	let previousToneMapping;
-	let previousXrEnabled;
-	let rendererStateCaptured = false;
-	let cubeUVRenderTarget = null;
-	let renderObjectHarvest = null;
-	let harvestFinished = false;
-	try {
-
-		pmrem = new three.PMREMGenerator( renderer );
-		try {
-
-			// A marker discovered by the application render closes its capture
-			// epoch in a microtask. Let that handoff publish the compile-queue
-			// tail before checking quiescence; otherwise a cold PMREM render can
-			// run synchronously just before the marker installs its suppression
-			// lock and the real PMREM material family is never harvested.
-			await Promise.resolve();
-			// A material-marker compile temporarily suppresses external renderer
-			// draws while it owns `__tslpCompileLock`. Running PMREM inside that
-			// window makes Three's synchronous source pass disappear entirely,
-			// leaving no harvested material family on a cold startup. Start the
-			// observer and real PMREM render together only after the queue tail is
-			// stable; the callback is synchronous, so no competing compile can
-			// reserve the renderer between the check and the draw sequence.
-			await awaitRendererCompileQuiescence( renderer, () => {
-
-				harvestSession = beginRenderObjectHarvest( renderer );
-				previousTarget = typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null;
-				previousFace = typeof renderer.getActiveCubeFace === 'function' ? renderer.getActiveCubeFace() : 0;
-				previousMip = typeof renderer.getActiveMipmapLevel === 'function' ? renderer.getActiveMipmapLevel() : 0;
-				previousAutoClear = renderer.autoClear;
-				previousToneMapping = renderer.toneMapping;
-				previousXrEnabled = renderer.xr && renderer.xr.enabled;
-				rendererStateCaptured = true;
-
-				withSyntheticRenderAccess( () => {
-
-					if ( profile === 'scene' ) {
-
-						// A nonzero sigma captures the complete public fromScene()
-						// scheduler: blur plus GGX. The same family also serves sigma=0,
-						// where the compiler-free scheduler simply skips blur.
-						cubeUVRenderTarget = pmrem.fromScene(
-							new three.Scene(),
-							PMREM_CAPTURE_BLUR_SIGMA,
-							0.1,
-							100,
-							{ size: layout.cubeSize },
-						);
-
-					} else {
-
-						cubeUVRenderTarget = profile === 'texture-cubemap'
-							? pmrem.fromCubemap( sourceTexture )
-							: pmrem.fromEquirectangular( sourceTexture );
-
-					}
-
-				} );
-
-			} );
-			renderTargets.push( cubeUVRenderTarget );
-			harvestFinished = true;
-			renderObjectHarvest = await harvestSession.finish();
-
-		} catch ( error ) {
-
-			if ( ! harvestFinished ) {
-
-				harvestFinished = true;
-				try { await harvestSession.finish(); } catch ( _ ) { /* preserve PMREM failure */ }
-
-			}
-			throw error;
-
-		}
-
-		if ( typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( previousTarget, previousFace, previousMip );
-
-		const materials = {
-			cubemap: pmrem._cubemapMaterial,
-			equirect: pmrem._equirectMaterial,
-			blur: pmrem._blurMaterial,
-			ggx: pmrem._ggxMaterial,
-		};
-		const exercisedSubKinds = expectedStages;
-		const auxScene = new three.Scene();
-		const camera = new three.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
-
-		const allArtifacts = await compileTSL( renderer, auxScene, camera, {
-			noGlobalMRT: true,
-			renderObjectHarvest,
-			skipWarmupRender: true,
-		} );
-
-		const captured = {};
-		const replayConfig = createPMREMReplayConfig( pmrem, cubeUVRenderTarget );
-		const supportConfig = createPMREMSupportConfig( replayConfig, profile, sourceTexture, { renderer } );
-		for ( const subKind of exercisedSubKinds ) {
-
-			const material = materials[ subKind ];
-			if ( ! material ) {
-
-				throw new Error( `capturePMREMLive: real PMREM render did not harvest the pmrem-${ subKind } stage.` );
-
-			}
-			const found = mergePMREMArtifactFamily( allArtifacts, material, subKind, renderObjectHarvest );
-			found.materialShape = `pmrem-${ subKind }`;
-			found.pmremKind = subKind;
-			found.replayConfig = replayConfig;
-			found.internalPass = createPMREMInternalPassDescriptor( found, subKind, cubeUVRenderTarget, supportConfig );
-			for ( const variant of Object.values( found.variants || {} ) ) {
-
-				if ( ! variant || typeof variant !== 'object' ) continue;
-				variant.materialShape = `pmrem-${ subKind }`;
-				variant.pmremKind = subKind;
-				variant.replayConfig = replayConfig;
-				variant.internalPass = found.internalPass;
-
-			}
-			captured[ subKind ] = jsonSafe( found );
-
-		}
-
-		if ( Object.keys( captured ).length === 0 ) {
-
-			throw new Error( `capturePMREMLive: produced 0 artifacts (compileTSL returned ${ allArtifacts.length })` );
-
-		}
-
-		Object.defineProperty( captured, 'replayConfig', {
-			value: replayConfig,
-			enumerable: false,
-			configurable: true,
-		} );
-		Object.defineProperty( captured, 'supportConfig', {
-			value: supportConfig,
-			enumerable: false,
-			configurable: true,
-		} );
-		return captured;
-
-		} finally {
-
-			if ( harvestSession && ! harvestFinished ) {
-
-				try { await harvestSession.finish(); } catch ( _ ) { /* preserve capture result */ }
-
-			}
-			try {
-
-				if ( rendererStateCaptured && typeof renderer.setRenderTarget === 'function' ) renderer.setRenderTarget( previousTarget, previousFace, previousMip );
-
-			} catch ( _ ) { /* preserve capture result */ }
-			if ( rendererStateCaptured ) {
-
-				try { renderer.autoClear = previousAutoClear; } catch ( _ ) { /* preserve capture result */ }
-				try { renderer.toneMapping = previousToneMapping; } catch ( _ ) { /* preserve capture result */ }
-				if ( renderer.xr && previousXrEnabled !== undefined ) {
-
-					try { renderer.xr.enabled = previousXrEnabled; } catch ( _ ) { /* preserve capture result */ }
-
-				}
-
-			}
-			for ( const renderTarget of new Set( renderTargets ) ) {
-
-				if ( renderTarget && typeof renderTarget.dispose === 'function' ) {
-
-					try { renderTarget.dispose(); } catch ( _ ) { /* preserve capture result */ }
-
-				}
-
-			}
-			if ( pmrem && typeof pmrem.dispose === 'function' ) {
-
-				try { pmrem.dispose(); } catch ( _ ) { /* preserve capture result */ }
-
-			}
-		}
-
-}
-
-const PMREM_CAPTURE_BLUR_SIGMA = 0.02;
-
-function withSyntheticRenderAccess( callback ) {
-
-	// A material capture keeps its application-frame guard installed through
-	// codegen and the capture POST, after its compile lock has settled. PMREM's
-	// deliberately isolated generator draws may therefore overlap that guard.
-	// Use the same nested capability as compileTSL's warm-up renders so those
-	// exact draws remain observable without reopening arbitrary app frames.
-	globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) + 1;
-	try {
-
-		return callback();
-
-	} finally {
-
-		globalThis.__tslpSyntheticRenderActive = ( globalThis.__tslpSyntheticRenderActive | 0 ) - 1;
-
-	}
-
-}
-
-const PMREM_UNIFORM_ROLES = Object.freeze( {
-	blur: Object.freeze( {
-		nodeUniform0: 'latitudinal',
-		nodeUniform1: 'pole-axis',
-		nodeUniform3: 'mip-int',
-		nodeUniform5: 'samples',
-		nodeUniform6: 'd-theta',
-	} ),
-	ggx: Object.freeze( {
-		nodeUniform0: 'roughness',
-		nodeUniform1: 'mip-int',
-	} ),
-} );
-
-function mergePMREMArtifactFamily( artifacts, material, subKind, renderObjectHarvest = null ) {
-
-	const members = artifacts.filter( ( artifact ) => artifact.materialUuid === material.uuid );
-	if ( members.length === 0 ) {
-
-		const available = artifacts.slice( 0, 8 ).map( ( artifact ) =>
-			`${ artifact.materialShape || 'unknown' }@${ artifact.materialUuid || 'no-uuid' }#${ artifact.cacheKey ?? 'no-cache-key' }`
-		).join( ', ' );
-		const omitted = Math.max( 0, artifacts.length - 8 );
-		const harvestedFamily = renderObjectHarvest?.familiesByMaterial instanceof Map
-			? renderObjectHarvest.familiesByMaterial.get( material )
-			: null;
-		const harvestedVariants = harvestedFamily && Array.isArray( harvestedFamily.variants )
-			? harvestedFamily.variants.map( ( variant ) =>
-				`${ variant.cacheKey ?? 'no-cache-key' }:${ variant.complete === true ? 'complete' : 'incomplete' }`
-			).join( ', ' )
-			: 'none';
-		const requestSummary = Array.isArray( renderObjectHarvest?.requests )
-			? renderObjectHarvest.requests.slice( 0, 8 ).map( ( request ) =>
-				`${ request.material?.name || request.material?.type || 'unnamed' }@${ request.material?.uuid || 'no-uuid' }#${ request.cacheKey ?? 'no-cache-key' }`
-			).join( ', ' )
-			: 'none';
-		throw new Error(
-			`capturePMREMLive: no extracted artifact matched the real pmrem-${ subKind } material ` +
-			`${ material.uuid || 'without-uuid' }; extracted ${ artifacts.length } ` +
-			`(${ available || 'none' }${ omitted > 0 ? `, +${ omitted } more` : '' }); ` +
-			`harvest family=${ harvestedFamily ? harvestedFamily.complete === true ? 'complete' : 'incomplete' : 'missing' } ` +
-			`variants=[${ harvestedVariants }], requests=[${ requestSummary || 'none' }]`,
-		);
-
-	}
-	normalizePMREMSelectorDepth( members );
-	normalizePMREMFamilyBindingNames( members, subKind );
-	const family = members[ 0 ];
-	const textureRefs = new Map();
-	for ( const member of members ) {
-
-		if ( ! ( member._textureRefs instanceof Map ) ) continue;
-		for ( const [ uuid, texture ] of member._textureRefs ) {
-
-			const existing = textureRefs.get( uuid );
-			if ( existing && existing !== texture ) {
-
-				throw new Error( `capturePMREMLive: pmrem-${ subKind } captured ambiguous texture identity ${ uuid }` );
-
-			}
-			textureRefs.set( uuid, texture );
-
-		}
-
-	}
-	if ( textureRefs.size > 0 ) Object.defineProperty( family, '_textureRefs', {
-		value: textureRefs,
-		enumerable: false,
-		configurable: true,
-		writable: true,
+	const compileTSL = opts.compileTSL || await lazyLoadCompileTSL();
+	return capturePMREMPrograms( renderer, layout, {
+		...opts, compileTSL,
+		beginRenderObjectHarvest: opts.beginRenderObjectHarvest || cachedBeginRenderObjectHarvest,
 	} );
-	mergeArtifactVariantFamily( family, members );
-	return family;
-
-}
-
-function normalizePMREMSelectorDepth( members ) {
-
-	const candidates = new Set();
-	for ( const member of members ) {
-
-		for ( const candidate of collectArtifactVariantCandidates( member ) ) candidates.add( candidate );
-
-	}
-	for ( const candidate of candidates ) {
-
-		if ( ! Array.isArray( candidate.renderContextSelectors ) ) continue;
-		candidate.renderContextSelectors = [ ...new Set( candidate.renderContextSelectors.map( ( selector ) => {
-
-			let descriptor;
-			try {
-
-				descriptor = JSON.parse( selector );
-
-			} catch ( _ ) {
-
-				return selector;
-
-			}
-			const target = descriptor && descriptor.target;
-			if (
-				! target || typeof target !== 'object' || Array.isArray( target )
-				|| Object.prototype.hasOwnProperty.call( target, 'depth' )
-				|| target.depthTexture !== null
-			) return selector;
-			// Three r185's PMREM ping-pong target is explicitly constructed
-			// with depthBuffer:false, but its harvested RenderContext can omit
-			// the `depth` field. Slim creates the same target with an explicit
-			// false value, so persist the known stock topology instead of
-			// signing an instrumentation omission as a third pipeline state.
-			return stableJsonStringify( {
-				...descriptor,
-				target: { ...target, depth: false },
-			}, 'pmremRenderContextSelector' );
-
-		} ) ) ].sort();
-
-	}
-
-}
-
-function normalizePMREMFamilyBindingNames( members, subKind ) {
-
-	if ( subKind !== 'blur' ) return;
-	let canonicalName = null;
-	for ( const member of members ) {
-
-		const group = ( member.uniformPlan || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
-		const weights = ( group && group.orderedBindings || [] )
-			.filter( ( binding ) => binding && binding.type === 'buffer-uniform' && binding.ref );
-		if ( weights.length !== 1 || typeof weights[ 0 ].ref.name !== 'string' || weights[ 0 ].ref.name.length === 0 ) {
-
-			throw new Error( 'capturePMREMLive: pmrem-blur family member has no exact weights binding name' );
-
-		}
-		if ( canonicalName === null ) canonicalName = weights[ 0 ].ref.name;
-
-	}
-	for ( const member of members ) {
-
-		const group = member.uniformPlan.find( ( candidate ) => candidate && candidate.name === 'object' );
-		const weights = group.orderedBindings.find( ( binding ) => binding && binding.type === 'buffer-uniform' ).ref;
-		const capturedName = weights.name;
-		const bindingGroup = ( member.bindings || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
-		const bindingDescriptors = ( bindingGroup && bindingGroup.bindings || [] )
-			.filter( ( binding ) => binding && binding.kind === 'uniform-buffer' && binding.name === capturedName );
-		if ( bindingDescriptors.length !== 1 ) {
-
-			throw new Error( `capturePMREMLive: pmrem-blur weights binding ${ capturedName } did not resolve exactly once` );
-
-		}
-		weights.name = canonicalName;
-		bindingDescriptors[ 0 ].name = canonicalName;
-
-	}
-
-}
-
-function createPMREMReplayConfig( pmrem, renderTarget ) {
-
-	const cubeSize = pmrem && pmrem._cubeSize;
-	const lodMax = pmrem && pmrem._lodMax;
-	const width = renderTarget && renderTarget.width;
-	const height = renderTarget && renderTarget.height;
-	if (
-		! Number.isSafeInteger( cubeSize ) || cubeSize <= 0 ||
-		! Number.isSafeInteger( lodMax ) || lodMax < 0 ||
-		! Number.isSafeInteger( width ) || width <= 0 ||
-		! Number.isSafeInteger( height ) || height <= 0
-	) throw new Error( 'capturePMREMLive: real PMREM render did not expose a valid compiled atlas layout' );
-	const config = createPMREMLayoutConfig( cubeSize );
-	if ( config.lodMax !== lodMax || config.target.width !== width || config.target.height !== height ) {
-
-		throw new Error( 'capturePMREMLive: real PMREM render layout diverges from the locked pmrem-layout@1 contract' );
-
-	}
-	return config;
-
-}
-
-function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, supportConfig ) {
-
-	const group = ( artifact.uniformPlan || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
-	if ( ! group ) throw new Error( `capturePMREMLive: pmrem-${ subKind } has no object binding group` );
-	const sampledTextures = ( group.textures || [] ).filter( ( binding ) => binding && binding.bindingKind === 'sampled-texture' );
-	if ( sampledTextures.length !== 1 ) throw new Error( `capturePMREMLive: pmrem-${ subKind } expected exactly one sampled texture binding` );
-	const textureBinding = sampledTextures[ 0 ];
-	const source = textureBinding.source || {};
-	const liveTexture = artifact._textureRefs instanceof Map && source.textureUuid
-		? artifact._textureRefs.get( source.textureUuid )
-		: null;
-	const sourceStage = subKind === 'cubemap' || subKind === 'equirect';
-	const textureTopology = sourceStage
-		? pmremSourceInputTopology( supportConfig.source )
-		: { dimension: textureBinding.textureType || '2d' };
-	if ( ! textureTopology ) throw new Error( `capturePMREMLive: pmrem-${ subKind } is missing its source topology config` );
-	if ( ! sourceStage && liveTexture && liveTexture.format !== undefined && liveTexture.format !== null ) textureTopology.format = liveTexture.format;
-	if ( ! sourceStage && liveTexture && liveTexture.internalFormat !== undefined ) textureTopology.internalFormat = liveTexture.internalFormat;
-	if ( ! sourceStage && liveTexture && liveTexture.type !== undefined && liveTexture.type !== null ) textureTopology.type = liveTexture.type;
-	if ( ! sourceStage && liveTexture && liveTexture.colorSpace !== undefined ) textureTopology.colorSpace = liveTexture.colorSpace;
-	const uniforms = [];
-	for ( const [ binding, role ] of Object.entries( PMREM_UNIFORM_ROLES[ subKind ] || {} ) ) {
-
-		const slot = ( group.slots || [] ).find( ( candidate ) => candidate && candidate.name === binding );
-		if ( ! slot ) throw new Error( `capturePMREMLive: pmrem-${ subKind } is missing ${ role } at object.${ binding }` );
-		uniforms.push( {
-			role,
-			group: 'object',
-			binding,
-			valueType: slot.dtype === 'number' ? 'float' : slot.dtype,
-		} );
-
-	}
-	uniforms.sort( ( left, right ) => left.role.localeCompare( right.role ) );
-	const inputs = [ {
-		role: subKind === 'cubemap' || subKind === 'equirect' ? 'source' : 'env-map',
-		kind: 'texture',
-		group: 'object',
-		binding: textureBinding.name,
-		topology: textureTopology,
-	} ];
-	if ( subKind === 'blur' ) {
-
-		const weights = ( group.orderedBindings || [] )
-			.filter( ( binding ) => binding && binding.type === 'buffer-uniform' && binding.ref )
-			.map( ( binding ) => binding.ref );
-		if ( weights.length !== 1 ) throw new Error( 'capturePMREMLive: pmrem-blur expected exactly one uniform-buffer weights binding' );
-		if ( ! Number.isSafeInteger( weights[ 0 ].byteLength ) || weights[ 0 ].byteLength <= 0 || weights[ 0 ].byteLength % 16 !== 0 ) {
-
-			throw new Error( 'capturePMREMLive: pmrem-blur weights must use std140-style scalar stride' );
-
-		}
-		inputs.push( {
-			role: 'weights',
-			kind: 'buffer',
-			group: 'object',
-			binding: weights[ 0 ].name,
-			topology: {
-				byteLength: weights[ 0 ].byteLength,
-				arrayType: weights[ 0 ].arrayType,
-				count: weights[ 0 ].byteLength / 16,
-				itemSize: 1,
-				stride: 4,
-			},
-		} );
-
-	}
-	const outputTexture = renderTarget && renderTarget.texture;
-	const outputTopology = { dimension: '2d', depth: false };
-	if ( outputTexture && outputTexture.format !== undefined && outputTexture.format !== null ) outputTopology.format = outputTexture.format;
-	if ( outputTexture && outputTexture.internalFormat !== undefined ) outputTopology.internalFormat = outputTexture.internalFormat;
-	if ( outputTexture && outputTexture.type !== undefined && outputTexture.type !== null ) outputTopology.type = outputTexture.type;
-	if ( outputTexture && outputTexture.colorSpace !== undefined ) outputTopology.colorSpace = outputTexture.colorSpace;
-	return {
-		schema: 'internal-pass@1',
-		family: 'pmrem',
-		stage: subKind,
-		shape: `pmrem-${ subKind }`,
-		config: supportConfig,
-		uniforms,
-		inputs,
-		output: { topology: outputTopology },
-	};
 
 }
 
@@ -2795,18 +2154,21 @@ export function createSignedAuxiliaryPayload( payload, shape, provenance ) {
 
 	}
 	const artifact = jsonSafe( payload.artifact );
+	const emitterFields = createRuntimeThreeEmitterHashFields( provenance );
 	artifact.sourceThreeVersion = provenance.threeVersion;
+	Object.assign( artifact, createThreeEmitterSourceFields( { ...provenance, ...emitterFields } ) );
 	artifact.sourceHashVersion = provenance.pluginVersion;
 	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
 	const hash = hashArtifactContentSync( artifact, {
 		shape,
-		threeVersion: provenance.threeVersion,
-		pluginVersion: provenance.pluginVersion,
+		...provenance,
+		...emitterFields,
 	} );
 	return {
 		...payload,
 		hash,
 		threeVersion: provenance.threeVersion,
+		...emitterFields,
 		pluginVersion: provenance.pluginVersion,
 		artifact,
 	};

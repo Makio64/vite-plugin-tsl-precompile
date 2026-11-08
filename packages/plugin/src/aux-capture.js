@@ -30,7 +30,8 @@ import { installMockWebGPU, createMockGPUCanvasContext } from './mock-webgpu.js'
 import { computeArtifactContentHash, computeNodeGraphHash, computePlainConfigHash } from './hash.js';
 import { compileTSL } from './vendor/compileTSL.js';
 import { beginRenderObjectHarvest } from './vendor/render-object-observer.js';
-import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
+import { captureEmitterOptions, withInstalledCaptureEmitter } from './capture-emitter-identity.js';
+import { createThreeEmitterSourceFields } from '@tsl-precompile/contract/three-emitter-identity';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import { ARTIFACT_CONTENT_HASH_VERSION } from '@tsl-precompile/contract/artifact-content';
 import { createRenderPipelineConfig } from '@tsl-precompile/contract/output-config';
@@ -38,14 +39,23 @@ import { mergeArtifactVariantFamily } from '@tsl-precompile/contract/artifact-va
 import {
 	assertInternalPassFamily,
 	assertInternalPassFamilyStages,
+	stabilizeInternalPassUniformBufferNames,
+	stabilizePMREMInternalPassTextureSources,
 } from '@tsl-precompile/contract/internal-pass';
 import {
 	assertCubeRenderTargetTextureEvidence,
 	createCubeRenderTargetAuxConfig,
 } from '@tsl-precompile/contract/cube-render-target';
 import {
+	assertPMREMAtlasCaptureSupport,
+	PMREM_SPHERICAL_GAUSSIAN_BLUR,
+	PMREM_CUBE_UNIFORM_BINDING_ROLES,
+	createPMREMCubeCaptureLayout,
+	assertPMREMCubeCaptureGenerator,
+	isPMREMCubeLayout,
 	createPMREMLayoutConfig,
 	createPMREMSupportConfig,
+	getPMREMBlurConfig,
 	pmremProfileForSource,
 	pmremRequiredStages,
 	pmremSourceInputTopology,
@@ -71,12 +81,6 @@ async function importThree() {
 
 }
 
-function threeVersion( _core, opts ) {
-
-	return opts.threeVersion || SLIM_THREE_PACKAGE_VERSION;
-
-}
-
 function pluginVersion( opts ) {
 
 	return opts.pluginVersion || ARTIFACT_TOOLCHAIN_VERSION;
@@ -94,7 +98,7 @@ function hashInput( shape, input, core, opts ) {
 
 	return computeNodeGraphHash( input, {
 		shape,
-		threeVersion: threeVersion( core, opts ),
+		...captureEmitterOptions( core, opts ),
 		pluginVersion: pluginVersion( opts ),
 	} );
 
@@ -102,17 +106,20 @@ function hashInput( shape, input, core, opts ) {
 
 function stamp( artifact, shape, configHash, name, core, opts ) {
 
-	const exactThreeVersion = threeVersion( core, opts );
+	const emitterOptions = captureEmitterOptions( core, opts );
+	const exactThreeVersion = emitterOptions.threeVersion;
 	const exactPluginVersion = pluginVersion( opts );
 	artifact.materialShape = shape;
 	artifact.__name = name;
 	artifact.__configHash = configHash;
 	artifact.sourceThreeVersion = exactThreeVersion;
+	Object.assign( artifact, createThreeEmitterSourceFields( emitterOptions ) );
 	artifact.sourceHashVersion = exactPluginVersion;
 	artifact.artifactContentHashVersion = ARTIFACT_CONTENT_HASH_VERSION;
 	// Artifact's own content-hash too — used by the existing 3-layer staleness gates.
 	artifact.__hash = computeArtifactContentHash( artifact, {
 		shape,
+		...emitterOptions,
 		threeVersion: exactThreeVersion,
 		pluginVersion: exactPluginVersion,
 	} );
@@ -145,6 +152,7 @@ function makeRenderer( webgpu, rendererOptions = {} ) {
 export async function extractBackgroundArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	await renderer.init();
 
@@ -208,6 +216,7 @@ function locateBackgroundArtifact( artifacts, renderer, scene ) {
 export async function extractPostProcessingArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu, opts.rendererOptions );
 	await renderer.init();
 
@@ -284,6 +293,7 @@ export async function extractPostProcessingArtifact( factory, opts = {} ) {
 export async function extractCubeRenderTargetArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	let geometry = null;
 	let material = null;
@@ -323,11 +333,11 @@ export async function extractCubeRenderTargetArtifact( factory, opts = {} ) {
 		const replayConfig = createCubeRenderTargetAuxConfig( sourceTexture, cubeTarget );
 		const captureOpts = {
 			...opts,
-			threeVersion: threeVersion( core, opts ),
+			...captureEmitterOptions( core, opts ),
 		};
 		const configHash = computePlainConfigHash( replayConfig, {
 			shape: 'cube-render-target',
-			threeVersion: captureOpts.threeVersion,
+			...captureEmitterOptions( core, captureOpts ),
 			pluginVersion: pluginVersion( captureOpts ),
 		} );
 
@@ -420,6 +430,7 @@ function restoreRendererTarget( renderer, state ) {
 
 function createPMREMReplayConfig( pmrem, renderTarget ) {
 
+	assertPMREMAtlasCaptureSupport( pmrem, renderTarget );
 	const cubeSize = pmrem && pmrem._cubeSize;
 	const lodMax = pmrem && pmrem._lodMax;
 	const width = renderTarget && renderTarget.width;
@@ -458,6 +469,8 @@ const PMREM_UNIFORM_ROLES = Object.freeze( {
 	} ),
 } );
 
+const PMREM_SPHERICAL_BLUR_UNIFORM_ROLES = Object.freeze( { nodeUniform0: 'sigma', nodeUniform1: 'mip-int' } );
+
 function pmremTextureTopology( artifact, binding, subKind, supportConfig ) {
 
 	if ( subKind === 'cubemap' || subKind === 'equirect' ) return pmremSourceInputTopology( supportConfig.source );
@@ -478,6 +491,8 @@ function pmremTextureTopology( artifact, binding, subKind, supportConfig ) {
 
 function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, supportConfig ) {
 
+	stabilizeInternalPassUniformBufferNames( artifact );
+
 	const group = ( artifact.uniformPlan || [] ).find( ( candidate ) => candidate && candidate.name === 'object' );
 	if ( ! group ) {
 
@@ -492,7 +507,9 @@ function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, sup
 	}
 	const textureBinding = sampledTextures[ 0 ];
 	const uniforms = [];
-	const uniformRoles = PMREM_UNIFORM_ROLES[ subKind ] || {};
+	const sphericalBlur = subKind === 'blur' && getPMREMBlurConfig( supportConfig ).algorithm === 'spherical-gaussian';
+	const uniformRoles = isPMREMCubeLayout( supportConfig.layout ) ? PMREM_CUBE_UNIFORM_BINDING_ROLES[ subKind ] || {}
+		: sphericalBlur ? PMREM_SPHERICAL_BLUR_UNIFORM_ROLES : PMREM_UNIFORM_ROLES[ subKind ] || {};
 	for ( const [ binding, role ] of Object.entries( uniformRoles ) ) {
 
 		const slot = ( group.slots || [] ).find( ( candidate ) => candidate && candidate.name === binding );
@@ -505,7 +522,7 @@ function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, sup
 			role,
 			group: 'object',
 			binding,
-			valueType: slot.dtype === 'number' ? 'float' : slot.dtype,
+			valueType: role === 'source-size' ? 'int' : slot.dtype === 'number' ? 'float' : slot.dtype,
 		} );
 
 	}
@@ -518,7 +535,7 @@ function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, sup
 		binding: textureBinding.name,
 		topology: pmremTextureTopology( artifact, textureBinding, subKind, supportConfig ),
 	} ];
-	if ( subKind === 'blur' ) {
+	if ( subKind === 'blur' && ! sphericalBlur ) {
 
 		const weightBindings = ( group.orderedBindings || [] )
 			.filter( ( binding ) => binding && binding.type === 'buffer-uniform' && binding.ref );
@@ -550,7 +567,7 @@ function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, sup
 	}
 
 	const outputTexture = renderTarget && renderTarget.texture;
-	const outputTopology = { dimension: '2d', depth: false };
+	const outputTopology = { dimension: isPMREMCubeLayout( supportConfig.layout ) ? 'cube' : '2d', depth: false };
 	if ( outputTexture && outputTexture.format !== undefined && outputTexture.format !== null ) outputTopology.format = outputTexture.format;
 	if ( outputTexture && outputTexture.internalFormat !== undefined ) outputTopology.internalFormat = outputTexture.internalFormat;
 	if ( outputTexture && outputTexture.type !== undefined && outputTexture.type !== null ) outputTopology.type = outputTexture.type;
@@ -568,7 +585,7 @@ function createPMREMInternalPassDescriptor( artifact, subKind, renderTarget, sup
 
 }
 
-function mergePMREMArtifactFamily( artifacts, material, subKind ) {
+function mergePMREMArtifactFamily( artifacts, material, subKind, supportConfig ) {
 
 	const members = artifacts.filter( ( artifact ) => artifact.materialUuid === material.uuid );
 	if ( members.length === 0 ) {
@@ -576,7 +593,7 @@ function mergePMREMArtifactFamily( artifacts, material, subKind ) {
 		throw new Error( `extractPMREMArtifact: no extracted artifact matched the real ${ pmremSubShape( subKind ) } material` );
 
 	}
-	normalizePMREMFamilyBindingNames( members, subKind );
+	normalizePMREMFamilyBindingNames( members, subKind, supportConfig );
 	const family = members[ 0 ];
 	const textureRefs = new Map();
 	for ( const member of members ) {
@@ -606,9 +623,22 @@ function mergePMREMArtifactFamily( artifacts, material, subKind ) {
 
 }
 
-function normalizePMREMFamilyBindingNames( members, subKind ) {
+function normalizePMREMFamilyBindingNames( members, subKind, supportConfig ) {
 
 	if ( subKind !== 'blur' ) return;
+	if ( getPMREMBlurConfig( supportConfig ).algorithm === 'spherical-gaussian' ) {
+
+		for ( const member of members ) {
+
+			const group = ( member.uniformPlan || [] ).find( ( candidate ) => candidate?.name === 'object' );
+			if ( ( group?.orderedBindings || [] ).some( binding => binding?.type === 'buffer-uniform' ) ) throw new Error(
+				'extractPMREMArtifact: spherical Gaussian blur must not contain a legacy weights buffer',
+			);
+
+		}
+		return;
+
+	}
 	let canonicalName = null;
 	for ( const member of members ) {
 
@@ -666,15 +696,14 @@ function stampPMREMFamily( artifact, subKind, configHash, replayConfig, supportC
 		variant.internalPass = artifact.internalPass;
 
 	}
+	stabilizePMREMInternalPassTextureSources( artifact );
 	return stamp( artifact, shape, configHash, `${ name }-${ subKind }`, core, opts );
 
 }
 
 /**
  * Extract the PMREMGenerator materials exercised by this input:
- * its kind-specific source blit and PMREM_ggx convolution. Scene blur is a
- * separate operation profile captured from a real fromScene() call by the
- * browser marker.
+ * its kind-specific source blit or native scene blur, and PMREM_ggx convolution.
  *
  * The slim renderer cannot run PMREM's blur passes natively because its
  * rewritten Nodes.js:getForRender throws on non-precompiled materials.
@@ -682,35 +711,49 @@ function stampPMREMFamily( artifact, subKind, configHash, replayConfig, supportC
  * lets the slim renderer drive PMREM through the normal precompiled-material
  * path — no dual-renderer fallback needed.
  *
- * @param {({webgpu, core, tsl}) => ({ sourceTexture: Object, kind: 'equirect' | 'cube', name?: string })} factory
+ * @param {({webgpu, core, tsl}) => ({ sourceTexture?: Object, scene?: Object, kind: 'equirect' | 'cube' | 'scene', sigma?: number, size?: number, near?: number, far?: number, name?: string })} factory
  * @param {Object} [opts]
  * @return {Promise<{ artifact, artifacts: Object, configHash, materialShape: 'pmrem', hash: string }>}
- *   `artifacts` is keyed by the exercised source blit plus 'ggx'.
+ *   `artifacts` is keyed by the exercised source blit or 'blur', plus 'ggx'.
  *   `artifact` is the primary one matching `kind` (kept for back-compat with
  *   the existing test fixture).
  */
 export async function extractPMREMArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
-	const renderer = makeRenderer( webgpu );
-	await renderer.init();
+	opts = await withInstalledCaptureEmitter( core, opts );
+	const { sourceTexture, scene, kind = 'equirect', sigma = 0.2, size = 256, near = 0.1, far = 100, name = 'pmrem-aux' } = await factory( { webgpu, core, tsl } );
+	if ( kind !== 'equirect' && kind !== 'cube' && kind !== 'scene' ) {
 
-	const { sourceTexture, kind = 'equirect', name = 'pmrem-aux' } = await factory( { webgpu, core, tsl } );
-	if ( ! sourceTexture ) throw new Error( 'extractPMREMArtifact: factory must return { sourceTexture }' );
-	if ( kind !== 'equirect' && kind !== 'cube' ) {
-
-		throw new Error( `extractPMREMArtifact: unsupported kind ${ JSON.stringify( kind ) }; expected "equirect" or "cube"` );
+		throw new Error( `extractPMREMArtifact: unsupported kind ${ JSON.stringify( kind ) }; expected "equirect", "cube", or "scene"` );
 
 	}
-	const profile = kind === 'cube' ? 'texture-cubemap' : 'texture-equirect';
-	const inferredProfile = pmremProfileForSource( sourceTexture );
-	if ( inferredProfile !== profile ) throw new Error(
-		`extractPMREMArtifact: kind ${ JSON.stringify( kind ) } disagrees with the source texture mapping (${ inferredProfile })`,
-	);
+	const profile = kind === 'scene' ? 'scene' : kind === 'cube' ? 'texture-cubemap' : 'texture-equirect';
+	if ( kind === 'scene' ) {
+
+		if ( ! scene?.isScene ) throw new Error( 'extractPMREMArtifact: scene kind requires { scene } containing a Three Scene' );
+		if ( ! Number.isFinite( sigma ) || sigma <= 0 ) throw new Error( 'extractPMREMArtifact: scene capture requires sigma > 0 to exercise the native blur stage' );
+		if ( core.REVISION === '187dev' || core.REVISION === '187' ) {
+
+			if ( ! Number.isSafeInteger( size ) || size <= 0 ) throw new Error( 'extractPMREMArtifact: cube scene size must be a positive integer' );
+
+		} else createPMREMLayoutConfig( size );
+
+	} else {
+
+		if ( ! sourceTexture ) throw new Error( 'extractPMREMArtifact: factory must return { sourceTexture }' );
+		const inferredProfile = pmremProfileForSource( sourceTexture );
+		if ( inferredProfile !== profile ) throw new Error(
+			`extractPMREMArtifact: kind ${ JSON.stringify( kind ) } disagrees with the source texture mapping (${ inferredProfile })`,
+		);
+
+	}
 
 	const PMREM = webgpu.PMREMGenerator;
 	if ( ! PMREM ) throw new Error( 'extractPMREMArtifact: three/webgpu does not export PMREMGenerator' );
 
+	const renderer = makeRenderer( webgpu );
+	await renderer.init();
 	const pmrem = new PMREM( renderer );
 	const previousTarget = {
 		target: typeof renderer.getRenderTarget === 'function' ? renderer.getRenderTarget() : null,
@@ -722,12 +765,17 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 
 	try {
 
+		const cubeCapture = core.REVISION === '187dev' || core.REVISION === '187';
+		if ( cubeCapture ) assertPMREMCubeCaptureGenerator( pmrem, core.REVISION );
+		else assertPMREMAtlasCaptureSupport( pmrem );
 		// Observe the real PMREM draw sequence. Its private LOD meshes carry the
-		// required `faceIndex` attribute and render against HalfFloat offscreen
+		// required `outputDirection` attribute and render against HalfFloat offscreen
 		// targets; compiling the same materials on a generic PlaneGeometry
-		// silently hard-coded face 0 and signed the wrong target topology.
+		// loses the native face directions and signs the wrong target topology.
 		harvestSession = beginRenderObjectHarvest( renderer );
-		cubeUVRenderTarget = kind === 'cube'
+		cubeUVRenderTarget = kind === 'scene'
+			? pmrem.fromScene( scene, sigma, near, far, { size } )
+			: kind === 'cube'
 			? pmrem.fromCubemap( sourceTexture )
 			: pmrem.fromEquirectangular( sourceTexture );
 
@@ -736,23 +784,27 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 		// PMREM rounds dimensions to the compiled atlas layout, but source
 		// texture topology remains part of the family identity because it can
 		// change WGSL sample type and binding layout at the same cube size.
-		const replayConfig = createPMREMReplayConfig( pmrem, cubeUVRenderTarget );
-		const supportConfig = createPMREMSupportConfig( replayConfig, profile, sourceTexture, { renderer } );
+		const replayConfig = cubeCapture ? createPMREMCubeCaptureLayout( pmrem, cubeUVRenderTarget, core.REVISION )
+			: createPMREMReplayConfig( pmrem, cubeUVRenderTarget );
+		const supportConfig = createPMREMSupportConfig( replayConfig, profile, sourceTexture, {
+			renderer,
+			...( profile === 'scene' && typeof pmrem._blurPass === 'function' ? { blur: PMREM_SPHERICAL_GAUSSIAN_BLUR } : {} ),
+		} );
 		const configHash = computePlainConfigHash( supportConfig, {
 			shape: 'pmrem',
-			threeVersion: threeVersion( core, opts ),
+			...captureEmitterOptions( core, opts ),
 			pluginVersion: pluginVersion( opts ),
 		} );
 
 		const materials = {};
 		for ( const material of harvest.familiesByMaterial.keys() ) {
 
-			const match = /^PMREM_(cubemap|equirect|blur|ggx)$/.exec( material && material.name || '' );
+			const match = /^PMREM_(cubemap|equirect|blur|ggx|integration)$/.exec( material && material.name || '' );
 			if ( match ) materials[ match[ 1 ] ] = material;
 
 		}
 
-		const exercisedSubKinds = pmremRequiredStages( profile );
+		const exercisedSubKinds = pmremRequiredStages( profile, supportConfig );
 		for ( const subKind of exercisedSubKinds ) {
 
 			if ( ! materials[ subKind ] ) {
@@ -781,7 +833,7 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 		for ( const subKind of exercisedSubKinds ) {
 
 			const material = materials[ subKind ];
-			const found = mergePMREMArtifactFamily( allArtifacts, material, subKind );
+			const found = mergePMREMArtifactFamily( allArtifacts, material, subKind, supportConfig );
 			artifacts[ subKind ] = stampPMREMFamily(
 				found,
 				subKind,
@@ -796,7 +848,7 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 
 		}
 
-		const primaryKey = kind === 'cube' ? 'cubemap' : 'equirect';
+		const primaryKey = kind === 'scene' ? 'blur' : kind === 'cube' ? 'cubemap' : 'equirect';
 		const primary = artifacts[ primaryKey ];
 		assertInternalPassFamilyStages( 'pmrem', Object.keys( artifacts ), { profile, config: supportConfig } );
 		assertInternalPassFamily(
@@ -818,7 +870,7 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 		restoreRendererTarget( renderer, previousTarget );
 		if ( cubeUVRenderTarget && typeof cubeUVRenderTarget.dispose === 'function' ) cubeUVRenderTarget.dispose();
 		pmrem.dispose();
-		if ( typeof renderer.dispose === 'function' ) renderer.dispose();
+		if ( typeof renderer.dispose === 'function' ) await renderer.dispose();
 
 	}
 
@@ -842,6 +894,7 @@ export async function extractPMREMArtifact( factory, opts = {} ) {
 export async function extractLightingArtifact( factory, opts = {} ) {
 
 	const { webgpu, core, tsl } = await importThree();
+	opts = await withInstalledCaptureEmitter( core, opts );
 	const renderer = makeRenderer( webgpu );
 	await renderer.init();
 
@@ -853,7 +906,7 @@ export async function extractLightingArtifact( factory, opts = {} ) {
 	const configInput = { signature };
 	const configHash = computePlainConfigHash( configInput, {
 		shape: 'lights',
-		threeVersion: threeVersion( core, opts ),
+		...captureEmitterOptions( core, opts ),
 		pluginVersion: pluginVersion( opts ),
 	} );
 

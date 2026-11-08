@@ -47,6 +47,8 @@ const DECLARED = [
 	{ name: '__TSLP_PRECOMPILE_OBSERVE_TIMEOUT_MS__', surfaces: [ 'runtime' ], kind: 'flag', purpose: 'Override for the marker observation window before a capture is abandoned.' },
 	{ name: '__TSLP_STRICT_TEXTURE_MISS', surfaces: [ 'runtime' ], kind: 'flag', purpose: 'Turns an unresolved artifact texture reference into a thrown error instead of a fallback.' },
 	{ name: '__TSLP_THREE_PACKAGE_VERSION__', surfaces: [ 'harness', 'plugin', 'runtime' ], kind: 'flag', purpose: 'Exact Three package version stamped by the plugin and read back by the runtime provenance checks.' },
+	{ name: '__TSLP_THREE_REVISION__', surfaces: [ 'plugin', 'runtime' ], kind: 'flag', purpose: 'Verified development emitter revision supplied by plugin configuration for capture and artifact hashes.' },
+	{ name: '__TSLP_THREE_COMMIT__', surfaces: [ 'plugin', 'runtime' ], kind: 'flag', purpose: 'Verified development emitter commit supplied by plugin configuration for capture and artifact hashes.' },
 	{ name: '__TSLP_WARN_TEXTURE_MISS', surfaces: [ 'runtime' ], kind: 'flag', purpose: 'Warn once per unresolved artifact texture reference instead of staying silent.' },
 	{ name: '__tslpAnimationLoopCalls', surfaces: [ 'harness' ], kind: 'state', purpose: null },
 	{ name: '__tslpAnimationLoopRegistered', surfaces: [ 'harness' ], kind: 'counter', purpose: null },

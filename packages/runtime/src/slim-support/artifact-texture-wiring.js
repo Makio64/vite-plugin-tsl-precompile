@@ -510,3 +510,54 @@ export function rewritePassDepthTextureSources( artifact, textureUuids = null ) 
 	return changed;
 
 }
+
+// Match a transaction-local snapshot of post-process textures to each aux pass.
+export function attachCollectedPostprocessTextures( artifact, candidates ) {
+
+	if ( ! artifact || candidates.length === 0 ) return artifact;
+
+	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
+	let changed = false;
+
+	for ( const group of artifact.uniformPlan || [] ) {
+
+		for ( const entry of group.textures || [] ) {
+
+			const source = entry && entry.source || {};
+			if ( ! source.textureUuid ) continue;
+			const passDepth = source.kind === 'depth.texture'
+				&& source.fromMaterialGraph === true
+				&& ! source.lightUuid
+				&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
+			if ( source.kind !== 'artifact.texture' && ! passDepth ) continue;
+			const wantedNames = passDepth
+				? [ 'depth' ]
+				: [ source.textureName, entry.name ].filter( ( name ) => typeof name === 'string' && name.length > 0 );
+			if ( wantedNames.length === 0 ) continue;
+			const match = candidates.find( ( candidate ) => candidate.texture
+				&& ( ! passDepth || candidate.texture.isDepthTexture === true || candidate.names.includes( 'depth' ) )
+				&& candidate.names.some( ( name ) => wantedNames.includes( name ) ) );
+			if ( match && match.texture && match.texture.isTexture === true ) {
+
+				refs.set( source.textureUuid, match.texture );
+				changed = true;
+
+			}
+
+		}
+
+	}
+
+	if ( changed ) {
+
+		Object.defineProperty( artifact, '_textureRefs', {
+			value: refs,
+			enumerable: false,
+			configurable: true,
+			writable: true,
+		} );
+
+	}
+	return artifact;
+
+}

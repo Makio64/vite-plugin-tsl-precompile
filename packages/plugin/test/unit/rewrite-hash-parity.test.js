@@ -12,6 +12,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { REVISION } from 'three';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
 import { extractBackgroundArtifact } from '../../src/aux-capture.js';
 import {
@@ -39,15 +41,20 @@ test( 'parity: aux-capture Background configHash === runtime hashNodeGraphSync(b
 		return { backgroundNode, name: 'parity-test' };
 	};
 
+	// A native r187dev emitter only captures with its verified identity, which both sides then hash.
+	const development = THREE_RELEASE_PROFILES.development;
+	const emitter = REVISION === development.revision
+		? { threeVersion: development.packageVersion, threeRevision: development.revision, threeCommit: development.gitCommit }
+		: { threeVersion: '175' };
 	const { configHash: captureHash } = await extractBackgroundArtifact( factory, {
-		threeVersion: '175',
+		...emitter,
 		pluginVersion: '0.0.0',
 	} );
 
 	// Runtime side: hash the same input with the SAME versions + shape.
 	const runtimeHash = hashNodeGraphSync( capturedInput, {
 		shape: 'background',
-		threeVersion: '175',
+		...emitter,
 		pluginVersion: '0.0.0',
 	} );
 

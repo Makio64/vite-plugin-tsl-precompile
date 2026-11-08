@@ -20,6 +20,7 @@ import {
 	parseDoctorArgs,
 	printDoctorResult,
 } from '../../src/cli/doctor-support.js';
+import { SLIM_THREE_PACKAGE_VERSION, SLIM_THREE_TYPES_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 
 const DOCTOR_CLI = resolve( import.meta.dirname, '../../src/cli/doctor.js' );
 const CANONICAL_SKILL = resolve( import.meta.dirname, '../../../../.agents/skills/integrate-tsl-precompile' );
@@ -551,13 +552,15 @@ test( 'doctor recognizes aliased Vite, renderer, and setup imports without false
 			},
 			dependencies: {
 				'@tsl-precompile/runtime': '0.1.0-alpha.0',
-				three: '0.185.1',
+				three: SLIM_THREE_PACKAGE_VERSION,
 			},
 			devDependencies: {
 				'vite-plugin-tsl-precompile': '0.1.0-alpha.0',
 				vite: '8.0.0',
+				'@types/three': SLIM_THREE_TYPES_PACKAGE_VERSION,
 			},
 		} ) );
+		await writeProjectFile( project, 'tsconfig.json', JSON.stringify( { compilerOptions: { allowJs: true } } ) );
 		await writeProjectFile( project, 'vite.config.js', `
 			import precompilePlugin from 'vite-plugin-tsl-precompile';
 			export default { plugins: [ precompilePlugin() ] };
@@ -579,7 +582,8 @@ test( 'doctor recognizes aliased Vite, renderer, and setup imports without false
 		await Promise.all( [
 			writeInstalledPackage( project, 'vite-plugin-tsl-precompile', '0.1.0-alpha.0' ),
 			writeInstalledPackage( project, '@tsl-precompile/runtime', '0.1.0-alpha.0' ),
-			writeInstalledPackage( project, 'three', '0.185.1' ),
+			writeInstalledPackage( project, 'three', SLIM_THREE_PACKAGE_VERSION ),
+			writeInstalledPackage( project, '@types/three', SLIM_THREE_TYPES_PACKAGE_VERSION ),
 			writeInstalledPackage( project, 'vite', '8.0.0' ),
 		] );
 
@@ -603,6 +607,8 @@ test( 'doctor recognizes aliased Vite, renderer, and setup imports without false
 		} );
 
 		assert.equal( result.ok, true );
+		assert.equal( result.checks.find( check => check.id === 'three-types-version' ).status, 'pass' );
+		assert.deepEqual( result.commands.argv.installTypes, [ 'pnpm', 'add', '-D', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`, '--save-exact' ] );
 		assert.equal( result.status, 'passed' );
 		assert.equal( result.command, 'tsl-precompile-doctor' );
 		assert.equal( result.readiness, 'ready-compatibility' );
@@ -631,7 +637,7 @@ test( 'doctor recognizes aliased Vite, renderer, and setup imports without false
 					'pnpm',
 					'add',
 					'@tsl-precompile/runtime@0.1.0-alpha.0',
-					'three@0.185.1',
+					`three@${ SLIM_THREE_PACKAGE_VERSION }`,
 					'--save-exact',
 				],
 			],
@@ -910,6 +916,13 @@ test( 'doctor recognizes aliased Vite, renderer, and setup imports without false
 		assert.equal( slimCaptureResult.readiness, 'needs-capture' );
 		assert.match( slimCaptureResult.suggestedAgentPrompt, /Preserve the established slim mode/ );
 		assert.doesNotMatch( slimCaptureResult.suggestedAgentPrompt, /integrate .* compatibility mode/ );
+
+		await writeInstalledPackage( project, '@types/three', SLIM_THREE_PACKAGE_VERSION );
+		const wrongTypes = await inspectTslPrecompileProject( { root: project, sources: [ 'src' ], autoMark: false, verifyRunner: async () => result.verification } );
+		assert.equal( wrongTypes.checks.find( check => check.id === 'three-types-version' ).status, 'fail' );
+		const typesAction = wrongTypes.nextActions.find( action => action.code === 'install-three-types' );
+		assert.deepEqual( typesAction.argv, [ 'pnpm', 'add', '-D', `@types/three@${ SLIM_THREE_TYPES_PACKAGE_VERSION }`, '--save-exact' ] );
+		assert.ok( typesAction.action.includes( SLIM_THREE_TYPES_PACKAGE_VERSION ) );
 
 	} finally {
 

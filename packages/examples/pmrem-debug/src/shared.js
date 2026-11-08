@@ -276,7 +276,7 @@ export async function runPMREMDebugExample( {
 			import( 'three/webgpu' ),
 		] );
 		captureRuntime.installPrecompileMarker( captureThree, { devEndpoint: CAPTURE_ENDPOINT } );
-		captureRuntime.setDevRenderer( renderer );
+		await captureRuntime.setDevRenderer( renderer );
 
 	}
 

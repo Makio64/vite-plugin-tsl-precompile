@@ -1,7 +1,18 @@
 import { stableJsonStringify } from './stable-json.js';
+import { isPMREMCubeLayout, validatePMREMCubeLayoutConfig } from './pmrem-cube-config.js';
+export { PMREM_CUBE_LAYOUT_SCHEMA, PMREM_CUBE_KERNEL, PMREM_CUBE_UNIFORM_BINDING_ROLES, createPMREMCubeLayoutConfig, createPMREMCubeCaptureLayout, assertPMREMCubeCaptureGenerator, isPMREMCubeLayout, validatePMREMCubeLayoutConfig } from './pmrem-cube-config.js';
 
 export const PMREM_LAYOUT_SCHEMA = 'pmrem-layout@1';
 export const PMREM_SUPPORT_SCHEMA = 'pmrem-support@1';
+// Numeric vocabulary of the captured r186 atlas contract. Native r187 removes
+// this mapping constant while legacy captured atlas shaders remain readable.
+export const PMREM_CUBE_UV_MAPPING = 306;
+export const PMREM_UNIFORM_SLOT_KINDS = Object.freeze( [ 'pmrem.maxMip', 'pmrem.texelWidth', 'pmrem.texelHeight', 'pmrem.maxLod', 'pmrem.size' ] );
+
+// Native r186 bakes its sample count into the spherical Gaussian shader.
+// Omitted scene blur metadata preserves the historical separable descriptor.
+export const PMREM_SPHERICAL_GAUSSIAN_BLUR = Object.freeze( { algorithm: 'spherical-gaussian', samples: 20 } );
+const PMREM_LEGACY_BLUR = Object.freeze( { algorithm: 'weighted-separable', samples: 20 } );
 
 export const PMREM_PROFILE_STAGE_REQUIREMENTS = deepFreeze( {
 	'texture-equirect': [ 'equirect', 'ggx' ],
@@ -14,7 +25,8 @@ export const PMREM_SUPPORT_PROFILES = Object.freeze( Object.keys( PMREM_PROFILE_
 const SUPPORT_PROFILE_SET = new Set( PMREM_SUPPORT_PROFILES );
 const LAYOUT_KEYS = new Set( [ 'schema', 'cubeSize', 'lodMax', 'target' ] );
 const TARGET_KEYS = new Set( [ 'width', 'height' ] );
-const SUPPORT_KEYS = new Set( [ 'schema', 'profile', 'layout', 'source' ] );
+const SUPPORT_KEYS = new Set( [ 'schema', 'profile', 'layout', 'source', 'blur' ] );
+const BLUR_KEYS = new Set( [ 'algorithm', 'samples' ] );
 const SOURCE_KEYS = new Set( [
 	'kind',
 	'dimension',
@@ -60,6 +72,32 @@ const COMPONENT_TYPES = new Set( [ 'f32', 'i32', 'u32' ] );
 const SAMPLE_TYPES = new Set( [ 'float', 'unfilterable-float', 'sint', 'uint' ] );
 const SAMPLING_MODES = new Set( [ 'sample-implicit', 'sample-level', 'manual-linear', 'load' ] );
 const SAMPLER_TYPES = new Set( [ 'filtering', 'none' ] );
+
+/**
+ * The replay contract owns CubeUV atlases. Reject the native r187 cube-mip
+ * generator before drawing, and its actual output before atlas validation.
+ * Ordinary cube source textures remain valid inputs to the atlas generator.
+ */
+export function assertPMREMAtlasCaptureSupport( generator, renderTarget = null ) {
+
+	const cubeMipGenerator = generator &&
+		Object.hasOwn( generator, '_integrationMaterial' ) &&
+		safeRead( generator, '_cubeCamera' ) &&
+		safeRead( safeRead( generator, '_boxMesh' ), 'isMesh' ) === true &&
+		! Object.hasOwn( generator, '_lodMax' );
+	const texture = safeRead( renderTarget, 'texture' );
+	const cubeMipOutput = safeRead( texture, 'isCubeTexture' ) === true &&
+		safeRead( texture, 'isPMREMTexture' ) === true;
+	if ( ! cubeMipGenerator && ! cubeMipOutput ) return;
+	const error = new Error(
+		'[tsl-precompile] unsupported r187 development PMREM cubemap filter capture. ' +
+		'The native generator uses cube mipmaps and an integration pass; the current replay contract supports the r186 CubeUV atlas pipeline. ' +
+		'Use compatibility mode (slim: false) for this environment, or use the pinned r186 release and recapture its PMREM auxiliary passes.',
+	);
+	error.code = 'TSLP_UNSUPPORTED_PMREM_CUBE_REPLAY';
+	throw error;
+
+}
 
 /**
  * Canonical compiled atlas layout shared by capture, artifact validation, and
@@ -225,19 +263,37 @@ export function createPMREMSupportConfig( layout, profile, sourceTexture = null,
 
 	}
 	const source = profile === 'scene' ? null : createPMREMSourceTopology( sourceTexture, profile, options );
+	if ( options.blur !== undefined ) {
+
+		const issues = validatePMREMBlurConfig( options.blur, profile, 'options.blur' );
+		if ( issues.length > 0 ) throw new TypeError( `createPMREMSupportConfig: ${ issues[ 0 ].message }` );
+
+	}
 	return {
 		schema: PMREM_SUPPORT_SCHEMA,
 		profile,
 		layout: cloneJson( layout ),
 		...( source ? { source } : {} ),
+		...( options.blur !== undefined ? { blur: cloneJson( options.blur ) } : {} ),
 	};
 
 }
 
-export function pmremRequiredStages( profile ) {
+/** Return the exact compiled blur algorithm, including the legacy default. */
+export function getPMREMBlurConfig( supportConfig ) {
+
+	if ( isPMREMCubeLayout( supportConfig?.layout ) && ! Object.hasOwn( supportConfig, 'blur' ) ) return PMREM_SPHERICAL_GAUSSIAN_BLUR;
+	if ( ! Object.hasOwn( supportConfig || {}, 'blur' ) ) return PMREM_LEGACY_BLUR;
+	const issues = validatePMREMBlurConfig( supportConfig.blur, supportConfig.profile, 'internalPass.config.blur' );
+	if ( issues.length > 0 ) throw new TypeError( `getPMREMBlurConfig: ${ issues[ 0 ].message }` );
+	return PMREM_SPHERICAL_GAUSSIAN_BLUR;
+
+}
+
+export function pmremRequiredStages( profile, supportConfig = null ) {
 
 	const stages = PMREM_PROFILE_STAGE_REQUIREMENTS[ profile ];
-	return stages ? [ ...stages ] : [];
+	return stages ? [ ...stages, ...( isPMREMCubeLayout( supportConfig?.layout ) ? [ 'integration' ] : [] ) ] : [];
 
 }
 
@@ -265,6 +321,7 @@ export function pmremSourceInputTopology( source ) {
 
 export function validatePMREMLayoutConfig( value, path = 'internalPass.config.layout' ) {
 
+	if ( isPMREMCubeLayout( value ) ) return validatePMREMCubeLayoutConfig( value, path );
 	const issues = [];
 	if ( ! isRecord( value ) ) return [ issue( 'pmrem.layout', path, `${ path } must be a plain object.` ) ];
 	validateExactKeys( value, LAYOUT_KEYS, path, issues );
@@ -329,6 +386,7 @@ export function validatePMREMSupportConfig( value, path = 'internalPass.config' 
 		`${ path }.profile must be one of ${ PMREM_SUPPORT_PROFILES.join( ', ' ) }.`,
 	) );
 	issues.push( ...validatePMREMLayoutConfig( value.layout, `${ path }.layout` ) );
+	if ( Object.hasOwn( value, 'blur' ) ) issues.push( ...validatePMREMBlurConfig( value.blur, value.profile, `${ path }.blur` ) );
 	if ( value.profile === 'scene' ) {
 
 		if ( Object.prototype.hasOwnProperty.call( value, 'source' ) ) issues.push( issue(
@@ -342,6 +400,22 @@ export function validatePMREMSupportConfig( value, path = 'internalPass.config' 
 		issues.push( ...validatePMREMSourceTopology( value.source, value.profile, `${ path }.source` ) );
 
 	}
+	return issues;
+
+}
+
+function validatePMREMBlurConfig( value, profile, path ) {
+
+	const issues = [];
+	if ( profile !== 'scene' ) issues.push( issue( 'pmrem.blur.profile', path, `${ path } must be omitted for texture profiles.` ) );
+	if ( ! isRecord( value ) ) return [ ...issues, issue( 'pmrem.blur', path, `${ path } must be a plain object.` ) ];
+	validateExactKeys( value, BLUR_KEYS, path, issues );
+	if ( value.algorithm !== PMREM_SPHERICAL_GAUSSIAN_BLUR.algorithm ) issues.push( issue(
+		'pmrem.blur.algorithm', `${ path }.algorithm`, `${ path }.algorithm must equal "spherical-gaussian"; legacy weighted blur omits blur metadata.`,
+	) );
+	if ( value.samples !== PMREM_SPHERICAL_GAUSSIAN_BLUR.samples ) issues.push( issue(
+		'pmrem.blur.samples', `${ path }.samples`, `${ path }.samples must equal the compiled native sample count 20.`,
+	) );
 	return issues;
 
 }
@@ -587,7 +661,7 @@ function validateExactKeys( value, allowed, path, issues ) {
 	}
 	for ( const key of allowed ) {
 
-		if ( key === 'source' ) continue;
+		if ( allowed === SUPPORT_KEYS && ( key === 'source' || key === 'blur' ) ) continue;
 		if ( ! Object.prototype.hasOwnProperty.call( value, key ) ) issues.push( issue(
 			'pmrem.config-field-missing',
 			`${ path }.${ key }`,

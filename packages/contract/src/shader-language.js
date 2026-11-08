@@ -1,3 +1,5 @@
+import { fragmentOutputInterface } from './fragment-output-interface.js';
+
 export const SHADER_LANGUAGES = Object.freeze( {
 	WGSL: 'wgsl',
 	GLSL: 'glsl',
@@ -9,6 +11,38 @@ export const SHADER_LANGUAGE_BACKENDS = Object.freeze( {
 } );
 
 const SHADER_LANGUAGE_VALUES = new Set( Object.values( SHADER_LANGUAGES ) );
+
+/**
+ * Give Three's capture-local WGSL uniform buffers stable binding-address names.
+ * WebGPU binds these resources by group/index, so process-local Node IDs must
+ * not force a second shader module or pipeline after a live texture swap.
+ * GLSL uniform block names participate in binding and are left untouched.
+ *
+ * @param {string} source
+ * @return {string}
+ */
+export function stabilizeWgslBufferIdentifiers( source ) {
+
+	if ( detectShaderLanguage( source ) !== SHADER_LANGUAGES.WGSL ) return source;
+	const names = new Map();
+	const declarations = /@binding\(\s*(\d+)\s*\)\s*@group\(\s*(\d+)\s*\)\s*var<uniform>\s*NodeBuffer_(\d+)\s*:\s*NodeBuffer_\3Struct\s*;/g;
+	for ( const [ , binding, group, id ] of source.matchAll( declarations ) ) {
+
+		const name = `NodeBuffer_tslp_${ group }_${ binding }`;
+		// Do not collide with an authored identifier, even in unusual shaders.
+		if ( new RegExp( `\\b${ name }(?:Struct)?\\b` ).test( source ) ) return source;
+		names.set( id, name );
+
+	}
+	if ( names.size === 0 ) return source;
+	return source.replace( /\bNodeBuffer_(\d+)(Struct)?\b/g, ( original, id, suffix = '' ) => {
+
+		const name = names.get( id );
+		return name ? name + suffix : original;
+
+	} );
+
+}
 
 /**
  * Detect the native shader language from source emitted by a Three node
@@ -85,9 +119,10 @@ export function shaderLanguageBackend( shaderLanguage ) {
  *
  * @param {string|number} cacheKey
  * @param {'wgsl'|'glsl'} shaderLanguage
+ * @param {?Object} [layout] - Captured MRT attachment layout, when present.
  * @return {string}
  */
-export function createBackendAwareVariantKey( cacheKey, shaderLanguage ) {
+export function createBackendAwareVariantKey( cacheKey, shaderLanguage, layout = null ) {
 
 	if ( cacheKey === undefined || cacheKey === null ) {
 
@@ -100,7 +135,15 @@ export function createBackendAwareVariantKey( cacheKey, shaderLanguage ) {
 		throw new TypeError( 'createBackendAwareVariantKey: shaderLanguage must be "wgsl" or "glsl".' );
 
 	}
-	return `${ backend }:${ String( cacheKey ) }`;
+	const key = `${ backend }:${ String( cacheKey ) }`;
+	if ( ! ( layout?.mrtOutputCount > 0 ) ) return key;
+	// Three's context IDs are process-local: independent pages can reuse one
+	// private key for different MRT layouts. Keep the exact attachment contract
+	// in durable identity; selector collisions still reject divergent programs.
+	const names = layout.mrtOutputNames || [];
+	const blends = Object.entries( layout.mrtBlendModes || {} ).sort( ( a, b ) => a[ 0 ] < b[ 0 ] ? - 1 : a[ 0 ] > b[ 0 ] ? 1 : 0 );
+	const outputs = fragmentOutputInterface( layout.fragmentShader, shaderLanguage );
+	return `${ key }:mrt:${ JSON.stringify( [ layout.mrtOutputCount, names, blends, ...( outputs ? [ outputs ] : [] ) ] ) }`;
 
 }
 

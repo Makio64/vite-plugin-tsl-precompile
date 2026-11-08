@@ -31,7 +31,7 @@ import { createViewportTextureRebinder } from './viewport-texture-rebinder.js';
  * @property {Array<Object>} shadowDepthBindings   — depth.texture, owned by lights
  * @property {Array<Object>} materialDepthBindings — depth.texture, owned by the material's node graph (reflector depth etc.)
  * @property {Array<Object>} artifactTextureBindings — artifact.texture
- * @property {Array<Object>} lateArtifactTextureBindings — selector-backed material-graph textures created by update-before owners
+ * @property {Array<Object>} lateArtifactTextureBindings — selector-backed render-target textures published by update-before owners
  * @property {Array<Object>} materialTextureBindings — material.* texture slots
  * @property {Array<Object>} viewportTextureBindings — viewport.texture
  * @property {Array<Object>} reflectorTextureBindings — reflector.texture
@@ -57,7 +57,8 @@ import { createViewportTextureRebinder } from './viewport-texture-rebinder.js';
  * - `lateUpdateBefore` runs AFTER the live-node sidecars + reflector-base
  *   nodes — these are the rebinders that need the live nodes' own
  *   `updateBefore` to have run first (material-graph depth which includes
- *   reflector depth nodes; reflector texture which keys its per-camera RT
+ *   reflector depth nodes; selector-backed color/depth targets published by
+ *   live producer passes; reflector texture which keys its per-camera RT
  *   inside `ReflectorBaseNode.updateBefore`).
  *
  * The hydrator splats both into its final `updateBefore` array with the

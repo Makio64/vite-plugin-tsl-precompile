@@ -13,6 +13,9 @@ export const RENDER_BINDING_OWNER_KINDS = Object.freeze( {
 // process-local identity to persisted selectors while preserving the exact
 // per-draw owner for runtime hydration.
 export const RENDER_BINDING_OWNER_MATERIAL = Symbol.for( '@tsl-precompile/render-binding-owner-material' );
+// Authored marker identity survives compiler removal and distinguishes custom
+// shadow graphs whose branch-presence flags alone are identical.
+export const MATERIAL_SHADER_FAMILY = Symbol.for( '@tsl-precompile/material-shader-family' );
 
 const RENDER_BINDING_OWNER_KIND_SET = new Set( Object.values( RENDER_BINDING_OWNER_KINDS ) );
 
@@ -80,7 +83,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 	// topology before reading any other renderer-owned state so a nested render
 	// cannot relabel the observed face or mip level underneath this descriptor.
 	const target = describeRenderTargetTopology( context, renderer );
-	return {
+	return compactObject( {
 		version: 'render-object-selector@1',
 		renderer: describeRenderer( renderer ),
 		target,
@@ -92,7 +95,7 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 		material: describeMaterial( material ),
 		clipping: describeClipping( material, safeRead( renderObject, 'clippingContext' ) ),
 		...( shadowCaster ? { shadowCaster } : {} ),
-	};
+	} );
 
 }
 
@@ -106,7 +109,8 @@ export function describeRenderObjectContext( renderObject, renderer = renderObje
 export function createRenderObjectContextSelector( renderObject, renderer = renderObject && renderObject.renderer ) {
 
 	const descriptor = describeRenderObjectContext( renderObject, renderer );
-	return descriptor ? stableJsonStringify( descriptor, 'renderObjectSelector' ) : '';
+	// Descriptor constructors own scalar sanitization and canonical key order.
+	return descriptor ? JSON.stringify( descriptor ) : '';
 
 }
 
@@ -124,19 +128,23 @@ export function describeSceneRenderTopology( scene ) {
 	if ( ! scene ) return null;
 	const fog = safeRead( scene, 'fog' );
 	const overrideMaterial = safeRead( scene, 'overrideMaterial' );
+	const environmentNode = isNode( safeRead( scene, 'environmentNode' ) );
 	return compactObject( {
+		// NodeManager.getEnvironmentNode gives an explicit node precedence over
+		// the raw texture. PMREM nodes can replace that texture while retaining
+		// the same CubeUV shader and live binding owner.
+		environment: environmentNode ? undefined : resourceShape( safeRead( scene, 'environment' ), { sampler: true } ),
+		environmentNode,
 		fog: safeRead( scene, 'fogNode' )
 			? 'node'
 			: fog
 				? safeRead( fog, 'isFogExp2' ) === true ? 'FogExp2' : safeRead( fog, 'isFog' ) === true ? 'Fog' : 'node'
 				: null,
-		environment: resourceShape( safeRead( scene, 'environment' ), { sampler: true } ),
-		environmentNode: nodePresence( safeRead( scene, 'environmentNode' ) ),
 		overrideMaterial: overrideMaterial ? compactObject( {
 			present: true,
 			shadowPass: safeRead( overrideMaterial, 'isShadowPassMaterial' ) === true,
-		} ) : null,
-	} );
+		}, false ) : null,
+	}, false );
 
 }
 
@@ -150,7 +158,9 @@ export function describeSceneRenderTopology( scene ) {
  */
 export function createSceneRenderTopologySelector( scene ) {
 
-	return stableJsonStringify( describeSceneRenderTopology( scene ), 'sceneRenderTopology' );
+	// The scene descriptor contains only sanitized scalars and emits keys in
+	// canonical order. It needs no recursive copy/sort in the render loop.
+	return JSON.stringify( describeSceneRenderTopology( scene ) );
 
 }
 
@@ -243,12 +253,7 @@ export function createBackgroundCaptureTargetTopologyKey( renderer, renderTarget
 export function projectRenderObjectContextSelector( selector, profile ) {
 
 	if ( typeof selector !== 'string' ) return '';
-	const renderOutput = profile === 'render-output';
-	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || renderOutput || profile === 'cube-render-target';
-	const postProcess = profile === 'post-process';
-	const meshBasic = profile === 'mesh-basic';
-	const ordinaryMaterial = profile === null || profile === undefined || profile === '';
-	if ( ( ! ordinaryMaterial && ! sceneIndependent && ! postProcess && ! meshBasic ) || selector.length === 0 ) return selector;
+	if ( selector.length === 0 ) return selector;
 	let descriptor;
 	try {
 
@@ -259,13 +264,46 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 		return selector;
 
 	}
-	if ( ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return selector;
+	const projected = projectRenderObjectContextDescriptor( descriptor, profile );
+	return projected ? stableJsonStringify( projected, 'renderObjectSelector' ) : selector;
+
+}
+
+/** Create a projected live selector without serializing and reparsing its descriptor. */
+export function createProjectedRenderObjectContextSelector( renderObject, renderer = renderObject && renderObject.renderer, profile = null ) {
+
+	const descriptor = describeRenderObjectContext( renderObject, renderer );
+	return descriptor ? JSON.stringify( projectRenderObjectContextDescriptor( descriptor, profile ) || descriptor ) : '';
+
+}
+
+function projectRenderObjectContextDescriptor( descriptor, profile ) {
+
+	const renderOutput = profile === 'render-output';
+	const sceneIndependent = profile === 'background' || profile === 'shadow-depth' || renderOutput || profile === 'cube-render-target';
+	const postProcess = profile === 'post-process';
+	const meshBasic = profile === 'mesh-basic';
+	const ordinaryMaterial = profile === null || profile === undefined || profile === '';
+	if ( ( ! ordinaryMaterial && ! sceneIndependent && ! postProcess && ! meshBasic )
+		|| ! descriptor || typeof descriptor !== 'object' || descriptor.version !== 'render-object-selector@1' ) return null;
+
 	descriptor = projectShaderVertexLayout( descriptor );
-	if ( ordinaryMaterial ) return stableJsonStringify( descriptor, 'renderObjectSelector' );
+	// Apply the same precedence to selectors saved by earlier captures.
+	if ( descriptor.scene?.environmentNode === true ) {
+
+		descriptor.scene = { ...descriptor.scene };
+		delete descriptor.scene.environment;
+
+	}
+	if ( ordinaryMaterial ) return descriptor;
 
 	if ( meshBasic ) {
 
 		const projected = { ...descriptor };
+		// An explicitly unlit MeshBasic graph never builds the scene LightsNode.
+		// Capture adapters can expose a different light order without changing
+		// that shader. Custom MeshBasic graphs with lighting enabled stay strict.
+		if ( projected.material?.lights === false ) projected.lights = [];
 		if ( projected.scene && typeof projected.scene === 'object' ) {
 
 			projected.scene = { ...projected.scene };
@@ -273,7 +311,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 			delete projected.scene.environmentNode;
 
 		}
-		return stableJsonStringify( projected, 'renderObjectSelector' );
+		return projected;
 
 	}
 
@@ -319,7 +357,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 			delete projected.target.stencil;
 
 		}
-		if ( postProcess ) return stableJsonStringify( projected, 'renderObjectSelector' );
+		if ( postProcess ) return projected;
 		descriptor = projected;
 
 	}
@@ -370,7 +408,7 @@ export function projectRenderObjectContextSelector( selector, profile ) {
 		projected.target = projectBackgroundTargetTopology( projected.target );
 
 	}
-	return stableJsonStringify( projected, 'renderObjectSelector' );
+	return projected;
 
 }
 
@@ -503,6 +541,8 @@ export function describeShadowCasterMaterial( sourceMaterial ) {
 	const positionNode = isNode( safeRead( sourceMaterial, 'positionNode' ) );
 
 	return compactObject( {
+		shaderFamily: typeof safeRead( sourceMaterial, MATERIAL_SHADER_FAMILY ) === 'string'
+			? safeRead( sourceMaterial, MATERIAL_SHADER_FAMILY ) : undefined,
 		color: map || colorNode || castShadowNode || maskShadowNode || maskNode
 			? compactObject( {
 				map: resourceShape( map, { sampler: true } ),
@@ -840,7 +880,7 @@ function describeMRT( context ) {
 		return [ name, describeBlendMode( mode ) ];
 
 	} ) );
-	return { count: names.length, names, blendModes };
+	return compactObject( { count: names.length, names, blendModes: compactObject( blendModes ) } );
 
 }
 
@@ -871,16 +911,20 @@ function describeLights( lightsNode, scene, camera ) {
 		} );
 
 	}
-	// Three orders analytic light nodes by Object3D.id while building WGSL, but
-	// those process-local ids are intentionally absent from persisted selectors.
-	// Canonicalize the semantic multiset as well: capture may expose traversal
-	// order while replay exposes id order, and that implementation detail changed
-	// between Three revisions without changing the resulting light topology.
+	// r185 LightsNode.setupLightsNode sorts by Object3D.id before building
+	// shader functions and bindings. Persist the resulting semantic sequence,
+	// never the ids themselves: cloned scene traversal can change that order.
+	if ( lights.every( light => Number.isFinite( safeRead( light, 'id' ) ) ) ) {
+
+		return [ ...lights ].sort( ( a, b ) => a.id - b.id ).map( light => describeLight( light, camera ) );
+
+	}
+	// Abstract adapters without Three identities expose topology only.
 	return lights
 		.map( ( light ) => describeLight( light, camera ) )
 		.map( ( descriptor ) => ( {
 			descriptor,
-			key: stableJsonStringify( descriptor, 'renderObjectLight' ),
+			key: JSON.stringify( descriptor ),
 		} ) )
 		.sort( ( a, b ) => a.key < b.key ? - 1 : a.key > b.key ? 1 : 0 )
 		.map( ( entry ) => entry.descriptor );
@@ -891,8 +935,10 @@ function describeLight( light, _camera ) {
 
 	const shadow = safeRead( light, 'shadow' );
 	const lightType = stableLightType( light );
+	const explicitKey = safeRead( safeRead( light, 'userData' ), 'tslPrecompileId' );
 	return compactObject( {
 		type: lightType,
+		explicitKey: typeof explicitKey === 'string' && explicitKey.length > 0 || Number.isFinite( explicitKey ) ? String( explicitKey ) : undefined,
 		castShadow: safeRead( light, 'castShadow' ) === true,
 		map: resourceShape( safeRead( light, 'map' ), { sampler: true } ),
 		colorNode: nodePresence( safeRead( light, 'colorNode' ) ),
@@ -1079,40 +1125,43 @@ function resourceShape( resource, opts = {} ) {
 	const texture = safeRead( resource, 'texture' ) && safeRead( resource.texture, 'isTexture' ) === true
 		? resource.texture
 		: resource;
+	// Keep these keys in canonical order for the scene-selector fast path.
+	const sampler = opts.sampler === true;
 	return compactObject( {
-		kind: textureKind( texture ),
+		channel: sampler ? scalar( safeRead( texture, 'channel' ) ) : undefined,
+		colorSpace: scalar( safeRead( texture, 'colorSpace' ) ),
+		compare: sampler ? scalar( safeRead( texture, 'compareFunction' ) ) : undefined,
+		dataType: scalar( safeRead( texture, 'type' ) ),
 		format: scalar( safeRead( texture, 'format' ) ),
 		internalFormat: scalar( safeRead( texture, 'internalFormat' ) ),
-		dataType: scalar( safeRead( texture, 'type' ) ),
-		colorSpace: scalar( safeRead( texture, 'colorSpace' ) ),
-		...( opts.sampler === true ? {
-			compare: scalar( safeRead( texture, 'compareFunction' ) ),
-			mapping: scalar( safeRead( texture, 'mapping' ) ),
-			channel: scalar( safeRead( texture, 'channel' ) ),
-			magFilter: scalar( safeRead( texture, 'magFilter' ) ),
-			minFilter: scalar( safeRead( texture, 'minFilter' ) ),
-			wrapS: scalar( safeRead( texture, 'wrapS' ) ),
-			wrapT: scalar( safeRead( texture, 'wrapT' ) ),
-			wrapR: scalar( safeRead( texture, 'wrapR' ) ),
-		} : {} ),
-	} );
+		kind: textureKind( texture ),
+		magFilter: sampler ? scalar( safeRead( texture, 'magFilter' ) ) : undefined,
+		mapping: sampler ? scalar( safeRead( texture, 'mapping' ) ) : undefined,
+		minFilter: sampler ? scalar( safeRead( texture, 'minFilter' ) ) : undefined,
+		wrapR: sampler ? scalar( safeRead( texture, 'wrapR' ) ) : undefined,
+		wrapS: sampler ? scalar( safeRead( texture, 'wrapS' ) ) : undefined,
+		wrapT: sampler ? scalar( safeRead( texture, 'wrapT' ) ) : undefined,
+	}, false );
 
 }
 
+// Texture-kind priority is shared by every selector; allocate it once.
+const TEXTURE_KIND_FLAGS = [
+	[ 'isCubeTexture', 'cube' ],
+	[ 'isDataArrayTexture', '2d-array' ],
+	[ 'isData3DTexture', '3d' ],
+	[ 'isDepthTexture', 'depth' ],
+	[ 'isVideoTexture', 'video' ],
+	[ 'isCompressedArrayTexture', 'compressed-array' ],
+	[ 'isCompressedCubeTexture', 'compressed-cube' ],
+	[ 'isCompressedTexture', 'compressed-2d' ],
+	[ 'isStorageTexture', 'storage' ],
+	[ 'isRenderTargetTexture', 'render-target' ],
+];
+
 function textureKind( texture ) {
 
-	for ( const [ flag, kind ] of [
-		[ 'isCubeTexture', 'cube' ],
-		[ 'isDataArrayTexture', '2d-array' ],
-		[ 'isData3DTexture', '3d' ],
-		[ 'isDepthTexture', 'depth' ],
-		[ 'isVideoTexture', 'video' ],
-		[ 'isCompressedArrayTexture', 'compressed-array' ],
-		[ 'isCompressedCubeTexture', 'compressed-cube' ],
-		[ 'isCompressedTexture', 'compressed-2d' ],
-		[ 'isStorageTexture', 'storage' ],
-		[ 'isRenderTargetTexture', 'render-target' ],
-	] ) {
+	for ( const [ flag, kind ] of TEXTURE_KIND_FLAGS ) {
 
 		if ( safeRead( texture, flag ) === true ) return kind;
 
@@ -1204,9 +1253,20 @@ function firstFiniteNumber( values, fallback ) {
 
 }
 
-function compactObject( object ) {
+function compactObject( object, sortKeys = true ) {
 
-	return Object.fromEntries( Object.entries( object ).filter( ( [ , value ] ) => value !== undefined ) );
+	// Sort the finished descriptor, preserving the order of live reads used to
+	// construct it. Already ordered hot-path records skip sorting.
+	const result = {};
+	const keys = Object.keys( object );
+	if ( sortKeys ) keys.sort();
+	for ( const key of keys ) {
+
+		const value = object[ key ];
+		if ( value !== undefined ) result[ key ] = value;
+
+	}
+	return result;
 
 }
 

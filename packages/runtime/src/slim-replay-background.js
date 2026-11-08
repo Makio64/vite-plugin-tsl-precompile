@@ -10,19 +10,17 @@ import DataMap from 'three/src/renderers/common/DataMap.js';
 import Color4 from 'three/src/renderers/common/Color4.js';
 import { Mesh } from 'three/src/objects/Mesh.js';
 import { SphereGeometry } from 'three/src/geometries/SphereGeometry.js';
-import { BackSide, CubeUVReflectionMapping } from 'three/src/constants.js';
+import { BackSide } from 'three/src/constants.js';
+import { PMREM_CUBE_UV_MAPPING } from '@tsl-precompile/contract/pmrem-config';
+import { isPMREMArtifactTextureSource, isPMREMTexture } from './slim-support/pmrem.js';
 import { error } from 'three/src/utils.js';
-import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
 import PrecompiledMaterial from './_vendor-PrecompiledMaterial.js';
 import { cloneAuxArtifactForReplay, resolveAuxArtifactForInput } from './aux-loader.js';
 import { hashNodeGraphSync } from './graph-hash.js';
-import { RUNTIME_SLIM_THREE_PACKAGE_VERSION } from './slim-source-policy.js';
+import { createRuntimeSlimHashOptions } from './slim-source-policy.js';
 
 const _clearColor = /*@__PURE__*/ new Color4();
-const DEFAULT_HASH_OPTIONS = Object.freeze( {
-	threeVersion: RUNTIME_SLIM_THREE_PACKAGE_VERSION,
-	pluginVersion: ARTIFACT_TOOLCHAIN_VERSION,
-} );
+const DEFAULT_HASH_OPTIONS = /*@__PURE__*/ createRuntimeSlimHashOptions();
 
 class ReplayBackground extends DataMap {
 
@@ -244,7 +242,8 @@ function wireDirectBackgroundTexture( artifact, background ) {
 	if ( textureType !== 'cube' && background.isCubeTexture === true ) return;
 	// CubeUV/PMREM textures are generated resources. Never replace one with a
 	// raw equirect/cube source merely because both happen to bind as 2D.
-	if ( source.mapping === CubeUVReflectionMapping && background.mapping !== CubeUVReflectionMapping ) return;
+	if ( source.mapping === PMREM_CUBE_UV_MAPPING && background.mapping !== PMREM_CUBE_UV_MAPPING ) return;
+	if ( isPMREMArtifactTextureSource( source ) && ! isPMREMTexture( background ) ) return;
 	const refs = artifact._textureRefs instanceof Map ? new Map( artifact._textureRefs ) : new Map();
 	refs.set( source.textureUuid, background );
 	Object.defineProperty( artifact, '_textureRefs', {

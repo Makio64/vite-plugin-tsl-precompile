@@ -96,7 +96,7 @@ thumbnails into the default `packages/site/public`. Use that form when
 refreshing the checked publish inputs, and still run `data` before `build:site`;
 the build never regenerates evidence implicitly.
 
-Do not publish or quote a final 254-route result from older checked data after a
+Do not publish or quote a final catalogue-wide result from older checked data after a
 fingerprinted source change. Generate the site from a fresh exact v2 campaign,
 then let the build revalidate the selected stock report, manifest, screenshots,
 and stored artifact bytes as one evidence set.

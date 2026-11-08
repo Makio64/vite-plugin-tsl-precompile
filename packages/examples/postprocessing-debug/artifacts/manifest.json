@@ -1,7 +1,7 @@
 {
   "postprocessing-debug-floor": {
-    "file": "postprocessing-debug-floor.52f537c59550.json",
-    "hash": "52f537c59550786834afce5fb2acfb98ea48211b156b125bbbfd20b81f178147",
+    "file": "postprocessing-debug-floor.b5e57d9d0c14.json",
+    "hash": "b5e57d9d0c149493795cbdfd7c1465f7e27005aba99085cbdfed2ec282f256fc",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -14,11 +14,11 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:33.269Z"
+    "capturedAt": "2026-10-13T10:22:19.975Z"
   },
   "postprocessing-debug-cube": {
-    "file": "postprocessing-debug-cube.68d8d6a16a6b.json",
-    "hash": "68d8d6a16a6bbbeb4cbcbaf47834fee01a867d8eab183ad11f0bc9980de32bd6",
+    "file": "postprocessing-debug-cube.adc3f1ca8d33.json",
+    "hash": "adc3f1ca8d338f4594c1bff83db6d67b3132e6d19bd7abcea117e1a4c2d30024",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -31,11 +31,11 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:33.283Z"
+    "capturedAt": "2026-10-13T10:22:19.990Z"
   },
   "postprocessing-debug-sphere": {
-    "file": "postprocessing-debug-sphere.a31cb7e488d3.json",
-    "hash": "a31cb7e488d3785f30cbf5ab071283d070fcd698a3ec4fdfd4840381bf3639a3",
+    "file": "postprocessing-debug-sphere.9fbcd6e736fc.json",
+    "hash": "9fbcd6e736fc5f3a3738dfd447f9961886d8893bcaeea81a5261303d8d8548f7",
     "sourceIdentity": "ac2b3055a28be15eb005b2f999aa8e063967325d440028430fe4ef820809641b",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -48,175 +48,238 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:33.296Z"
+    "capturedAt": "2026-10-13T10:22:20.002Z"
   },
   "__aux": {
-    "post-process:5e8414b7ec99afb60df838d903c2001f11cd5f29a508380daa2f43f6bf96ef31": {
-      "file": "aux-post-process-5e8414b7ec99.json",
+    "post-process:bd6a766166a01935690fb02fda386d7f40bb09f7b409bb26e7c645678882ac3f": {
+      "file": "aux-post-process-bd6a766166a0.json",
       "shape": "post-process",
-      "configHash": "5e8414b7ec99afb60df838d903c2001f11cd5f29a508380daa2f43f6bf96ef31",
-      "hash": "ecee7d3725c997da1a25e5dd000df610965ad25c931580e7a4a268789612a6b4",
-      "threeVersion": "0.185.1",
+      "configHash": "bd6a766166a01935690fb02fda386d7f40bb09f7b409bb26e7c645678882ac3f",
+      "hash": "628eb526d254d4a295e06b98c7b7021d1f670ef408641d5fd6371c128d63b38f",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:33.447Z"
+      "capturedAt": "2026-10-13T10:22:20.085Z"
     },
-    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
-      "file": "aux-lights-3247ab5f57af.json",
+    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
+      "file": "aux-lights-499bfad6a893.json",
       "shape": "lights",
-      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
-      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
-      "threeVersion": "0.185.1",
+      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
+      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:33.449Z"
+      "capturedAt": "2026-10-13T10:22:20.087Z"
     },
-    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
-      "file": "aux-render-output-3f1fa57642fc.json",
+    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
+      "file": "aux-render-output-f9eeeab16476.json",
       "shape": "render-output",
-      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-      "hash": "979ce6518ed6713431421fdb2756dfdecaeafad80ceb1c13ef27fbfc30ee5fb9",
-      "threeVersion": "0.185.1",
+      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
+      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:39.403Z"
+      "capturedAt": "2026-10-13T10:22:20.181Z"
     },
-    "post-process:001d5630052a1683b013488a55cba4844b1b9ddb9785bd058092f62959144cc1": {
-      "file": "aux-post-process-001d5630052a.json",
+    "post-process:eefe18eff37ad883335114a869c5b13614247b1b05e15bc65ba56655e6b42e99": {
+      "file": "aux-post-process-eefe18eff37a.json",
       "shape": "post-process",
-      "configHash": "001d5630052a1683b013488a55cba4844b1b9ddb9785bd058092f62959144cc1",
-      "hash": "997fc5a8823e78163c134a2c70caff624c5c38722d4d3e60db73fe856badbac0",
-      "threeVersion": "0.185.1",
+      "configHash": "eefe18eff37ad883335114a869c5b13614247b1b05e15bc65ba56655e6b42e99",
+      "hash": "002c5eca6baa2e6076a63a3e91dd8785d160b683ef16a7e2c39fe53ab8bb5b6f",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:35.582Z"
+      "capturedAt": "2026-10-13T10:22:22.060Z"
     },
-    "bloom-high-pass:5d9921bdfa5c252ffe3c12f13d3f25acb8bd1b1476446dc78dc05432e6ad1e0e": {
-      "file": "aux-bloom-high-pass-5d9921bdfa5c.json",
+    "bloom-high-pass:a95701bb101dcd1f674dec03ebd5f6c2be95db1a03fd824f8a027886094eedcb": {
+      "file": "aux-bloom-high-pass-a95701bb101d.json",
       "shape": "bloom-high-pass",
-      "configHash": "5d9921bdfa5c252ffe3c12f13d3f25acb8bd1b1476446dc78dc05432e6ad1e0e",
-      "hash": "5eccf9801143a0c460274780bde4163a64e0b32a0efb09f4c143fcdc5de8624b",
-      "threeVersion": "0.185.1",
+      "configHash": "a95701bb101dcd1f674dec03ebd5f6c2be95db1a03fd824f8a027886094eedcb",
+      "hash": "fc46c332ab7b0d6e46b308bdf99065a1bd52d49038fd3e28a97a59e6b6834b85",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.237Z"
+      "capturedAt": "2026-10-13T10:22:22.063Z"
     },
-    "bloom-blur-0:fb79c6b9530f77a63079f90cb3d9f2dcabc12b550a29cb1d9ca6d98f7f3fff05": {
-      "file": "aux-bloom-blur-0-fb79c6b9530f.json",
+    "bloom-blur-0:d52d5695835395bd2a5057bcae6580755bb2d8112113ddeac3f29d2dfcab7da8": {
+      "file": "aux-bloom-blur-0-d52d56958353.json",
       "shape": "bloom-blur-0",
-      "configHash": "fb79c6b9530f77a63079f90cb3d9f2dcabc12b550a29cb1d9ca6d98f7f3fff05",
-      "hash": "e5bc74f211ef9f09323c55d5d32c6a5b3c835a8fce0aa064f89d71259a9f16be",
-      "threeVersion": "0.185.1",
+      "configHash": "d52d5695835395bd2a5057bcae6580755bb2d8112113ddeac3f29d2dfcab7da8",
+      "hash": "22e38625b0340d7eeb69ec0b4f171e2e475608d0b5b8cb26bc008b8816246db4",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.241Z"
+      "capturedAt": "2026-10-13T10:22:22.066Z"
     },
-    "bloom-blur-1:4fbd3a5c12aa9e405b033cc85597ab13690c413ae3089e283b9ade6740ab53e8": {
-      "file": "aux-bloom-blur-1-4fbd3a5c12aa.json",
+    "bloom-blur-1:ce03aa0201c192e0fcf66464f38371a96638927d9a9eee26a3a445469cccf17b": {
+      "file": "aux-bloom-blur-1-ce03aa0201c1.json",
       "shape": "bloom-blur-1",
-      "configHash": "4fbd3a5c12aa9e405b033cc85597ab13690c413ae3089e283b9ade6740ab53e8",
-      "hash": "7d0321360643941ab3f8c26198aa41affe2f6f1f09ee0fcf931ce76c47c177d2",
-      "threeVersion": "0.185.1",
+      "configHash": "ce03aa0201c192e0fcf66464f38371a96638927d9a9eee26a3a445469cccf17b",
+      "hash": "dd38ca0004703dd6c0d7892ee4a6968dc44389d90193ef7eb24ff4c834c2aac6",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.245Z"
+      "capturedAt": "2026-10-13T10:22:22.068Z"
     },
-    "bloom-blur-2:b7c7eeaad8cf404b0012c3d92d9aa52c17e57d4e7ccb576afdfcd6260b3840bc": {
-      "file": "aux-bloom-blur-2-b7c7eeaad8cf.json",
+    "bloom-blur-2:c97acbec2cd4057f2f8b78bcfa299be84330f10def9a5b5fbb0f328aeae39c0a": {
+      "file": "aux-bloom-blur-2-c97acbec2cd4.json",
       "shape": "bloom-blur-2",
-      "configHash": "b7c7eeaad8cf404b0012c3d92d9aa52c17e57d4e7ccb576afdfcd6260b3840bc",
-      "hash": "bef5c1ea262fc5fa7d688d0f849a2ddf1d9c43b3a13bfce6f3d62808e9f2652d",
-      "threeVersion": "0.185.1",
+      "configHash": "c97acbec2cd4057f2f8b78bcfa299be84330f10def9a5b5fbb0f328aeae39c0a",
+      "hash": "b9cc621845bde14bd6bd89abf8ea7e050f476389180520327884dcaf8550caa3",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.249Z"
+      "capturedAt": "2026-10-13T10:22:22.071Z"
     },
-    "bloom-blur-3:dbe8ca148e88eac871144eb8d1b4d66148cbec8e18a68b85c66512eb8ad1fc28": {
-      "file": "aux-bloom-blur-3-dbe8ca148e88.json",
+    "bloom-blur-3:d2f3ac418e2e1e0ee7ca89e5ad487690ab1373e5abae913d03c37349b5e3203c": {
+      "file": "aux-bloom-blur-3-d2f3ac418e2e.json",
       "shape": "bloom-blur-3",
-      "configHash": "dbe8ca148e88eac871144eb8d1b4d66148cbec8e18a68b85c66512eb8ad1fc28",
-      "hash": "a43f04a492c105cf469786a7096a1f9ef539c38d43df2da46cb825a7a8316f36",
-      "threeVersion": "0.185.1",
+      "configHash": "d2f3ac418e2e1e0ee7ca89e5ad487690ab1373e5abae913d03c37349b5e3203c",
+      "hash": "73ea2ba54858819d67bc6ebe1ca05aeffe08b7ebfde125c96d75a75f69da10e3",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.253Z"
+      "capturedAt": "2026-10-13T10:22:22.074Z"
     },
-    "bloom-blur-4:458a332e820b0103dcf8c3b43b467637a5ac81e1b41d3647ca14cb010e35cd10": {
-      "file": "aux-bloom-blur-4-458a332e820b.json",
+    "bloom-blur-4:b1df910334217f47ea7a1a056a224f9a61d9464a4ac70aa1bee968d58e256558": {
+      "file": "aux-bloom-blur-4-b1df91033421.json",
       "shape": "bloom-blur-4",
-      "configHash": "458a332e820b0103dcf8c3b43b467637a5ac81e1b41d3647ca14cb010e35cd10",
-      "hash": "b0797bee4cdebec5e5dc80d5f3ff0c8bb7572d7604d3517c3692feb49b7243e3",
-      "threeVersion": "0.185.1",
+      "configHash": "b1df910334217f47ea7a1a056a224f9a61d9464a4ac70aa1bee968d58e256558",
+      "hash": "20c3aaa0a2756be6bc67b71f3b151124b5516ca290fbffb3531ce5cf83e43d70",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.257Z"
+      "capturedAt": "2026-10-13T10:22:22.077Z"
     },
-    "bloom-composite:ad85c5ae13589b9e417bb6e287f686543bdc925e2a121404b8c18c38bac400b2": {
-      "file": "aux-bloom-composite-ad85c5ae1358.json",
+    "bloom-composite:e42ba31fdfd54bb491164a9cdad5ddbc6b6e11c180f76bcfd06a9c1ab4d3855c": {
+      "file": "aux-bloom-composite-e42ba31fdfd5.json",
       "shape": "bloom-composite",
-      "configHash": "ad85c5ae13589b9e417bb6e287f686543bdc925e2a121404b8c18c38bac400b2",
-      "hash": "b85b2c05557548737970ac2e6a5230c972344297de2bed6a569307117ae167b7",
-      "threeVersion": "0.185.1",
+      "configHash": "e42ba31fdfd54bb491164a9cdad5ddbc6b6e11c180f76bcfd06a9c1ab4d3855c",
+      "hash": "344d9088f538a230f2ee9831c7465b90d26fd3e9d08278f2a17f6c1dfc0eb7e9",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.262Z"
+      "capturedAt": "2026-10-13T10:22:22.083Z"
     },
-    "render-output:024622bcc264ab0e70914bb4a6365b36a3330503ccf848ca0be977ecedff5bac": {
-      "file": "aux-render-output-024622bcc264.json",
+    "render-output:61426071f0fca6536e59b13ac58e84a800e9cf2d1399759f12b417d0ac45b719": {
+      "file": "aux-render-output-61426071f0fc.json",
       "shape": "render-output",
-      "configHash": "024622bcc264ab0e70914bb4a6365b36a3330503ccf848ca0be977ecedff5bac",
-      "hash": "1afe2f23d448f748c282f56c8f326f1da46ad6b0b1acdfda6637e575ecc56209",
-      "threeVersion": "0.185.1",
+      "configHash": "61426071f0fca6536e59b13ac58e84a800e9cf2d1399759f12b417d0ac45b719",
+      "hash": "289608c796c72bd312a71eff3d5c09422d814517e9cf80b2d11d2d97e415cacd",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.270Z"
+      "capturedAt": "2026-10-13T10:22:22.099Z"
     },
-    "post-process:77d70d679dcce1d838dc932b349c7f017aeb6506a5643969c586d1327aa11ac4": {
-      "file": "aux-post-process-77d70d679dcc.json",
+    "post-process:1e02c5b37fa2f1c9672105bef3af77f20adb71243b6365663acf5913a13a1ed6": {
+      "file": "aux-post-process-1e02c5b37fa2.json",
       "shape": "post-process",
-      "configHash": "77d70d679dcce1d838dc932b349c7f017aeb6506a5643969c586d1327aa11ac4",
-      "hash": "72e194e1ac6a1ecf9efc6ccc9e6317fcfd5d2622e39de25d28113a6c4564c914",
-      "threeVersion": "0.185.1",
+      "configHash": "1e02c5b37fa2f1c9672105bef3af77f20adb71243b6365663acf5913a13a1ed6",
+      "hash": "698314674f7af3c17f547e6e9966640a6726c1a62f1e87a582fdb2b4f3c8c173",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:37.391Z"
+      "capturedAt": "2026-10-13T10:22:23.391Z"
     },
-    "post-process:6d8954b56cb4c0486ae3ca6145644f9604b92776bb52a6c8bc7114841d7c2dfc": {
-      "file": "aux-post-process-6d8954b56cb4.json",
+    "post-process:cd367f3d457d59196f821b5a15dce18149ef627ad948f5da4d2dfb27ac6871b3": {
+      "file": "aux-post-process-cd367f3d457d.json",
       "shape": "post-process",
-      "configHash": "6d8954b56cb4c0486ae3ca6145644f9604b92776bb52a6c8bc7114841d7c2dfc",
-      "hash": "45fa9fa58467bbf678ea63bb52aafe15562dea7807001d1f5dd896abe25cee7a",
-      "threeVersion": "0.185.1",
+      "configHash": "cd367f3d457d59196f821b5a15dce18149ef627ad948f5da4d2dfb27ac6871b3",
+      "hash": "ecdbdfad14be5e7a2007eb643d3a15d028b7860ee21de111ca95465c9af3437e",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:37.536Z"
+      "capturedAt": "2026-10-13T10:22:23.718Z"
     },
-    "post-process:9a61d592fdf576a341558854350dd89da51725340f5745f20091c458a79aa340": {
-      "file": "aux-post-process-9a61d592fdf5.json",
+    "post-process:c4a59d5f33f35b62fc9bc0fad9f2c98c5c1b1aca18b45476d5d291181db5d1a9": {
+      "file": "aux-post-process-c4a59d5f33f3.json",
       "shape": "post-process",
-      "configHash": "9a61d592fdf576a341558854350dd89da51725340f5745f20091c458a79aa340",
-      "hash": "cdee1ac0b459b6e67f53d90a1fc619c62ab0127c6ad1b01e28179ab9179952a8",
-      "threeVersion": "0.185.1",
+      "configHash": "c4a59d5f33f35b62fc9bc0fad9f2c98c5c1b1aca18b45476d5d291181db5d1a9",
+      "hash": "6a1b9b0027b17ad93206d95cad761a5f7c66f50fcbe73648446ccb86f26d8931",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:39.385Z"
+      "capturedAt": "2026-10-13T10:22:25.301Z"
     },
-    "gtao:731b085665d060fab7a6e7777e929a0ebf613cf2915130685aa3f43be184736e": {
-      "file": "aux-gtao-731b085665d0.json",
+    "gtao:b1307b867860cc4c7e4af948f1473762270785b378708066f595f08328ad2bac": {
+      "file": "aux-gtao-b1307b867860.json",
       "shape": "gtao",
-      "configHash": "731b085665d060fab7a6e7777e929a0ebf613cf2915130685aa3f43be184736e",
-      "hash": "0ee08434b035c8b017bad9d452b2a6142ad8687231caf9553ece54f7eb503d18",
-      "threeVersion": "0.185.1",
+      "configHash": "b1307b867860cc4c7e4af948f1473762270785b378708066f595f08328ad2bac",
+      "hash": "e25a26c2934625bace7e974cac12a678f01b0b2366d55359a39303e7cae1d828",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:39.389Z"
+      "capturedAt": "2026-10-13T10:22:25.305Z"
     },
-    "post-process:2545e3fee73d7e8e887b25520ec0ad88120f0ee5217ec4f1a8466c5b0d2dfc58": {
-      "file": "aux-post-process-2545e3fee73d.json",
+    "post-process:89c83045145f64683960bee08bd6e4020565e4c255b33de9bea5bf291467ebf4": {
+      "file": "aux-post-process-89c83045145f.json",
       "shape": "post-process",
-      "configHash": "2545e3fee73d7e8e887b25520ec0ad88120f0ee5217ec4f1a8466c5b0d2dfc58",
-      "hash": "2cdd43423726fead77463af37ab0afed132dac0f935a2896c8efdd9aa782c668",
-      "threeVersion": "0.185.1",
+      "configHash": "89c83045145f64683960bee08bd6e4020565e4c255b33de9bea5bf291467ebf4",
+      "hash": "d240ca0bf20950c17ebd9d445af62813f0d26e6857ad0f844de76da8db320afc",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.079Z"
+      "capturedAt": "2026-10-13T10:22:26.922Z"
     },
-    "post-process:ff1ffa0a46e524ffc319a8a6c5d98584e9f3cd3e354dfef93538207f4ad1922f": {
-      "file": "aux-post-process-ff1ffa0a46e5.json",
+    "post-process:d655363f1ee837941431e7bcc4dc79c6d9d04989e75113797d50def2c716744e": {
+      "file": "aux-post-process-d655363f1ee8.json",
       "shape": "post-process",
-      "configHash": "ff1ffa0a46e524ffc319a8a6c5d98584e9f3cd3e354dfef93538207f4ad1922f",
-      "hash": "59f980a67de8018c1842d327fb9c84f19b3e929590c082cb6b5fb757059a4180",
-      "threeVersion": "0.185.1",
+      "configHash": "d655363f1ee837941431e7bcc4dc79c6d9d04989e75113797d50def2c716744e",
+      "hash": "0077da04481d2e09fce22b1bb546ce1353c60edf1af09e3208c5c07081d27b12",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T17:27:41.233Z"
+      "capturedAt": "2026-10-13T10:22:27.900Z"
+    },
+    "bloom-high-pass:5287f98ed41a95d137d18dee20b5bc4a678840f0499fe87d6cc1cee41d9d1cd8": {
+      "file": "aux-bloom-high-pass-5287f98ed41a.json",
+      "shape": "bloom-high-pass",
+      "configHash": "5287f98ed41a95d137d18dee20b5bc4a678840f0499fe87d6cc1cee41d9d1cd8",
+      "hash": "fc46c332ab7b0d6e46b308bdf99065a1bd52d49038fd3e28a97a59e6b6834b85",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.903Z"
+    },
+    "bloom-blur-0:932f5869f9bacbf794eca8320893f8d130045ce1663223eb6ded8e934973930b": {
+      "file": "aux-bloom-blur-0-932f5869f9ba.json",
+      "shape": "bloom-blur-0",
+      "configHash": "932f5869f9bacbf794eca8320893f8d130045ce1663223eb6ded8e934973930b",
+      "hash": "22e38625b0340d7eeb69ec0b4f171e2e475608d0b5b8cb26bc008b8816246db4",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.907Z"
+    },
+    "bloom-blur-1:65e8ad88d0fa3f25c49f3b9880a93cb57b5d74bb3a94128fef617dbb195b8d38": {
+      "file": "aux-bloom-blur-1-65e8ad88d0fa.json",
+      "shape": "bloom-blur-1",
+      "configHash": "65e8ad88d0fa3f25c49f3b9880a93cb57b5d74bb3a94128fef617dbb195b8d38",
+      "hash": "dd38ca0004703dd6c0d7892ee4a6968dc44389d90193ef7eb24ff4c834c2aac6",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.911Z"
+    },
+    "bloom-blur-2:15e0d40d84a3a98195051f520762b9fad14edd665ed37ffd4c3bd1765a577e52": {
+      "file": "aux-bloom-blur-2-15e0d40d84a3.json",
+      "shape": "bloom-blur-2",
+      "configHash": "15e0d40d84a3a98195051f520762b9fad14edd665ed37ffd4c3bd1765a577e52",
+      "hash": "b9cc621845bde14bd6bd89abf8ea7e050f476389180520327884dcaf8550caa3",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.915Z"
+    },
+    "bloom-blur-3:854c8665c1dc7959714eb3f4c374b4c55083e6ab0521cef174e20c6de6d57ea3": {
+      "file": "aux-bloom-blur-3-854c8665c1dc.json",
+      "shape": "bloom-blur-3",
+      "configHash": "854c8665c1dc7959714eb3f4c374b4c55083e6ab0521cef174e20c6de6d57ea3",
+      "hash": "73ea2ba54858819d67bc6ebe1ca05aeffe08b7ebfde125c96d75a75f69da10e3",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.919Z"
+    },
+    "bloom-blur-4:c84c94461dc3fe09de0cd20cae67871c4b9a083fa26260b8053aca59812a4630": {
+      "file": "aux-bloom-blur-4-c84c94461dc3.json",
+      "shape": "bloom-blur-4",
+      "configHash": "c84c94461dc3fe09de0cd20cae67871c4b9a083fa26260b8053aca59812a4630",
+      "hash": "20c3aaa0a2756be6bc67b71f3b151124b5516ca290fbffb3531ce5cf83e43d70",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.923Z"
+    },
+    "bloom-composite:2106354e1943d63ab6e6a41e601558af19bb1d43b6bc523d8bdc3a4789459fd9": {
+      "file": "aux-bloom-composite-2106354e1943.json",
+      "shape": "bloom-composite",
+      "configHash": "2106354e1943d63ab6e6a41e601558af19bb1d43b6bc523d8bdc3a4789459fd9",
+      "hash": "7193f3380468606727b12ed2bdc24beaed05913a4be691eef963d9fe17e33146",
+      "threeVersion": "0.186.1",
+      "pluginVersion": "0.1.0",
+      "capturedAt": "2026-10-13T10:22:27.928Z"
     }
   },
   "postprocessing-debug-gtao-floor": {
-    "file": "postprocessing-debug-gtao-floor.cc7beb530acb.json",
-    "hash": "cc7beb530acb45e65cb93a0f5fb458d107f6a660509ed04a0b50a3839be9df73",
+    "file": "postprocessing-debug-gtao-floor.3b63600e4d2f.json",
+    "hash": "3b63600e4d2f44f52464d4381066a5369897ba59fe4a86cc552e4b313ed6e4ab",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -229,11 +292,11 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:39.222Z"
+    "capturedAt": "2026-10-13T10:22:25.168Z"
   },
   "postprocessing-debug-gtao-cube": {
-    "file": "postprocessing-debug-gtao-cube.d8e78b3a845f.json",
-    "hash": "d8e78b3a845fb896f6d2a6822b9069348016111f998f1c8020bd24d65d811f00",
+    "file": "postprocessing-debug-gtao-cube.30347f113b9b.json",
+    "hash": "30347f113b9bb3927fd343e765f25a585d34d375e9c5016bf325facee3203c27",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -246,11 +309,11 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:39.249Z"
+    "capturedAt": "2026-10-13T10:22:25.181Z"
   },
   "postprocessing-debug-gtao-sphere": {
-    "file": "postprocessing-debug-gtao-sphere.a414a425b0e4.json",
-    "hash": "a414a425b0e46cb59c81fe7b6ca59e0f4b38077ec1f0f8eb62565e10d4ede557",
+    "file": "postprocessing-debug-gtao-sphere.3ff3e4309b48.json",
+    "hash": "3ff3e4309b483010b25d3941a26e25169cf0a42abc8245fe1599ea37e84e4561",
     "sourceIdentity": "1beec6eb84a05dfa9f6ebd086d6c9ff39811f2398fc0f60e56986c358c03117c",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
@@ -263,17 +326,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:39.275Z"
+    "capturedAt": "2026-10-13T10:22:25.193Z"
   },
   "postprocessing-debug-variants-floor": {
-    "file": "postprocessing-debug-variants-floor.65077e555047.json",
-    "hash": "65077e555047ffe2a8d0b781f2602db5fd8d46b3df7bf1d8ea84baffcf7c0627",
+    "file": "postprocessing-debug-variants-floor.467c8fdc40b9.json",
+    "hash": "467c8fdc40b9496d1f32273310471b4098529b9851f1fdc3cb057cee584fbb02",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "0d17d45e18496d59ec9085112c0324cf60a7cd40f8edc5a8899cf2cad0bd6443",
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -284,17 +347,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:40.548Z"
+    "capturedAt": "2026-10-13T10:22:26.770Z"
   },
   "postprocessing-debug-variant-ember": {
-    "file": "postprocessing-debug-variant-ember.71349275962e.json",
-    "hash": "71349275962e725b4faab522fc2ea7e7709630b2cd4e228da6521fbcc2d34830",
+    "file": "postprocessing-debug-variant-ember.261c8db4caac.json",
+    "hash": "261c8db4caac0c922cee3d7ee37ba17f996e420ccadb83176958931bc1906caf",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "0d17d45e18496d59ec9085112c0324cf60a7cd40f8edc5a8899cf2cad0bd6443",
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -305,17 +368,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:40.560Z"
+    "capturedAt": "2026-10-13T10:22:26.781Z"
   },
   "postprocessing-debug-variants-glow": {
-    "file": "postprocessing-debug-variants-glow.27610cf4299e.json",
-    "hash": "27610cf4299e062744eea3903511ea1e021cf9de37cb02a326d25776cda81e67",
+    "file": "postprocessing-debug-variants-glow.15b4c52659b2.json",
+    "hash": "15b4c52659b25849413f4b4f792e92acaeb0cf9369085e12ceebbb56a3d20650",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "0d17d45e18496d59ec9085112c0324cf60a7cd40f8edc5a8899cf2cad0bd6443",
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -326,17 +389,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:40.572Z"
+    "capturedAt": "2026-10-13T10:22:26.793Z"
   },
   "postprocessing-debug-variant-lagoon": {
-    "file": "postprocessing-debug-variant-lagoon.4825dc485f8f.json",
-    "hash": "4825dc485f8f12f7c669065ab6626c5c56eaa9c5b78e2a134846523a6012b336",
+    "file": "postprocessing-debug-variant-lagoon.8d63ea7f842b.json",
+    "hash": "8d63ea7f842babf5585e06b88ae2e59d769b5b0a3a62d125d02b4f83a1890c82",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "0d17d45e18496d59ec9085112c0324cf60a7cd40f8edc5a8899cf2cad0bd6443",
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -347,17 +410,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:40.584Z"
+    "capturedAt": "2026-10-13T10:22:26.816Z"
   },
   "postprocessing-debug-variant-circuit": {
-    "file": "postprocessing-debug-variant-circuit.83e67eec3f62.json",
-    "hash": "83e67eec3f626e3d3dfc56c1163c9ec20c58500c260049017867848e963feb5b",
+    "file": "postprocessing-debug-variant-circuit.380974bf6805.json",
+    "hash": "380974bf6805879d3b77d704a03c720f6e37691320a292f1dfbff34a05db0c04",
     "sourceIdentity": "66d56430a88fd22e5f62f0c7b6426e2b55aa1b61b63d6b06055f15c9f4bc0b49",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/variants.js:precompile:0",
-        "revision": "0d17d45e18496d59ec9085112c0324cf60a7cd40f8edc5a8899cf2cad0bd6443",
+        "revision": "06bad39020ca9de39a96a134745f7d3710dbefaa5dbcf98acbf4c562cf3ca2f2",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -368,6 +431,6 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T17:27:40.595Z"
+    "capturedAt": "2026-10-13T10:22:26.839Z"
   }
 }

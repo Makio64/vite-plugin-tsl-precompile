@@ -5,8 +5,8 @@
  */
 export {
 	Break, Fn, If, Loop, NodeAccess,
-	NodeUpdateType, OnMaterialUpdate, PI, abs, acos,
-	add, atan, attribute, backgroundBlurriness, backgroundIntensity,
+	NodeUpdateType, OnMaterialUpdate, OnBeforeRenderPipeline, OnAfterRenderPipeline, PI, abs, acos,
+	add, array, atan, attribute, backgroundBlurriness, backgroundIntensity,
 	backgroundRotation, bool, bufferAttribute, builtin, builtinAOContext,
 	builtinShadowContext, cameraNormalMatrix, cameraPosition, cameraProjectionMatrix, cameraWorldMatrix,
 	ceil, clamp, color, context, convertToTexture,
@@ -14,13 +14,13 @@ export {
 	densityFogFactor, depth, depthPass, diffuseColor, directionToColor,
 	div, dot, emissive, equirectUV, exp,
 	exp2, float, floor, fog, fract,
-	frameId, fwidth, getNormalFromDepth, getScreenPosition, getViewPosition,
+	frameId, fwidth, getNormalFromDepth, getScreenPosition, getScreenPositionFromClip, getViewPosition,
 	highpModelNormalViewMatrix, highpModelViewMatrix, instancedArray, instancedBufferAttribute, int,
-	ivec2, ivec3, ivec4, length, linearDepth,
+	ivec2, ivec3, ivec4, length, lightPosition, lightTargetPosition, linearDepth,
 	log, log2, logarithmicDepthToViewZ, luminance, mat3,
 	mat4, max, min, mix, mod,
 	modelPosition, modelScale, modelViewMatrix, modelViewProjection, modelWorldMatrix,
-	mrt, mul, negate, nodeObject, normalLocal,
+	mrt, mul, mx_noise_float, negate, nodeObject, normalLocal,
 	normalView, normalWorld, normalWorldGeometry, normalize, oneMinus,
 	output, pass, passTexture, pmremTexture, positionLocal,
 	positionView, positionWorld, pow, pow2, pow3,
@@ -30,7 +30,7 @@ export {
 	step, storage, sub, tan, texture,
 	textureSize, time, uint, uniform, uniformArray,
 	uv, uvec2, uvec3, uvec4, varyingProperty,
-	vec2, vec3, vec4, viewZToPerspectiveDepth, viewportDepthTexture,
+	vec2, vec3, vec4, velocity, viewZToPerspectiveDepth, viewportDepthTexture,
 	viewportLinearDepth, viewportSharedTexture, viewportSize, viewportTexture, viewportUV,
 } from 'three/tsl';
 
@@ -56,8 +56,25 @@ export const atan2: CompatNodeFactory;
 export const cond: CompatNodeFactory;
 export const cubeMapNode: CompatNodeFactory;
 export const invert: CompatNodeFactory;
+export const isBackgroundDepth: CompatNodeFactory;
+export const referenceAttribute: CompatNodeFactory;
 export const storageBufferAttribute: CompatNodeFactory;
 export const timerDelta: CompatNode;
 export const timerGlobal: CompatNode;
 export const timerLocal: CompatNode;
 export const viewportTopLeft: CompatNode;
+
+export {
+	Continue, HALF_PI, Return, bitcast, cameraFar,
+	cameraNear, cameraViewMatrix, colorSpaceToWorking, countOneBits, distance,
+	globalId, hash, instanceIndex, interleavedGradientNoise, materialColor,
+	materialReference, metalness, mx_cell_noise_float, mx_fractal_noise_float, orthographicDepthToViewZ,
+	outputStruct, packNormalToRGB, perspectiveDepthToViewZ, positionGeometry, premultiplyAlpha,
+	property, rand, reflectVector, roughness, sample,
+	screenCoordinate, shiftRight, struct, textureLoad, textureStore,
+	trunc, unpackRGBToNormal, unpremultiplyAlpha, wgslFn,
+} from "three/tsl";
+
+export {
+	PMREMNode,
+} from "three/webgpu";

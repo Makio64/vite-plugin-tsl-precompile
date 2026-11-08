@@ -9,6 +9,7 @@ import {
 } from '@tsl-precompile/contract/output-config';
 import { SLIM_THREE_PACKAGE_VERSION } from '@tsl-precompile/contract/slim-three-policy';
 import { ARTIFACT_TOOLCHAIN_VERSION } from '@tsl-precompile/contract/versions';
+import { registerEffectHandler, unregisterEffectHandler } from '../src/slim-support/postprocess-effects.js';
 import {
 	__resetAuxRegistryForTests,
 	bindAuxConfig,
@@ -139,6 +140,20 @@ test( 'renderer output selection is exact, per-target, and exposure-independent'
 
 } );
 
+test( 'renderer output selects different captures when only sampled component type changes', () => {
+
+	const sourceRenderer = renderer();
+	const byte = new Texture();
+	const half = new Texture();
+	half.type = 1016;
+	registerOutput( sourceRenderer, byte, outputArtifact( '2d', 'byte' ) );
+	registerOutput( sourceRenderer, half, outputArtifact( '2d', 'half' ) );
+	assert.notEqual( getReplayRenderOutputCacheKey( sourceRenderer, byte ), getReplayRenderOutputCacheKey( sourceRenderer, half ) );
+	assert.equal( createReplayRenderOutputMaterial( sourceRenderer, byte ).precompiledArtifact.name, 'byte' );
+	assert.equal( createReplayRenderOutputMaterial( sourceRenderer, half ).precompiledArtifact.name, 'half' );
+
+} );
+
 test( 'renderer output wires the live target across backend variant texture UUIDs', () => {
 
 	const sourceRenderer = renderer();
@@ -249,6 +264,68 @@ test( 'RenderPipeline selects the full config, clones artifacts, and disposes af
 	bindAuxConfig( rebound, 'post-process', captured.__tslpAuxConfigHash );
 	pipeline.outputNode = rebound;
 	assert.equal( createReplayRenderPipelineMaterial( pipeline ).precompiledArtifact.fragmentShader, captured.fragmentShader );
+
+} );
+
+test( 'r186 RenderPipeline forwards its native context data and runs replay preparation callbacks around the draw', async ( t ) => {
+
+	const { default: RenderPipeline } = await import( 'three/src/renderers/common/RenderPipeline.js' );
+	const calls = [];
+	const outputNode = { isNode: true, isContextProbe: true, graph: { value: 1 } };
+	const contextData = { onBeforePipelineCallbacks: [], onAfterPipelineCallbacks: [] };
+	const pipeline = {
+		renderer: renderer(), outputNode, outputColorTransform: true,
+		_contextData: contextData,
+		_context: { onBeforePipelineCallbacks: [], onAfterPipelineCallbacks: [] },
+		_update() {}, _quadMesh: { render: () => calls.push( 'draw' ) },
+	};
+	registerEffectHandler( {
+		name: 'pipeline-context-probe', detect: ( node ) => node.isContextProbe === true,
+		subPasses: () => [],
+		forceSetup( _node, { sharedContext } ) {
+
+			assert.equal( sharedContext, contextData );
+			sharedContext.onBeforePipelineCallbacks.push( () => calls.push( 'before' ) );
+			sharedContext.onAfterPipelineCallbacks.push( () => calls.push( 'after' ) );
+
+		},
+	} );
+	t.after( () => unregisterEffectHandler( 'pipeline-context-probe' ) );
+	registerPipeline( pipeline, pipelineArtifact( createRenderPipelineConfig( pipeline ) ) );
+	const material = createReplayRenderPipelineMaterial( pipeline );
+	t.after( () => material.dispose() );
+	RenderPipeline.prototype.render.call( pipeline );
+	assert.deepEqual( calls, [ 'before', 'draw', 'after' ] );
+
+} );
+
+test( 'native RenderPipeline can prepare replay callbacks while its initial context is null', async ( t ) => {
+
+	const { default: RenderPipeline } = await import( 'three/src/renderers/common/RenderPipeline.js' );
+	const outputNode = { isNode: true, isInitialContextProbe: true };
+	const pipeline = new RenderPipeline( renderer(), outputNode );
+	const calls = [];
+	assert.equal( pipeline._contextData, null );
+	registerEffectHandler( {
+		name: 'initial-pipeline-context-probe', detect: ( node ) => node.isInitialContextProbe === true,
+		subPasses: () => [],
+		forceSetup( _node, { sharedContext } ) {
+
+			assert.equal( sharedContext.renderPipeline, pipeline );
+			assert.deepEqual( sharedContext.renderPipelineState, { viewOffsetOwner: null } );
+			sharedContext.onBeforePipelineCallbacks.push( () => calls.push( 'before' ) );
+			sharedContext.onAfterPipelineCallbacks.push( () => calls.push( 'after' ) );
+
+		},
+	} );
+	t.after( () => unregisterEffectHandler( 'initial-pipeline-context-probe' ) );
+	registerPipeline( pipeline, pipelineArtifact( createRenderPipelineConfig( pipeline ) ) );
+	pipeline._quadMesh.material = createReplayRenderPipelineMaterial( pipeline, pipeline._quadMesh.material );
+	t.after( () => pipeline.dispose() );
+	pipeline._update = () => {};
+	pipeline._quadMesh.render = () => calls.push( 'draw' );
+	pipeline.render();
+	assert.deepEqual( calls, [ 'before', 'draw', 'after' ] );
 
 } );
 

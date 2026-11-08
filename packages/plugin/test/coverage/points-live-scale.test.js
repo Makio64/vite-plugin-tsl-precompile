@@ -19,5 +19,7 @@ test( 'PointsNodeMaterial live renderer scale maps to renderer.halfHeight', asyn
 		true,
 	);
 	assert.match( result.source, /frame\.renderer\.getSize\(_rSize\)/ );
+	assert.equal( result.artifact.uniformPlan.some( group => group.slots.some( slot => slot.source?.kind === 'renderer.dpr' ) ), true );
+	assert.equal( result.artifact.uniformPlan.some( group => group.slots.some( slot => slot.source?.kind === 'renderer.viewport' ) ), true );
 
 } );

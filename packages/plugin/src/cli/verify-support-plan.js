@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createRecapturePlan } from './recapture-plan.js';
+import { createRecapturePlan, recapturePMREMLayoutForRevision } from './recapture-plan.js';
 import {
 	assertRecaptureAuxiliaryObligations,
 	readRecaptureArtifactInventories,
@@ -14,7 +14,8 @@ import {
 const HERE = dirname( fileURLToPath( import.meta.url ) );
 const REPO = resolve( HERE, '../../../..' );
 const VERIFY_SCRIPT = resolve( HERE, 'verify.js' );
-const plan = createRecapturePlan( REPO );
+const { REVISION } = await import( 'three/src/constants.js' );
+const plan = createRecapturePlan( REPO, { pmremLayout: recapturePMREMLayoutForRevision( REVISION ) } );
 let failed = false;
 
 try {

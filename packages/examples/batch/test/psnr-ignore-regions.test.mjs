@@ -20,6 +20,54 @@ function solidPng( width, height, value = 128 ) {
 
 }
 
+test( 'identical bytes still require a valid PNG', () => {
+
+	for ( const invalid of [ Buffer.from( 'not a PNG' ), solidPng( 4, 4 ).subarray( 0, 30 ) ] ) {
+
+		assert.ok( comparePngBuffers( invalid, Buffer.from( invalid ) ).error );
+
+	}
+
+} );
+
+test( 'equal screenshots retain dimensions and pixel accounting', () => {
+
+	const image = solidPng( 4, 3 );
+	assert.deepEqual( comparePngBuffers( image, Buffer.from( image ) ), {
+		psnr: 'inf', width: 4, height: 3,
+		comparedPixels: 12, comparedFraction: 1, ignoredRegions: [],
+	} );
+	const reencoded = PNG.sync.write( PNG.sync.read( image ), { deflateLevel: 0 } );
+	assert.equal( comparePngBuffers( image, reencoded ).psnr, 'inf' );
+	assert.match( comparePngBuffers( image, solidPng( 3, 4 ) ).error, /dim mismatch/ );
+
+} );
+
+test( 'different screenshots preserve RGB error and unrounded PSNR', () => {
+
+	const a = solidPng( 4, 4, 100 );
+	const b = solidPng( 4, 4, 110 );
+	const expected = 10 * Math.log10( 255 * 255 / 100 );
+	assert.equal( comparePngBuffers( a, b, { round: false } ).psnr, expected );
+	assert.equal( comparePngBuffers( a, b ).psnr, +expected.toFixed( 2 ) );
+	const alphaOnly = PNG.sync.read( a );
+	alphaOnly.data[ 3 ] = 0;
+	assert.equal( comparePngBuffers( a, PNG.sync.write( alphaOnly ) ).psnr, 'inf' );
+
+} );
+
+test( 'overlapping ignore regions count each pixel once', () => {
+
+	const image = solidPng( 4, 4 );
+	const result = comparePngBuffers( image, image, {
+		ignoreRegions: [ { x: 0, y: 0, width: 2, height: 2 }, { x: 1, y: 1, width: 2, height: 2 } ],
+	} );
+	assert.equal( result.comparedPixels, 9 );
+	assert.equal( result.comparedFraction, 9 / 16 );
+	assert.equal( result.psnr, 'inf' );
+
+} );
+
 test( 'PSNR comparison rejects ignore regions that erase the evidence', () => {
 
 	const image = solidPng( 4, 4 );

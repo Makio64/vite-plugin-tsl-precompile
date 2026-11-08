@@ -407,6 +407,28 @@ test( 'babel — call-site validation cannot silently fall back to an ownerless 
 
 } );
 
+test( 'babel — slim call-site entry is selected per validated owner and avoids local name collisions', () => {
+
+	const source = `const __applyPrecompiledCallsite = 1; material.precompile('hero'); other.precompile('legacy');`;
+	const owner = { identity: 'src/materials.js:precompile:0', revision: markerSourceRevision( source ) };
+	const options = {
+		filename: '/project/src/materials.js', root: '/project', callsiteApply: true,
+		resolveArtifact: name => ( { hash: name, sourceOwners: name === 'hero' ? [ owner ] : [] } ),
+	};
+	const { code } = transformSource( source, options );
+	const imported = code.match( /__applyPrecompiledCallsite as (\w+)/ );
+	assert.ok( imported );
+	assert.match( code, new RegExp( `${ imported[ 1 ] }\\(material, __tsl_art_hero, "hero"\\)` ) );
+	assert.match( code, /__applyPrecompiled\(other, __tsl_art_legacy, "legacy"\)/ );
+	assert.throws( () => transformSource( `${ source } material.side = 1;`, options ), /source changed since capture/ );
+	assert.throws( () => transformSource( source, { ...options, sourceProvenance: { changed: true } } ), /dependency closure differs from capture/ );
+
+	const full = transformSource( source, { ...options, callsiteApply: false, applyImportSpecifier: '@tsl-precompile/runtime/apply/full' } );
+	assert.doesNotMatch( full.code, /import \{[^}]*__applyPrecompiledCallsite/ );
+	assert.match( full.code, /__applyPrecompiled\(material, __tsl_art_hero/ );
+
+} );
+
 test( 'babel — build rejects a name captured only from another call site', () => {
 
 	const source = `material.precompile('hero');\n`;

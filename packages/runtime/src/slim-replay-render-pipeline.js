@@ -43,7 +43,7 @@ export function createReplayRenderPipelineMaterial( pipeline, previousMaterial =
 		outputNode: pipeline.outputNode,
 		loadAux,
 		PrecompiledMaterial,
-		sharedContext: pipeline._context || null,
+		sharedContext: replayPipelineContext( pipeline ),
 		renderer: pipeline.renderer,
 	} );
 
@@ -55,6 +55,26 @@ export function createReplayRenderPipelineMaterial( pipeline, previousMaterial =
 	material = attachPostprocessObject3DTargets( material, pipeline.outputNode );
 	disposeReplacedMaterial( previousMaterial, material );
 	return material;
+
+}
+
+function replayPipelineContext( pipeline ) {
+
+	if ( pipeline._contextData ) return pipeline._contextData;
+	if ( Object.hasOwn( pipeline, '_contextData' ) ) {
+
+		// Native constructors initialize this to null. Direct replay preparation
+		// may run before _updateContext(), so use the same graph-free data shape.
+		pipeline._contextData = {
+			renderPipeline: pipeline,
+			renderPipelineState: { viewOffsetOwner: null },
+			onBeforePipelineCallbacks: [],
+			onAfterPipelineCallbacks: [],
+		};
+		return pipeline._contextData;
+
+	}
+	return pipeline._context || null;
 
 }
 

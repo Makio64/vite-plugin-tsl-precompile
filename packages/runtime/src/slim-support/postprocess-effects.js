@@ -44,7 +44,9 @@ import { wireSSSArtifact } from './sss-replay.js';
 import { getLiveNodeDependencies } from './node-dependencies.js';
 
 /** @type {Map<string, Object>} */
-const HANDLERS = new Map();
+// Initialization only creates this module's private registry. Consumers that
+// never use effect handlers can drop the built-ins and their replay helpers.
+const HANDLERS = /* @__PURE__ */ createBuiltinHandlers();
 
 const SKIP_KEYS = new Set( [
 	'parent', 'children', '_cache', 'scene', 'camera', 'renderer',
@@ -66,6 +68,21 @@ function effectTypeMatches( node, type ) {
 
 	const actual = node && node.constructor && node.constructor.type || node && node.type || '';
 	return actual === '' || actual === type;
+
+}
+
+function exposeSSRUniformOwners( material, node ) {
+
+	// SSR's Fn closures hide these nodes from a material graph walk. Give both
+	// isolated capture and replay the same exact owner path, including the
+	// camera matrices that change after the opening frame.
+	for ( const [ property, value ] of Object.entries( node ) ) {
+
+		if ( value?.isUniformNode !== true && value?.isReferenceNode !== true ) continue;
+		material[ `tslpSSR_${ property }Node` ] = value;
+
+	}
+	return material;
 
 }
 
@@ -216,683 +233,691 @@ function walkForEffects( node, out, seen, depth, cap ) {
 // Built-in handlers
 // =============================================================================
 
-/**
- * Bloom — `three/addons/tsl/display/BloomNode.js`.
- *
- * Five+ internal materials:
- *   - 1 high-pass filter
- *   - N separable blur (typically 5 mipmap levels)
- *   - 1 composite
- *
- * The blur materials read from `_renderTargetBright.texture`. We re-assign
- * the live texture before capture so compileTSL sees the correct binding
- * (without this, the captured `colorTexture` UUID is dead).
- *
- * The optional replay hooks below are consumed by
- * `postprocess-effects-replay.js::prepareEffectNodeForReplay()`:
- *
- *   - `forceSetup` runs `bloomNode.setup()` so the internal
- *     `_highPassFilterMaterial`/`_separableBlurMaterials`/`_compositeMaterial`
- *     fields actually exist before we try to wrap them. Live BloomNode
- *     constructs these lazily in its first `updateBefore`.
- *
- *   - `wireSubPassUniforms` matches the live `direction`/`invSize`
- *     uniform nodes to slots in the precompiled aux artifact (blur
- *     sub-passes only). Without this, the slim runtime renders both
- *     horizontal and vertical passes with whichever direction is captured
- *     at compile time, producing a single-axis blur.
- *
- *   - `wireSubPassTextures` rebinds the composite material's per-mip
- *     reads (`_renderTargetsVertical[ i ].texture`) by texture name —
- *     these are different textures from what was captured but share
- *     identical names with the artifact's texture-source descriptors.
- *
- * `patchUpdateBefore` is intentionally NOT installed at this layer;
- * the in-process bloom replay loop currently lives in the harness and
- * Agent B is iterating on it. When that machinery lands as a productized
- * module it will plug in here without touching detect/subPasses.
- */
-registerEffectHandler( {
-	name: 'bloom',
-	detect( node ) {
+function createBuiltinHandlers() {
 
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'BloomNode' )
-			&& typeof node.updateBefore === 'function'
-			&& node._renderTargetBright
-			&& Array.isArray( node._renderTargetsHorizontal )
-			&& Array.isArray( node._renderTargetsVertical ) );
+	const handlers = new Map();
+	const register = handler => handlers.set( handler.name, handler );
 
-	},
-	subPasses( node, index ) {
+	/**
+	 * Bloom — `three/addons/tsl/display/BloomNode.js`.
+	 *
+	 * Five+ internal materials:
+	 *   - 1 high-pass filter
+	 *   - N separable blur (typically 5 mipmap levels)
+	 *   - 1 composite
+	 *
+	 * The blur materials read from `_renderTargetBright.texture`. We re-assign
+	 * the live texture before capture so compileTSL sees the correct binding
+	 * (without this, the captured `colorTexture` UUID is dead).
+	 *
+	 * The optional replay hooks below are consumed by
+	 * `postprocess-effects-replay.js::prepareEffectNodeForReplay()`:
+	 *
+	 *   - `forceSetup` runs `bloomNode.setup()` so the internal
+	 *     `_highPassFilterMaterial`/`_separableBlurMaterials`/`_compositeMaterial`
+	 *     fields actually exist before we try to wrap them. Live BloomNode
+	 *     constructs these lazily in its first `updateBefore`.
+	 *
+	 *   - `wireSubPassUniforms` matches the live `direction`/`invSize`
+	 *     uniform nodes to slots in the precompiled aux artifact (blur
+	 *     sub-passes only). Without this, the slim runtime renders both
+	 *     horizontal and vertical passes with whichever direction is captured
+	 *     at compile time, producing a single-axis blur.
+	 *
+	 *   - `wireSubPassTextures` rebinds the composite material's per-mip
+	 *     reads (`_renderTargetsVertical[ i ].texture`) by texture name —
+	 *     these are different textures from what was captured but share
+	 *     identical names with the artifact's texture-source descriptors.
+	 *
+	 * `patchUpdateBefore` is intentionally NOT installed at this layer;
+	 * the in-process bloom replay loop currently lives in the harness and
+	 * Agent B is iterating on it. When that machinery lands as a productized
+	 * module it will plug in here without touching detect/subPasses.
+	 */
+	register( {
+		name: 'bloom',
+		detect( node ) {
 
-		const out = [];
-		if ( node._highPassFilterMaterial ) {
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'BloomNode' )
+				&& typeof node.updateBefore === 'function'
+				&& node._renderTargetBright
+				&& Array.isArray( node._renderTargetsHorizontal )
+				&& Array.isArray( node._renderTargetsVertical ) );
 
-			out.push( {
-				material: node._highPassFilterMaterial,
-				shape: 'bloom-high-pass',
-				config: { type: 'bloom-high-pass', bloomIndex: index },
-				renderTargetHint: __singleRenderTargetHint( node._renderTargetBright ),
-			} );
+		},
+		subPasses( node, index ) {
 
-		}
-		if ( Array.isArray( node._separableBlurMaterials ) ) {
+			const out = [];
+			if ( node._highPassFilterMaterial ) {
 
-			// r185 owns one blur material per mip. A RenderPipeline cache
-			// rebuild can call BloomNode.setup() again and append duplicate
-			// materials without appending render targets, so the material array
-			// is not an authoritative pass count. Bound capture to the live RT
-			// topology (and the declared mip count when present); otherwise a
-			// five-mip bloom incorrectly publishes unsupported blur-5..9 shapes.
-			const topologyCounts = [];
-			if ( Number.isInteger( node._nMips ) && node._nMips > 0 ) topologyCounts.push( node._nMips );
-			if ( Array.isArray( node._renderTargetsHorizontal ) && node._renderTargetsHorizontal.length > 0 ) {
-
-				topologyCounts.push( node._renderTargetsHorizontal.length );
-
-			}
-			if ( Array.isArray( node._renderTargetsVertical ) && node._renderTargetsVertical.length > 0 ) {
-
-				topologyCounts.push( node._renderTargetsVertical.length );
-
-			}
-			const blurCount = Math.min(
-				node._separableBlurMaterials.length,
-				...( topologyCounts.length > 0 ? topologyCounts : [ node._separableBlurMaterials.length ] ),
-			);
-			for ( let i = 0; i < blurCount; i ++ ) {
-
-				const material = node._separableBlurMaterials[ i ];
-				if ( ! material ) continue;
 				out.push( {
-					material,
-					shape: `bloom-blur-${ i }`,
-					config: { type: 'bloom-blur', bloomIndex: index, index: i },
-					renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ i ] ),
-					captureOverrides: material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture
-						? [ {
-							property: 'colorTexture',
-							key: 'value',
-							value: node._renderTargetBright.texture,
-						} ]
-						: [],
+					material: node._highPassFilterMaterial,
+					shape: 'bloom-high-pass',
+					config: { type: 'bloom-high-pass', bloomIndex: index },
+					renderTargetHint: __singleRenderTargetHint( node._renderTargetBright ),
 				} );
 
 			}
+			if ( Array.isArray( node._separableBlurMaterials ) ) {
 
-		}
-		if ( node._compositeMaterial ) {
+				// r185 owns one blur material per mip. A RenderPipeline cache
+				// rebuild can call BloomNode.setup() again and append duplicate
+				// materials without appending render targets, so the material array
+				// is not an authoritative pass count. Bound capture to the live RT
+				// topology (and the declared mip count when present); otherwise a
+				// five-mip bloom incorrectly publishes unsupported blur-5..9 shapes.
+				const topologyCounts = [];
+				if ( Number.isInteger( node._nMips ) && node._nMips > 0 ) topologyCounts.push( node._nMips );
+				if ( Array.isArray( node._renderTargetsHorizontal ) && node._renderTargetsHorizontal.length > 0 ) {
 
-			out.push( {
-				material: node._compositeMaterial,
-				shape: 'bloom-composite',
-				config: { type: 'bloom-composite', bloomIndex: index },
-				renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ 0 ] ),
-			} );
+					topologyCounts.push( node._renderTargetsHorizontal.length );
 
-		}
-		return out;
+				}
+				if ( Array.isArray( node._renderTargetsVertical ) && node._renderTargetsVertical.length > 0 ) {
 
-	},
-	forceSetup( node, ctx ) {
+					topologyCounts.push( node._renderTargetsVertical.length );
 
-		// Bloom constructs `_highPassFilterMaterial`, `_separableBlurMaterials`,
-		// and `_compositeMaterial` lazily during its first `updateBefore`.
-		// Replay needs them up-front so we can wrap each in a
-		// PrecompiledMaterial. Idempotent — bails when the fields already
-		// exist (subsequent calls are no-ops).
-		if ( ! node ) return;
-		const ready = node._highPassFilterMaterial
-			&& node._compositeMaterial
-			&& Array.isArray( node._separableBlurMaterials )
-			&& node._separableBlurMaterials.length > 0;
-		if ( ready ) return;
-		if ( typeof node.setup !== 'function' ) return;
-		try {
+				}
+				const blurCount = Math.min(
+					node._separableBlurMaterials.length,
+					...( topologyCounts.length > 0 ? topologyCounts : [ node._separableBlurMaterials.length ] ),
+				);
+				for ( let i = 0; i < blurCount; i ++ ) {
 
-			node.setup( { getSharedContext: () => ( ctx && ctx.sharedContext ) || {} } );
+					const material = node._separableBlurMaterials[ i ];
+					if ( ! material ) continue;
+					out.push( {
+						material,
+						shape: `bloom-blur-${ i }`,
+						config: { type: 'bloom-blur', bloomIndex: index, index: i },
+						renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ i ] ),
+						captureOverrides: material.colorTexture && node._renderTargetBright && node._renderTargetBright.texture
+							? [ {
+								property: 'colorTexture',
+								key: 'value',
+								value: node._renderTargetBright.texture,
+							} ]
+							: [],
+					} );
 
-		} catch ( _ ) {
-			// A throwing setup() at this point indicates the live BloomNode
-			// hasn't received enough state to lazy-init (most often missing
-			// `_renderTargetBright`). Let the caller decide whether to retry.
-		}
+				}
 
-	},
-	wireSubPassUniforms( subPass, sourceMaterial /* , ctx */ ) {
+			}
+			if ( node._compositeMaterial ) {
 
-		// Blur sub-passes only — match `direction` and `invSize` uniform
-		// nodes by dtype + value magnitude to live slots in the captured
-		// artifact. The high-pass and composite sub-passes either have no
-		// vec2 uniforms or already wire through standard live-uniform
-		// sidecars, so they need no special handling here.
-		if ( ! subPass || typeof subPass.shape !== 'string' ) return;
-		if ( ! subPass.shape.startsWith( 'bloom-blur-' ) ) return;
-		const material = subPass.material;
-		const artifact = material && material.precompiledArtifact;
-		if ( ! artifact || ! sourceMaterial ) return;
-		const direction = material && material.direction !== undefined ? material.direction : sourceMaterial.direction;
-		const invSize = material && material.invSize !== undefined ? material.invSize : sourceMaterial.invSize;
-		if ( ! direction && ! invSize ) return;
-		const vec2Slots = [];
-		for ( const group of artifact.uniformPlan || [] ) {
+				out.push( {
+					material: node._compositeMaterial,
+					shape: 'bloom-composite',
+					config: { type: 'bloom-composite', bloomIndex: index },
+					renderTargetHint: __singleRenderTargetHint( node._renderTargetsHorizontal[ 0 ] ),
+				} );
 
-			for ( const slot of group.slots || [] ) {
+			}
+			return out;
 
-				const source = ( slot && slot.source ) || {};
-				if ( source.kind === 'uniform.live' && slot.dtype === 'vec2' ) vec2Slots.push( slot );
+		},
+		forceSetup( node, ctx ) {
+
+			// Bloom constructs `_highPassFilterMaterial`, `_separableBlurMaterials`,
+			// and `_compositeMaterial` lazily during its first `updateBefore`.
+			// Replay needs them up-front so we can wrap each in a
+			// PrecompiledMaterial. Idempotent — bails when the fields already
+			// exist (subsequent calls are no-ops).
+			if ( ! node ) return;
+			const ready = node._highPassFilterMaterial
+				&& node._compositeMaterial
+				&& Array.isArray( node._separableBlurMaterials )
+				&& node._separableBlurMaterials.length > 0;
+			if ( ready ) return;
+			if ( typeof node.setup !== 'function' ) return;
+			try {
+
+				node.setup( { getSharedContext: () => ( ctx && ctx.sharedContext ) || {} } );
+
+			} catch ( _ ) {
+				// A throwing setup() at this point indicates the live BloomNode
+				// hasn't received enough state to lazy-init (most often missing
+				// `_renderTargetBright`). Let the caller decide whether to retry.
+			}
+
+		},
+		wireSubPassUniforms( subPass, sourceMaterial /* , ctx */ ) {
+
+			// Blur sub-passes only — match `direction` and `invSize` uniform
+			// nodes by dtype + value magnitude to live slots in the captured
+			// artifact. The high-pass and composite sub-passes either have no
+			// vec2 uniforms or already wire through standard live-uniform
+			// sidecars, so they need no special handling here.
+			if ( ! subPass || typeof subPass.shape !== 'string' ) return;
+			if ( ! subPass.shape.startsWith( 'bloom-blur-' ) ) return;
+			const material = subPass.material;
+			const artifact = material && material.precompiledArtifact;
+			if ( ! artifact || ! sourceMaterial ) return;
+			const direction = material && material.direction !== undefined ? material.direction : sourceMaterial.direction;
+			const invSize = material && material.invSize !== undefined ? material.invSize : sourceMaterial.invSize;
+			if ( ! direction && ! invSize ) return;
+			const vec2Slots = [];
+			for ( const group of artifact.uniformPlan || [] ) {
+
+				for ( const slot of group.slots || [] ) {
+
+					const source = ( slot && slot.source ) || {};
+					if ( source.kind === 'uniform.live' && slot.dtype === 'vec2' ) vec2Slots.push( slot );
+
+				}
+
+			}
+			let directionSlot = null;
+			let invSizeSlot = null;
+			for ( const slot of vec2Slots ) {
+
+				const data = slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.data;
+				const x = Array.isArray( data ) ? Math.abs( Number( data[ 0 ] ) || 0 ) : 0;
+				const y = Array.isArray( data ) ? Math.abs( Number( data[ 1 ] ) || 0 ) : 0;
+				if ( ! directionSlot && Math.max( x, y ) > 0.25 ) directionSlot = slot;
+				else if ( ! invSizeSlot ) invSizeSlot = slot;
+
+			}
+			if ( ! directionSlot ) directionSlot = vec2Slots[ 0 ] || null;
+			if ( ! invSizeSlot ) invSizeSlot = vec2Slots.find( ( slot ) => slot !== directionSlot ) || null;
+			__setLiveUniformSlot( directionSlot, direction );
+			__setLiveUniformSlot( invSizeSlot, invSize );
+
+		},
+		wireSubPassTextures( subPass, node /* , prepared, ctx */ ) {
+
+			// Composite reads from `_renderTargetsVertical[ i ].texture`,
+			// one per mip. The artifact tagged each texture source with the
+			// original texture name; match on that to rebind to the live
+			// per-frame mip textures.
+			if ( ! subPass || subPass.shape !== 'bloom-composite' ) return;
+			const material = subPass.material;
+			const artifact = material && material.precompiledArtifact;
+			if ( ! artifact || ! node ) return;
+			const targets = Array.isArray( node._renderTargetsVertical ) ? node._renderTargetsVertical : [];
+			for ( const target of targets ) {
+
+				const texture = target && target.texture;
+				if ( ! texture || texture.isTexture !== true ) continue;
+				const name = texture.name || '';
+				__attachArtifactTextureRefsWhere( artifact, texture, ( source ) => source && source.textureName === name );
 
 			}
 
-		}
-		let directionSlot = null;
-		let invSizeSlot = null;
-		for ( const slot of vec2Slots ) {
+		},
+	} );
 
-			const data = slot.source && slot.source.valueSnapshot && slot.source.valueSnapshot.data;
-			const x = Array.isArray( data ) ? Math.abs( Number( data[ 0 ] ) || 0 ) : 0;
-			const y = Array.isArray( data ) ? Math.abs( Number( data[ 1 ] ) || 0 ) : 0;
-			if ( ! directionSlot && Math.max( x, y ) > 0.25 ) directionSlot = slot;
-			else if ( ! invSizeSlot ) invSizeSlot = slot;
+	/**
+	 * GTAO — `three/addons/tsl/display/GTAONode.js`.
+	 *
+	 * Single internal material rendered into `_aoRenderTarget` each frame. The
+	 * material targets a one-channel RedFormat render target, so capture declares
+	 * a render-target hint just like DOF's CoC pass.
+	 */
+	register( {
+		name: 'gtao',
+		execution: {
+			phase: 'pass-context',
+			getProducerPasses( node ) {
 
-		}
-		if ( ! directionSlot ) directionSlot = vec2Slots[ 0 ] || null;
-		if ( ! invSizeSlot ) invSizeSlot = vec2Slots.find( ( slot ) => slot !== directionSlot ) || null;
-		__setLiveUniformSlot( directionSlot, direction );
-		__setLiveUniformSlot( invSizeSlot, invSize );
+				const candidates = [
+					node && node.depthNode && node.depthNode.passNode,
+					node && node.normalNode && node.normalNode.passNode,
+				];
+				return candidates.filter( ( passNode, index ) => passNode && candidates.indexOf( passNode ) === index );
 
-	},
-	wireSubPassTextures( subPass, node /* , prepared, ctx */ ) {
+			},
+		},
+		detect( node ) {
 
-		// Composite reads from `_renderTargetsVertical[ i ].texture`,
-		// one per mip. The artifact tagged each texture source with the
-		// original texture name; match on that to rebind to the live
-		// per-frame mip textures.
-		if ( ! subPass || subPass.shape !== 'bloom-composite' ) return;
-		const material = subPass.material;
-		const artifact = material && material.precompiledArtifact;
-		if ( ! artifact || ! node ) return;
-		const targets = Array.isArray( node._renderTargetsVertical ) ? node._renderTargetsVertical : [];
-		for ( const target of targets ) {
-
-			const texture = target && target.texture;
-			if ( ! texture || texture.isTexture !== true ) continue;
-			const name = texture.name || '';
-			__attachArtifactTextureRefsWhere( artifact, texture, ( source ) => source && source.textureName === name );
-
-		}
-
-	},
-} );
-
-/**
- * GTAO — `three/addons/tsl/display/GTAONode.js`.
- *
- * Single internal material rendered into `_aoRenderTarget` each frame. The
- * material targets a one-channel RedFormat render target, so capture declares
- * a render-target hint just like DOF's CoC pass.
- */
-registerEffectHandler( {
-	name: 'gtao',
-	execution: {
-		phase: 'pass-context',
-		getProducerPasses( node ) {
-
-			const candidates = [
-				node && node.depthNode && node.depthNode.passNode,
-				node && node.normalNode && node.normalNode.passNode,
-			];
-			return candidates.filter( ( passNode, index ) => passNode && candidates.indexOf( passNode ) === index );
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'GTAONode' )
+				&& typeof node.updateBefore === 'function'
+				&& node._aoRenderTarget
+				&& node._material
+				&& node._textureNode
+				&& node.radius
+				&& ( node._resolution || node.resolution ) );
 
 		},
-	},
-	detect( node ) {
+		subPasses( node, index ) {
 
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'GTAONode' )
-			&& typeof node.updateBefore === 'function'
-			&& node._aoRenderTarget
-			&& node._material
-			&& node._textureNode
-			&& node.radius
-			&& node.resolution );
-
-	},
-	subPasses( node, index ) {
-
-		if ( ! node._material ) return [];
-		return [ {
-			material: node._material,
-			shape: 'gtao',
-			config: { type: 'gtao', gtaoIndex: index },
-			renderTargetHint: __singleRenderTargetHint( node._aoRenderTarget ),
-			node,
-		} ];
-
-	},
-	forceSetup( node, ctx ) {
-
-		if ( ! node || ! node._material || node._material.fragmentNode ) return;
-		if ( typeof node.setup !== 'function' ) return;
-		try {
-
-			node.setup( {
-				renderer: ctx && ctx.renderer || {},
-				getSharedContext: () => ctx && ctx.sharedContext || {},
-			} );
-
-		} catch ( _ ) {
-			// A setup failure usually means the effect graph is still missing a
-			// live pass texture. Capture/replay can retry after the first frame.
-		}
-
-	},
-} );
-
-/**
- * Screen-Space Shadows — `three/addons/tsl/display/SSSNode.js`.
- *
- * SSS owns one RedFormat render target/material and samples a live pre-pass
- * depth texture. Its camera, light, quality, and temporal uniforms must remain
- * live after the internal material is replaced.
- */
-registerEffectHandler( {
-	name: 'sss',
-	execution: {
-		phase: 'pass-context',
-		getProducerPasses( node ) {
-
-			const passNode = node && node.depthNode && node.depthNode.passNode;
-			return passNode ? [ passNode ] : [];
+			if ( ! node._material ) return [];
+			return [ {
+				material: node._material,
+				shape: 'gtao',
+				config: { type: 'gtao', gtaoIndex: index },
+				renderTargetHint: __singleRenderTargetHint( node._aoRenderTarget ),
+				node,
+			} ];
 
 		},
-	},
-	detect( node ) {
+		forceSetup( node, ctx ) {
 
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'SSSNode' )
-			&& typeof node.updateBefore === 'function'
-			&& node._sssRenderTarget
-			&& node._material
-			&& node._textureNode
-			&& node.depthNode );
+			if ( ! node || ! node._material || node._material.fragmentNode ) return;
+			if ( typeof node.setup !== 'function' ) return;
+			try {
 
-	},
-	subPasses( node, index ) {
+				node.setup( {
+					renderer: ctx && ctx.renderer || {},
+					getSharedContext: () => ctx && ctx.sharedContext || {},
+				} );
 
-		if ( ! node._material ) return [];
-		return [ {
-			material: node._material,
-			shape: 'sss',
-			config: { type: 'sss', sssIndex: index },
-			renderTargetHint: __singleRenderTargetHint( node._sssRenderTarget ),
-			liveUniformOverlay: true,
-			node,
-		} ];
+			} catch ( _ ) {
+				// A setup failure usually means the effect graph is still missing a
+				// live pass texture. Capture/replay can retry after the first frame.
+			}
 
-	},
-	forceSetup( node, ctx ) {
+		},
+	} );
 
-		if ( ! node || ! node._material || node._material.fragmentNode ) return;
-		if ( typeof node.setup !== 'function' ) return;
-		try {
+	/**
+	 * Screen-Space Shadows — `three/addons/tsl/display/SSSNode.js`.
+	 *
+	 * SSS owns one RedFormat render target/material and samples a live pre-pass
+	 * depth texture. Its camera, light, quality, and temporal uniforms must remain
+	 * live after the internal material is replaced.
+	 */
+	register( {
+		name: 'sss',
+		execution: {
+			phase: 'pass-context',
+			getProducerPasses( node ) {
 
-			node.setup( {
-				renderer: ctx && ctx.renderer || {},
-				getSharedContext: () => ctx && ctx.sharedContext || {},
-			} );
+				const passNode = node && node.depthNode && node.depthNode.passNode;
+				return passNode ? [ passNode ] : [];
 
-		} catch ( _ ) {
-			// Retry once the live depth input and renderer context are available.
-		}
+			},
+		},
+		detect( node ) {
 
-	},
-	wireSubPassTextures( subPass, node, opts ) {
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'SSSNode' )
+				&& typeof node.updateBefore === 'function'
+				&& node._sssRenderTarget
+				&& node._material
+				&& node._textureNode
+				&& node.depthNode );
 
-		if ( ! subPass || subPass.shape !== 'sss' ) return;
-		const artifact = subPass.material && subPass.material.precompiledArtifact;
-		if ( artifact ) wireSSSArtifact( artifact, node, opts || {} );
+		},
+		subPasses( node, index ) {
 
-	},
-} );
+			if ( ! node._material ) return [];
+			return [ {
+				material: node._material,
+				shape: 'sss',
+				config: { type: 'sss', sssIndex: index },
+				renderTargetHint: __singleRenderTargetHint( node._sssRenderTarget ),
+				liveUniformOverlay: true,
+				node,
+			} ];
 
-function __singleRenderTargetHint( target ) {
+		},
+		forceSetup( node, ctx ) {
 
-	if ( ! target ) return null;
-	const texture = Array.isArray( target.textures ) ? target.textures[ 0 ] : target.texture;
-	return {
-		count: Array.isArray( target.textures ) ? Math.max( 1, target.textures.length ) : 1,
-		format: texture ? texture.format : null,
-		type: texture ? texture.type : null,
-	};
+			if ( ! node || ! node._material || node._material.fragmentNode ) return;
+			if ( typeof node.setup !== 'function' ) return;
+			try {
 
-}
+				node.setup( {
+					renderer: ctx && ctx.renderer || {},
+					getSharedContext: () => ctx && ctx.sharedContext || {},
+				} );
 
-// --- bloom replay-hook helpers (kept module-local so the handler can stay
-// declarative and tree-shake naturally if an adopter only uses non-bloom
-// effects).
-function __setLiveUniformSlot( slot, liveNode ) {
+			} catch ( _ ) {
+				// Retry once the live depth input and renderer context are available.
+			}
 
-	if ( ! slot || ! liveNode ) return;
-	try {
+		},
+		wireSubPassTextures( subPass, node, opts ) {
 
-		Object.defineProperty( slot, '_liveNode', {
-			value: liveNode,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
-		Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
-			value: true,
-			enumerable: false,
-			configurable: true,
-			writable: true,
-		} );
+			if ( ! subPass || subPass.shape !== 'sss' ) return;
+			const artifact = subPass.material && subPass.material.precompiledArtifact;
+			if ( artifact ) wireSSSArtifact( artifact, node, opts || {} );
 
-	} catch ( _ ) {
-		// `_liveNode` is already defined as non-configurable — fall back to a
-		// plain assignment so subsequent matches still take effect.
-		slot._liveNode = liveNode;
-		slot.__tslpLiveSidecarOverlay = true;
+		},
+	} );
+
+	function __singleRenderTargetHint( target ) {
+
+		if ( ! target ) return null;
+		const texture = Array.isArray( target.textures ) ? target.textures[ 0 ] : target.texture;
+		return {
+			count: Array.isArray( target.textures ) ? Math.max( 1, target.textures.length ) : 1,
+			format: texture ? texture.format : null,
+			type: texture ? texture.type : null,
+		};
 
 	}
 
-}
+	// --- bloom replay-hook helpers (kept module-local so the handler can stay
+	// declarative and tree-shake naturally if an adopter only uses non-bloom
+	// effects).
+	function __setLiveUniformSlot( slot, liveNode ) {
 
-function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
-
-	// Shared helper that updates the canonical `artifact._textureRefs` map
-	// the hydrator reads from — keeping our hook in lockstep with the rest
-	// of the runtime's texture wiring.
-	return attachArtifactTextureRefsWhere( artifact, texture, predicate );
-
-}
-
-/**
- * Outline — `three/addons/tsl/display/OutlineNode.js`.
- *
- * Up to 7 internal materials (depth, depth-sprite, prepare-mask,
- * prepare-mask-sprite, edge detection, separable blur, composite). The
- * sprite variants only exist when the scene has SpriteNodeMaterial users;
- * we emit them when present.
- */
-registerEffectHandler( {
-	name: 'outline',
-	detect( node ) {
-
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'OutlineNode' )
-			&& node._depthMaterial
-			&& node._edgeDetectionMaterial
-			&& node._separableBlurMaterial
-			&& node._compositeMaterial );
-
-	},
-	subPasses( node, index ) {
-
-		const out = [];
-		if ( node._depthMaterial ) {
-
-			out.push( { material: node._depthMaterial, shape: 'outline-depth', config: { type: 'outline-depth', outlineIndex: index } } );
-
-		}
-		if ( node._depthSpriteMaterial ) {
-
-			out.push( { material: node._depthSpriteMaterial, shape: 'outline-depth-sprite', config: { type: 'outline-depth-sprite', outlineIndex: index } } );
-
-		}
-		if ( node._prepareMaskMaterial ) {
-
-			out.push( { material: node._prepareMaskMaterial, shape: 'outline-mask', config: { type: 'outline-mask', outlineIndex: index } } );
-
-		}
-		if ( node._prepareMaskSpriteMaterial ) {
-
-			out.push( { material: node._prepareMaskSpriteMaterial, shape: 'outline-mask-sprite', config: { type: 'outline-mask-sprite', outlineIndex: index } } );
-
-		}
-		if ( node._edgeDetectionMaterial ) {
-
-			out.push( { material: node._edgeDetectionMaterial, shape: 'outline-edge', config: { type: 'outline-edge', outlineIndex: index } } );
-
-		}
-		if ( node._separableBlurMaterial ) {
-
-			out.push( { material: node._separableBlurMaterial, shape: 'outline-blur', config: { type: 'outline-blur', outlineIndex: index } } );
-
-		}
-		if ( node._compositeMaterial ) {
-
-			out.push( { material: node._compositeMaterial, shape: 'outline-composite', config: { type: 'outline-composite', outlineIndex: index } } );
-
-		}
-		return out;
-
-	},
-} );
-
-/**
- * SSR — `three/addons/tsl/display/SSRNode.js`.
- *
- * Three materials (trace, blur, copy) with their own render targets.
- */
-registerEffectHandler( {
-	name: 'ssr',
-	detect( node ) {
-
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'SSRNode' )
-			&& node._ssrMaterial
-			&& node._ssrRenderTarget
-			&& node._blurMaterial
-			&& node._copyMaterial );
-
-	},
-	prepareCapture( node, context = {} ) {
-
-		if ( ! node || typeof node.setSize !== 'function' ) return null;
-		const renderer = context.renderer;
-		if ( ! renderer ) return null;
-		const size = {
-			width: 0,
-			height: 0,
-			set( width, height ) {
-
-				this.width = width;
-				this.height = height;
-				return this;
-
-			},
-		};
+		if ( ! slot || ! liveNode ) return;
 		try {
 
-			if ( typeof renderer.getDrawingBufferSize === 'function' ) renderer.getDrawingBufferSize( size );
-			if ( size.width <= 1 || size.height <= 1 ) {
-
-				size.width = renderer.domElement && renderer.domElement.width || 0;
-				size.height = renderer.domElement && renderer.domElement.height || 0;
-
-			}
-			// Five declared mip levels require a base dimension of at least 16.
-			// Capture can begin before the host applies its final canvas size, so
-			// use the smallest valid temporary target instead of compiling 1×1.
-			size.width = Math.max( 16, size.width | 0 );
-			size.height = Math.max( 16, size.height | 0 );
-			node.setSize( size.width, size.height );
-			// Keep the valid size for the rest of the effect lifecycle. r185
-			// constructs SSRNode.Blur at 1×1 while declaring five mip levels;
-			// restoring that constructor size makes the next renderer access an
-			// invalid WebGPU texture descriptor.
-			return null;
+			Object.defineProperty( slot, '_liveNode', {
+				value: liveNode,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
+			Object.defineProperty( slot, '__tslpLiveSidecarOverlay', {
+				value: true,
+				enumerable: false,
+				configurable: true,
+				writable: true,
+			} );
 
 		} catch ( _ ) {
-
-			return null;
-
-		}
-
-	},
-	subPasses( node, index ) {
-
-		const out = [];
-		if ( node._ssrMaterial ) {
-
-			out.push( { material: node._ssrMaterial, shape: 'ssr-trace', config: { type: 'ssr-trace', ssrIndex: index } } );
+			// `_liveNode` is already defined as non-configurable — fall back to a
+			// plain assignment so subsequent matches still take effect.
+			slot._liveNode = liveNode;
+			slot.__tslpLiveSidecarOverlay = true;
 
 		}
-		if ( node._blurMaterial ) {
 
-			out.push( { material: node._blurMaterial, shape: 'ssr-blur', config: { type: 'ssr-blur', ssrIndex: index } } );
+	}
 
-		}
-		if ( node._copyMaterial ) {
+	function __attachArtifactTextureRefsWhere( artifact, texture, predicate ) {
 
-			out.push( { material: node._copyMaterial, shape: 'ssr-copy', config: { type: 'ssr-copy', ssrIndex: index } } );
+		// Shared helper that updates the canonical `artifact._textureRefs` map
+		// the hydrator reads from — keeping our hook in lockstep with the rest
+		// of the runtime's texture wiring.
+		return attachArtifactTextureRefsWhere( artifact, texture, predicate );
 
-		}
-		return out;
+	}
 
-	},
-} );
+	/**
+	 * Outline — `three/addons/tsl/display/OutlineNode.js`.
+	 *
+	 * Up to 7 internal materials (depth, depth-sprite, prepare-mask,
+	 * prepare-mask-sprite, edge detection, separable blur, composite). The
+	 * sprite variants only exist when the scene has SpriteNodeMaterial users;
+	 * we emit them when present.
+	 */
+	register( {
+		name: 'outline',
+		detect( node ) {
 
-/**
- * Depth of Field — `three/addons/tsl/display/DepthOfFieldNode.js`.
- *
- * Five materials (CoC, CoC-blurred, blur-64, blur-16, composite).
- *
- * `_CoCMaterial` is special: its `outputNode = outputStruct(near, far)` emits
- * a 2-attachment fragment shader targeting `_CoCRT` which is configured as
- * `RenderTarget(1, 1, { count: 2, format: RedFormat, type: HalfFloatType })`.
- * Without a matching `renderTargetHint` on the sub-pass, the capture-side
- * `compileTSL` falls back to a default RGBA8 single-attachment color target
- * and WGSL validation fails with "fragment stage has fewer output components
- * (1) than the color format (RGBA16Float) component count (4)".
- *
- * Other DOF sub-passes (blurred, blur64, blur16, composite) target standard
- * single-attachment HalfFloat RTs and compile cleanly against the default.
- */
-registerEffectHandler( {
-	name: 'dof',
-	detect( node ) {
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'OutlineNode' )
+				&& node._depthMaterial
+				&& node._edgeDetectionMaterial
+				&& node._separableBlurMaterial
+				&& node._compositeMaterial );
 
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'DepthOfFieldNode' )
-			&& node._CoCMaterial
-			&& node._CoCBlurredMaterial
-			&& node._blur64Material
-			&& node._blur16Material
-			&& node._compositeMaterial );
+		},
+		subPasses( node, index ) {
 
-	},
-	subPasses( node, index ) {
+			const out = [];
+			if ( node._depthMaterial ) {
 
-		const out = [];
-		if ( node._CoCMaterial ) {
+				out.push( { material: node._depthMaterial, shape: 'outline-depth', config: { type: 'outline-depth', outlineIndex: index } } );
 
-			out.push( {
-				material: node._CoCMaterial,
-				shape: 'dof-coc',
-				config: { type: 'dof-coc', dofIndex: index },
-				renderTargetHint: __dofCoCRenderTargetHint( node ),
-			} );
+			}
+			if ( node._depthSpriteMaterial ) {
 
-		}
-		if ( node._CoCBlurredMaterial ) {
+				out.push( { material: node._depthSpriteMaterial, shape: 'outline-depth-sprite', config: { type: 'outline-depth-sprite', outlineIndex: index } } );
 
-			out.push( { material: node._CoCBlurredMaterial, shape: 'dof-coc-blurred', config: { type: 'dof-coc-blurred', dofIndex: index } } );
+			}
+			if ( node._prepareMaskMaterial ) {
 
-		}
-		if ( node._blur64Material ) {
+				out.push( { material: node._prepareMaskMaterial, shape: 'outline-mask', config: { type: 'outline-mask', outlineIndex: index } } );
 
-			out.push( { material: node._blur64Material, shape: 'dof-blur-64', config: { type: 'dof-blur-64', dofIndex: index } } );
+			}
+			if ( node._prepareMaskSpriteMaterial ) {
 
-		}
-		if ( node._blur16Material ) {
+				out.push( { material: node._prepareMaskSpriteMaterial, shape: 'outline-mask-sprite', config: { type: 'outline-mask-sprite', outlineIndex: index } } );
 
-			out.push( { material: node._blur16Material, shape: 'dof-blur-16', config: { type: 'dof-blur-16', dofIndex: index } } );
+			}
+			if ( node._edgeDetectionMaterial ) {
 
-		}
-		if ( node._compositeMaterial ) {
+				out.push( { material: node._edgeDetectionMaterial, shape: 'outline-edge', config: { type: 'outline-edge', outlineIndex: index } } );
 
-			out.push( { material: node._compositeMaterial, shape: 'dof-composite', config: { type: 'dof-composite', dofIndex: index } } );
+			}
+			if ( node._separableBlurMaterial ) {
 
-		}
-		return out;
+				out.push( { material: node._separableBlurMaterial, shape: 'outline-blur', config: { type: 'outline-blur', outlineIndex: index } } );
 
-	},
-} );
+			}
+			if ( node._compositeMaterial ) {
 
-/**
- * Derive a `{ count, format, type }` hint from the live `_CoCRT` so the
- * capture-side allocator binds a matching texture before `compileTSL`. The
- * hint is purely informational — `undefined`/missing fields fall back to
- * three.js defaults at the capture site.
- *
- * Returns `null` when the node is missing `_CoCRT` (constructed lazily on
- * first updateBefore), letting the capture site fall back to the default.
- *
- * @param {Object} node
- * @return {{count:number, format:?number, type:?number}|null}
- */
-function __dofCoCRenderTargetHint( node ) {
+				out.push( { material: node._compositeMaterial, shape: 'outline-composite', config: { type: 'outline-composite', outlineIndex: index } } );
 
-	const rt = node && node._CoCRT;
-	if ( ! rt ) return null;
-	const texArr = Array.isArray( rt.textures ) ? rt.textures : ( rt.texture ? [ rt.texture ] : [] );
-	const first = texArr[ 0 ] || null;
-	return {
-		count: texArr.length || 2,
-		format: first ? first.format : null,
-		type: first ? first.type : null,
-	};
+			}
+			return out;
+
+		},
+	} );
+
+	/**
+	 * SSR — `three/addons/tsl/display/SSRNode.js`.
+	 *
+	 * Three materials (trace, blur, copy) with their own render targets.
+	 */
+	register( {
+		name: 'ssr',
+		detect( node ) {
+
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'SSRNode' )
+				&& node._ssrMaterial
+				&& node._ssrRenderTarget
+				&& node._blurMaterial
+				&& node._copyMaterial );
+
+		},
+		prepareCapture( node, context = {} ) {
+
+			if ( ! node || typeof node.setSize !== 'function' ) return null;
+			const renderer = context.renderer;
+			if ( ! renderer ) return null;
+			const size = {
+				width: 0,
+				height: 0,
+				set( width, height ) {
+
+					this.width = width;
+					this.height = height;
+					return this;
+
+				},
+			};
+			try {
+
+				if ( typeof renderer.getDrawingBufferSize === 'function' ) renderer.getDrawingBufferSize( size );
+				if ( size.width <= 1 || size.height <= 1 ) {
+
+					size.width = renderer.domElement && renderer.domElement.width || 0;
+					size.height = renderer.domElement && renderer.domElement.height || 0;
+
+				}
+				// Five declared mip levels require a base dimension of at least 16.
+				// Capture can begin before the host applies its final canvas size, so
+				// use the smallest valid temporary target instead of compiling 1×1.
+				size.width = Math.max( 16, size.width | 0 );
+				size.height = Math.max( 16, size.height | 0 );
+				node.setSize( size.width, size.height );
+				// Keep the valid size for the rest of the effect lifecycle. r185
+				// constructs SSRNode.Blur at 1×1 while declaring five mip levels;
+				// restoring that constructor size makes the next renderer access an
+				// invalid WebGPU texture descriptor.
+				return null;
+
+			} catch ( _ ) {
+
+				return null;
+
+			}
+
+		},
+		subPasses( node, index ) {
+
+			const out = [];
+			if ( node._ssrMaterial ) {
+
+				out.push( { material: exposeSSRUniformOwners( node._ssrMaterial, node ), shape: 'ssr-trace', config: { type: 'ssr-trace', ssrIndex: index }, liveUniformOverlay: true } );
+
+			}
+			if ( node._blurMaterial ) {
+
+				out.push( { material: exposeSSRUniformOwners( node._blurMaterial, node ), shape: 'ssr-blur', config: { type: 'ssr-blur', ssrIndex: index }, liveUniformOverlay: true } );
+
+			}
+			if ( node._copyMaterial ) {
+
+				out.push( { material: exposeSSRUniformOwners( node._copyMaterial, node ), shape: 'ssr-copy', config: { type: 'ssr-copy', ssrIndex: index }, liveUniformOverlay: true } );
+
+			}
+			return out;
+
+		},
+	} );
+
+	/**
+	 * Depth of Field — `three/addons/tsl/display/DepthOfFieldNode.js`.
+	 *
+	 * Five materials (CoC, CoC-blurred, blur-64, blur-16, composite).
+	 *
+	 * `_CoCMaterial` is special: its `outputNode = outputStruct(near, far)` emits
+	 * a 2-attachment fragment shader targeting `_CoCRT` which is configured as
+	 * `RenderTarget(1, 1, { count: 2, format: RedFormat, type: HalfFloatType })`.
+	 * Without a matching `renderTargetHint` on the sub-pass, the capture-side
+	 * `compileTSL` falls back to a default RGBA8 single-attachment color target
+	 * and WGSL validation fails with "fragment stage has fewer output components
+	 * (1) than the color format (RGBA16Float) component count (4)".
+	 *
+	 * Other DOF sub-passes (blurred, blur64, blur16, composite) target standard
+	 * single-attachment HalfFloat RTs and compile cleanly against the default.
+	 */
+	register( {
+		name: 'dof',
+		detect( node ) {
+
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'DepthOfFieldNode' )
+				&& node._CoCMaterial
+				&& node._CoCBlurredMaterial
+				&& node._blur64Material
+				&& node._blur16Material
+				&& node._compositeMaterial );
+
+		},
+		subPasses( node, index ) {
+
+			const out = [];
+			if ( node._CoCMaterial ) {
+
+				out.push( {
+					material: node._CoCMaterial,
+					shape: 'dof-coc',
+					config: { type: 'dof-coc', dofIndex: index },
+					renderTargetHint: __dofCoCRenderTargetHint( node ),
+				} );
+
+			}
+			if ( node._CoCBlurredMaterial ) {
+
+				out.push( { material: node._CoCBlurredMaterial, shape: 'dof-coc-blurred', config: { type: 'dof-coc-blurred', dofIndex: index } } );
+
+			}
+			if ( node._blur64Material ) {
+
+				out.push( { material: node._blur64Material, shape: 'dof-blur-64', config: { type: 'dof-blur-64', dofIndex: index } } );
+
+			}
+			if ( node._blur16Material ) {
+
+				out.push( { material: node._blur16Material, shape: 'dof-blur-16', config: { type: 'dof-blur-16', dofIndex: index } } );
+
+			}
+			if ( node._compositeMaterial ) {
+
+				out.push( { material: node._compositeMaterial, shape: 'dof-composite', config: { type: 'dof-composite', dofIndex: index } } );
+
+			}
+			return out;
+
+		},
+	} );
+
+	/**
+	 * Derive a `{ count, format, type }` hint from the live `_CoCRT` so the
+	 * capture-side allocator binds a matching texture before `compileTSL`. The
+	 * hint is purely informational — `undefined`/missing fields fall back to
+	 * three.js defaults at the capture site.
+	 *
+	 * Returns `null` when the node is missing `_CoCRT` (constructed lazily on
+	 * first updateBefore), letting the capture site fall back to the default.
+	 *
+	 * @param {Object} node
+	 * @return {{count:number, format:?number, type:?number}|null}
+	 */
+	function __dofCoCRenderTargetHint( node ) {
+
+		const rt = node && node._CoCRT;
+		if ( ! rt ) return null;
+		const texArr = Array.isArray( rt.textures ) ? rt.textures : ( rt.texture ? [ rt.texture ] : [] );
+		const first = texArr[ 0 ] || null;
+		return {
+			count: texArr.length || 2,
+			format: first ? first.format : null,
+			type: first ? first.type : null,
+		};
+
+	}
+
+	/**
+	 * TRAA — `three/addons/tsl/display/TRAANode.js`. Single resolve material.
+	 *
+	 * TRAA's history texture is per-frame; the resolve material has stable WGSL
+	 * after first compile, so capturing it once is enough.
+	 */
+	register( {
+		name: 'traa',
+		execution: { phase: 'terminal' },
+		detect( node ) {
+
+			return !! ( isEffectCandidate( node )
+				&& effectTypeMatches( node, 'TRAANode' )
+				&& node._resolveMaterial
+				&& node._historyRenderTarget
+				&& node._resolveRenderTarget );
+
+		},
+		subPasses( node, index ) {
+
+			const out = [];
+			if ( node._resolveMaterial ) {
+
+				out.push( {
+					material: node._resolveMaterial,
+					shape: 'traa-resolve',
+					config: { type: 'traa-resolve', traaIndex: index },
+					renderTargetHint: __singleRenderTargetHint( node._resolveRenderTarget ),
+				} );
+
+			}
+			return out;
+
+		},
+		wireSubPassTextures( subPass, node, opts ) {
+
+			if ( ! subPass || subPass.shape !== 'traa-resolve' ) return;
+			const material = subPass.material;
+			const artifact = material && material.precompiledArtifact;
+			if ( ! artifact ) return;
+			wireTRAAResolveArtifact( artifact, node, opts || {} );
+
+		},
+	} );
+	return handlers;
 
 }
-
-/**
- * TRAA — `three/addons/tsl/display/TRAANode.js`. Single resolve material.
- *
- * TRAA's history texture is per-frame; the resolve material has stable WGSL
- * after first compile, so capturing it once is enough.
- */
-registerEffectHandler( {
-	name: 'traa',
-	execution: { phase: 'terminal' },
-	detect( node ) {
-
-		return !! ( isEffectCandidate( node )
-			&& effectTypeMatches( node, 'TRAANode' )
-			&& node._resolveMaterial
-			&& node._historyRenderTarget
-			&& node._resolveRenderTarget );
-
-	},
-	subPasses( node, index ) {
-
-		const out = [];
-		if ( node._resolveMaterial ) {
-
-			out.push( {
-				material: node._resolveMaterial,
-				shape: 'traa-resolve',
-				config: { type: 'traa-resolve', traaIndex: index },
-				renderTargetHint: __singleRenderTargetHint( node._resolveRenderTarget ),
-			} );
-
-		}
-		return out;
-
-	},
-	wireSubPassTextures( subPass, node, opts ) {
-
-		if ( ! subPass || subPass.shape !== 'traa-resolve' ) return;
-		const material = subPass.material;
-		const artifact = material && material.precompiledArtifact;
-		if ( ! artifact ) return;
-		wireTRAAResolveArtifact( artifact, node, opts || {} );
-
-	},
-} );
 
 /**
  * Reset the registry to just the built-ins. Test-only.

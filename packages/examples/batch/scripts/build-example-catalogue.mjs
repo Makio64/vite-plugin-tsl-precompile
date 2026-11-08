@@ -3,8 +3,9 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 
-import { assertOfficialThreeR185Checkout } from '../_three-version.mjs';
+import { assertOfficialThreeCheckout } from '../_three-version.mjs';
 import { readSafeContainedFile } from '../e2e-evidence.mjs';
 import { shouldSkipE2EExample } from '../example-skip-policy.mjs';
 import { discoverLocalExampleCases } from '../local-example-discovery.mjs';
@@ -19,7 +20,7 @@ const BATCH_ROOT = resolve( SELF, '..' );
 const REPO_ROOT = resolve( BATCH_ROOT, '../../..' );
 const EXAMPLES_ROOT = resolve( REPO_ROOT, 'packages/examples' );
 const OUTPUT_PATH = resolve( BATCH_ROOT, 'example-catalogue.json' );
-const THREE_VERSION = '0.185.1';
+const THREE_VERSION = THREE_RELEASE_PROFILES.stable.packageVersion;
 
 function splitRoute( route ) {
 
@@ -61,7 +62,7 @@ export function localSources( {
 
 }
 
-export function threeExampleCaseNames( threeRepoPath, verifyCheckout = assertOfficialThreeR185Checkout ) {
+export function threeExampleCaseNames( threeRepoPath, verifyCheckout = assertOfficialThreeCheckout ) {
 
 	verifyCheckout( threeRepoPath, 'example-catalogue' );
 	const examplesRoot = resolve( threeRepoPath, 'examples' );
@@ -106,10 +107,10 @@ export function buildCatalogue( {
 	threeRepoPath,
 	repoRoot = REPO_ROOT,
 	examplesRoot = EXAMPLES_ROOT,
-	verifyCheckout = assertOfficialThreeR185Checkout,
+	verifyCheckout = assertOfficialThreeCheckout,
 } = {} ) {
 
-	if ( ! threeRepoPath ) throw new Error( 'authoritative catalogue generation requires --three-repo=<exact-r185-checkout>' );
+	if ( ! threeRepoPath ) throw new Error( 'authoritative catalogue generation requires --three-repo=<exact-r186-checkout>' );
 	const local = localSources( { repoRoot, examplesRoot } );
 	const upstream = threeExampleCaseNames( threeRepoPath, verifyCheckout ).map( upstreamCase );
 	const localCases = [ ...local.entries() ].map( ( [ filename, source ] ) => localCase( filename, source, repoRoot ) );
@@ -158,7 +159,7 @@ export function validateCatalogueSnapshot( {
 	const actualLocal = catalogue.cases.filter( ( entry ) => entry.source?.kind === 'local' );
 	if ( JSON.stringify( actualLocal ) !== JSON.stringify( expectedLocal ) ) {
 
-		throw new Error( 'example-catalogue.json local routes are stale; refresh with an exact r185 checkout' );
+		throw new Error( 'example-catalogue.json local routes are stale; refresh with an exact r186 checkout' );
 
 	}
 
@@ -191,12 +192,12 @@ function main() {
 	const threeRepoPath = configuredThreeRepo ? resolve( configuredThreeRepo ) : null;
 	if ( args.includes( '--require-three-repo' ) && ! threeRepoPath ) {
 
-		throw new Error( 'authoritative catalogue check requires TSLP_THREE_REPO or --three-repo=<exact-r185-checkout>' );
+		throw new Error( 'authoritative catalogue check requires TSLP_THREE_REPO or --three-repo=<exact-r186-checkout>' );
 
 	}
 	if ( ! checkOnly && ! threeRepoPath ) {
 
-		throw new Error( 'catalogue refresh requires --three-repo=<exact-r185-checkout>' );
+		throw new Error( 'catalogue refresh requires --three-repo=<exact-r186-checkout>' );
 
 	}
 	const catalogue = threeRepoPath
@@ -209,8 +210,8 @@ function main() {
 		const current = readSafeContainedFile( BATCH_ROOT, OUTPUT_PATH, {
 			label: 'Current example catalogue',
 		} ).toString( 'utf8' );
-		if ( current !== serialized ) throw new Error( 'example-catalogue.json is stale; refresh it with --three-repo=<exact-r185-checkout>' );
-		console.log( `[example-catalogue] ${ catalogue.cases.length } tracked source routes verified${ threeRepoPath ? ' against exact r185 corpus' : ' structurally' }` );
+		if ( current !== serialized ) throw new Error( 'example-catalogue.json is stale; refresh it with --three-repo=<exact-r186-checkout>' );
+		console.log( `[example-catalogue] ${ catalogue.cases.length } tracked source routes verified${ threeRepoPath ? ' against exact r186 corpus' : ' structurally' }` );
 
 	} else {
 

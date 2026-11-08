@@ -49,11 +49,12 @@ const fixture = Object.freeze( {
 test( 'slim replay factory keeps its mechanically extracted generated-source contract', () => {
 
 	const generated = slimWebgpuReplayModule( fixture );
+	// Reviewed native r186 context/callback bridging and captured auxiliary lookup.
 	assert.equal(
 		createHash( 'sha256' ).update( generated ).digest( 'hex' ),
-		'847939609e40265be4ee208c4606346eab17896c599acdfb12fa302013b9fe9f',
+		'faa1bcaa25374bf8bc9319e9493f1f3524944d9bf18e360628e51434a170dc9a',
 	);
-	assert.equal( Buffer.byteLength( generated ), 698606 );
+	assert.equal( Buffer.byteLength( generated ), 686391 );
 	assert.match( generated, /^\nimport \* as Slim from "\/__fixture__\/slim\.js\?v=exact";/ );
 	assert.match( generated, /const __debugReplayOperations = true;/ );
 	assert.match( generated, /window\.__tslpPresentationReadiness = __presentationReadiness;/ );
@@ -117,6 +118,12 @@ test( 'slim replay factory keeps its mechanically extracted generated-source con
 	assert.match(
 		generated,
 		/hashNodeGraphSync\( input, \{ shape: 'background', threeVersion: "0\.185\.1-fixture", pluginVersion: "0\.1\.0-fixture" \} \)/,
+	);
+	assert.doesNotMatch( generated, /tslp-e2e-bypass/ );
+	assert.match(
+		generated,
+		/function __loadAuxArtifactByShape\( shape \) \{[\s\S]*?const entry = [\s\S]*?if \( entry \) return entry\.artifact \|\| entry;[\s\S]*?Slim\.loadAux/,
+		'intentional harness shape lookup must prefer captured data before the legacy registry fallback',
 	);
 	assert.equal( slimWebgpuReplayModule( fixture ), generated, 'factory output must be deterministic' );
 
@@ -899,6 +906,12 @@ test( 'RTT fragment identity transitions rebuild once without effect-specific kn
 test( 'hidden Temporal dependencies prepare before hook capture and retain lazy fallback', () => {
 
 	const generated = slimWebgpuReplayModule( fixture );
+	const contextHelpersStart = generated.indexOf( 'const __createReplayRenderPipelineContext = ' );
+	const contextHelpersEnd = generated.indexOf( 'let __replayOperationSequence = ', contextHelpersStart );
+	assert.ok( contextHelpersStart >= 0 && contextHelpersEnd > contextHelpersStart );
+	const { createContext, collectCallbacks } = Function(
+		`"use strict";\n${ generated.slice( contextHelpersStart, contextHelpersEnd ) }\nreturn { createContext: __createReplayRenderPipelineContext, collectCallbacks: __collectReplayRenderPipelineCallbacks };`,
+	)();
 	const helperStart = generated.indexOf( 'function __prepareHiddenFrameEffectDependenciesForReplay(' );
 	const helperEnd = generated.indexOf( 'function __isTAAUFrameEffectNode(', helperStart );
 	assert.ok( helperStart >= 0 && helperEnd > helperStart, 'expected eager hidden-effect preparation helper' );
@@ -934,6 +947,7 @@ test( 'hidden Temporal dependencies prepare before hook capture and retain lazy 
 		ready: false,
 		setupCount: 0,
 	};
+	const calls = [];
 	const hiddenTemporal = {
 		isFrameEffectNode: true,
 		isTemporalReprojectNode: true,
@@ -941,7 +955,9 @@ test( 'hidden Temporal dependencies prepare before hook capture and retain lazy 
 		ready: false,
 		setupCount: 0,
 		setup( builder ) {
-			builder.context.onBeforeRenderPipeline = () => 'hidden-temporal-view-offset';
+			builder.context.onBeforeRenderPipeline = () => calls.push( 'legacy-temporal-before' );
+			builder.context.onBeforePipelineCallbacks.push( () => calls.push( 'native-temporal-before' ) );
+			builder.context.onAfterPipelineCallbacks.push( () => calls.push( 'native-temporal-after' ) );
 		},
 	};
 	const recurrent = {
@@ -951,14 +967,25 @@ test( 'hidden Temporal dependencies prepare before hook capture and retain lazy 
 			passNode: hiddenTemporal,
 		},
 	};
-	const context = { onBeforeRenderPipeline: null };
+	const nativePipeline = {};
+	const context = createContext( nativePipeline );
 
 	prepareHidden( [ recurrent ], {}, context );
-	const capturedHook = context.onBeforeRenderPipeline;
-	context.onBeforeRenderPipeline = () => 'replay-scheduler';
+	const capturedBefore = collectCallbacks( context, 'before' );
+	const capturedAfter = collectCallbacks( context, 'after' );
+	context.onBeforeRenderPipeline = () => {
+		calls.push( 'replay-scheduler' );
+		capturedBefore();
+	};
+	context.onAfterRenderPipeline = capturedAfter;
 	prepareHidden( [ recurrent ], {}, context );
 
-	assert.equal( capturedHook(), 'hidden-temporal-view-offset', 'no-TRAA hook exists before replay owns the context slot' );
+	for ( const callback of nativePipeline._contextData.onBeforePipelineCallbacks ) callback();
+	calls.push( 'draw' );
+	for ( const callback of nativePipeline._contextData.onAfterPipelineCallbacks ) callback();
+	assert.deepEqual( calls, [
+		'replay-scheduler', 'legacy-temporal-before', 'native-temporal-before', 'draw', 'native-temporal-after',
+	], 'hidden effect callbacks remain inside the native replay transaction in registration order' );
 	assert.equal( hiddenTemporal.setupCount, 1, 'the hidden Temporal dependency sets up once' );
 	assert.equal( beautyRTT.setupCount, 1, 'its authored beauty RTT producer sets up once' );
 
@@ -968,9 +995,10 @@ test( 'hidden Temporal dependencies prepare before hook capture and retain lazy 
 	const topLevelPrep = pipeline.indexOf( 'for ( const node of effectNodes ) __prepareFrameEffectNodeForReplay(' );
 	const hiddenPrep = pipeline.indexOf( '__prepareHiddenFrameEffectDependenciesForReplay(', topLevelPrep );
 	const bloomPrep = pipeline.indexOf( '__prepareBloomNodeForReplay( node, context );', hiddenPrep );
-	const hookCapture = pipeline.indexOf( 'const effectBeforeRenderPipeline = context.onBeforeRenderPipeline;', hiddenPrep );
+	const hookCapture = pipeline.indexOf( "const effectBeforeRenderPipeline = __collectReplayRenderPipelineCallbacks( context, 'before' );", hiddenPrep );
+	const afterHookCapture = pipeline.indexOf( "const effectAfterRenderPipeline = __collectReplayRenderPipelineCallbacks( context, 'after' );", hookCapture );
 	assert.ok(
-		topLevelPrep >= 0 && topLevelPrep < hiddenPrep && hiddenPrep < bloomPrep && bloomPrep < hookCapture,
+		topLevelPrep >= 0 && topLevelPrep < hiddenPrep && hiddenPrep < bloomPrep && bloomPrep < hookCapture && hookCapture < afterHookCapture,
 		'hidden dependencies prepare after top-level effects and before Bloom/TRAA setup and hook capture',
 	);
 
@@ -1046,63 +1074,12 @@ test( 'equivalent duplicate background captures select one exact fallback hash',
 
 } );
 
-test( 'full-renderer PMREM scene cloning recognizes NodeMaterial families', () => {
+test( 'PMREM and pass material transactions use product-owned helpers', () => {
 
-	const start = factorySource.indexOf( 'function __makeFullPMREMMaterial(' );
-	const end = factorySource.indexOf( 'function __makeFullSceneForPMREM(', start );
-	assert.ok( start >= 0 && end > start, 'expected the full-renderer PMREM material helper' );
-	const makeMaterial = Function(
-		`"use strict";\n${ factorySource.slice( start, end ) }\nreturn __makeFullPMREMMaterial;`,
-	)();
-	class Basic {
-		constructor() {
-			this.kind = 'basic';
-			this.color = { copy() {} };
-		}
-	}
-	class Standard extends Basic {
-		constructor() {
-			super();
-			this.kind = 'standard';
-			this.emissive = { copy() {} };
-		}
-	}
-	class Physical extends Standard {
-		constructor() {
-			super();
-			this.kind = 'physical';
-		}
-	}
-	class Lambert extends Basic {
-		constructor() {
-			super();
-			this.kind = 'lambert';
-		}
-	}
-	const Three = {
-		MeshBasicMaterial: Basic,
-		MeshStandardMaterial: Standard,
-		MeshPhysicalMaterial: Physical,
-		MeshLambertMaterial: Lambert,
-	};
-
-	assert.equal(
-		makeMaterial( Three, { isMeshBasicNodeMaterial: true, color: {} }, new Set() ).kind,
-		'basic',
-	);
-	assert.equal(
-		makeMaterial( Three, { isMeshLambertNodeMaterial: true, color: {} }, new Set() ).kind,
-		'lambert',
-	);
-	assert.equal(
-		makeMaterial( Three, {
-			isMeshStandardMaterial: true,
-			isMeshPhysicalNodeMaterial: true,
-			color: {},
-			emissive: {},
-		}, new Set() ).kind,
-		'physical',
-		'physical NodeMaterials keep the more specific full-renderer family',
-	);
+	assert.ok( factorySource.includes( 'cloneSceneForPMREM as __sharedCloneSceneForPMREM' ) );
+	assert.ok( factorySource.includes( '__sharedCloneSceneForPMREM( scene, __fullThreeMod )' ) );
+	assert.ok( factorySource.includes( '__sharedWithMappedSceneMaterials( scene, callback,' ) );
+	assert.ok( ! factorySource.includes( 'function __makeFullRoomEnvironment(' ) );
+	assert.ok( ! factorySource.includes( 'function __makeFullPMREMMaterial(' ) );
 
 } );

@@ -15,16 +15,18 @@ import { hydrateNodeBuilderState } from '../../../runtime/src/hydrator.js';
 
 installMockWebGPU();
 
-test( 'real r185 RangeNode and instanceMatrix capture as recipes/provenance', async () => {
+test( 'native RangeNode and instanceMatrix capture as recipes/provenance', async ( t ) => {
 
 	const THREE = await import( 'three/webgpu' );
 	installRangeAttributeCapture( THREE );
 	const renderer = new THREE.WebGPURenderer( { canvas: fakeCanvas(), antialias: false } );
 	await renderer.init();
+	t.after( async () => { await renderer.dispose(); } );
 
 	const material = new THREE.SpriteNodeMaterial();
 	material.scaleNode = range( 0, 1 );
 	const mesh = new THREE.InstancedMesh( new THREE.PlaneGeometry( 1, 1 ), material, 5000 );
+	t.after( () => { material.dispose(); mesh.geometry.dispose(); } );
 	const scene = new THREE.Scene();
 	scene.add( mesh );
 	const camera = new THREE.PerspectiveCamera( 45, 1, 0.1, 10 );
@@ -54,8 +56,6 @@ test( 'real r185 RangeNode and instanceMatrix capture as recipes/provenance', as
 		replayState.nodeAttributes[ generatedIndex ].node.attribute.array,
 		generateRangeAttributeArray( generated[ 0 ].arrayGenerator, generated[ 0 ].count ),
 	);
-
-	renderer.dispose();
 
 } );
 

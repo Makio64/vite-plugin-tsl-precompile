@@ -79,6 +79,26 @@ test( 'scene replay cache key tracks semantic topology but ignores live object v
 
 } );
 
+test( 'memoized topology hashes observe sampler changes and restore equivalent shapes', () => {
+
+	const { adapter, renderer } = fixture();
+	const environment = cubeEnvironment();
+	const scene = { environment };
+	const baseline = adapter.getCacheKey( scene, null );
+	for ( const property of [ 'mapping', 'format', 'internalFormat', 'type', 'colorSpace', 'compareFunction', 'channel', 'magFilter', 'minFilter', 'wrapS', 'wrapT', 'wrapR' ] ) {
+
+		const original = environment[ property ];
+		environment[ property ] = 999;
+		nextCall( renderer );
+		assert.notEqual( adapter.getCacheKey( scene, null ), baseline, property );
+		environment[ property ] = original;
+		nextCall( renderer );
+		assert.equal( adapter.getCacheKey( scene, null ), baseline, property );
+
+	}
+
+} );
+
 test( 'scene replay cache key retains lighting, light, shadow, and multiview invalidation axes', () => {
 
 	const { adapter, outputTarget, renderer } = fixture();

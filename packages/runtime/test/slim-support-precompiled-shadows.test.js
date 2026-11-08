@@ -6,6 +6,8 @@ import { Color } from 'three/src/math/Color.js';
 import { Scene } from 'three/src/scenes/Scene.js';
 import { DirectionalLight } from 'three/src/lights/DirectionalLight.js';
 import {
+	PCFShadowMap,
+	LessEqualCompare,
 	VSMShadowMap,
 	WebGPUCoordinateSystem,
 } from 'three/src/constants.js';
@@ -174,6 +176,45 @@ function fakeRenderer() {
 	};
 
 }
+
+test( 'captured PCF replay owns and resizes a comparison depth target without VSM passes', () => {
+
+	__resetAuxRegistryForTests();
+	const scene = new Scene();
+	const camera = new PerspectiveCamera();
+	const light = new DirectionalLight();
+	light.castShadow = true;
+	light.shadow.mapSize.set( 32, 32 );
+	scene.add( light, light.target );
+	registerFixtures( light );
+	const renderer = fakeRenderer();
+	renderer.shadowMap.type = PCFShadowMap;
+	const support = createPrecompiledShadowSupport( { renderer } );
+	try {
+
+		assert.equal( support.populateShadowMaps( scene, camera ).complete, true );
+		assert.deepEqual( renderer.renders.map( render => render.kind ), [ 'shadow-depth' ] );
+		assert.equal( light.shadow.map.depthTexture.compareFunction, LessEqualCompare );
+		assert.equal( light.shadow.mapPass, null );
+		assert.equal( scene.overrideMaterial, null );
+		assert.equal( renderer.getRenderObjectFunction(), renderer.callerRenderObjectFunction );
+		light.shadow.autoUpdate = false;
+		assert.equal( support.populateShadowMaps( scene, camera ).rendered, false );
+		light.shadow.mapSize.set( 64, 64 );
+		assert.equal( support.populateShadowMaps( scene, camera ).rendered, true );
+		assert.equal( light.shadow.map.width, 64 );
+		support.dispose();
+		assert.equal( light.shadow.map, null );
+
+	} finally {
+
+		support.dispose();
+		light.dispose();
+		__resetAuxRegistryForTests();
+
+	}
+
+} );
 
 test( 'captured VSM replay owns depth → vertical → horizontal on the slim renderer', () => {
 

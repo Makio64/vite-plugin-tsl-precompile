@@ -2,6 +2,7 @@ import { MATERIAL_TEXTURE_PROPS } from '@tsl-precompile/contract/texture-props';
 import { resolveBuiltinTextureBinding } from './builtin-textures.js';
 import { installLiveTextureRegistryPatches, lookupAnonymousDataTexture, lookupAnonymousStorageTexture, lookupLiveTextureByIdentity } from './live-texture-registry.js';
 import { lookupMaterialNodeTexture } from './material-node-textures.js';
+import { isPMREMArtifactTextureSource, isPMREMTexture } from '../slim-support/pmrem.js';
 import {
 	resolvePlanTextureTypeHint,
 	selectFallbackTextureForBinding,
@@ -194,32 +195,14 @@ const RETRYABLE_RENDER_TARGET_TEXTURE_REASONS = new Set( [
 	'preferred-target-not-renderer-owned',
 ] );
 
-const PMREM_CUBE_UV_MAPPING = 306;
-
-function isPMREMArtifactSource( source ) {
-
-	return !! ( source && source.kind === 'artifact.texture' && ( source.mapping === PMREM_CUBE_UV_MAPPING || source.textureName === 'PMREM.cubeUv' ) );
-
-}
-
-function isPMREMRuntimeTexture( texture ) {
-
-	return !! (
-		texture &&
-		texture.isTexture === true &&
-		(
-			texture.isPMREMTexture === true ||
-			texture.mapping === PMREM_CUBE_UV_MAPPING ||
-			texture.name === 'PMREM.cubeUv'
-		)
-	);
-
-}
+const isPMREMArtifactSource = isPMREMArtifactTextureSource;
+const isPMREMRuntimeTexture = isPMREMTexture;
 
 function textureMatchesCapturedPMREMSize( texture, source ) {
 
 	if ( ! isPMREMArtifactSource( source ) || typeof source.imageWidth !== 'number' || typeof source.imageHeight !== 'number' ) return true;
-	const image = texture && texture.image || null;
+	const images = texture && texture.image || null;
+	const image = Array.isArray( images ) ? images[ 0 ]?.mipmaps?.[ 0 ] || images[ 0 ] : images;
 	if ( ! image || image.width !== source.imageWidth || image.height !== source.imageHeight ) return false;
 	const imageDepth = typeof image.depth === 'number' ? image.depth : 1;
 	return typeof source.imageDepth !== 'number' || imageDepth === source.imageDepth;
@@ -243,6 +226,23 @@ export function resolveArtifactTextureBinding( context ) {
 	// same-sized PMREM reachable through the source material graph can be stale
 	// (or owned by another renderer) even though it passes shape validation.
 	if ( isPMREMArtifactSource( context.source ) ) {
+
+		const resolvePMREM = context.options?.resolvePMREMTexture;
+		if ( typeof resolvePMREM === 'function' && context.textureEntry?.__tslpInternalPassTextureBinding !== true ) {
+
+			const texture = resolvePMREM( {
+				artifact: context.artifact,
+				source: context.source,
+				material: context.material,
+				scene: context.options.frame?.scene || context.options.scene,
+			} );
+			if ( texture && textureMatchesShaderBinding( context.artifact, context.bindingName, texture ) ) {
+
+				return textureResolutionResult( texture, 'renderer-pmrem' );
+
+			}
+
+		}
 
 		const wiredPMREM = resolveAuthoritativePMREMTextureRefStrategy( context );
 		if ( wiredPMREM ) return textureResolutionResult( wiredPMREM, 'texture-ref' );
@@ -590,7 +590,7 @@ function materialGraphRenderTargetPreference( material, source, options ) {
 
 }
 
-function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, textureEntry, source, textureTypeHint, material, options, pendingTexture ) {
+function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, textureEntry, source, textureTypeHint, material, options, fallbacks ) {
 
 	const renderer = options && options.renderer || options && options.frame && options.frame.renderer || null;
 	// `_textureRefs` identifies the preferred replay owner, but it is not
@@ -636,7 +636,7 @@ function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, t
 			groupName,
 			bindingName,
 			'render-target-selector',
-			renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result, result.texture ),
+			textureResolutionDebugHook ? renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result, result.texture ) : null,
 		);
 		return result.texture;
 
@@ -650,16 +650,26 @@ function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, t
 		: result.reason;
 	const retryable = status === RENDER_TARGET_TEXTURE_RESOLUTION_STATUS.PENDING
 		&& RETRYABLE_RENDER_TARGET_TEXTURE_REASONS.has( reason );
-	if ( retryable && options && options.deferRenderTargetPending === true && pendingTexture ) {
+	if ( retryable && options && options.deferRenderTargetPending === true ) {
 
-		recordTextureResolutionStrategy(
-			artifact,
-			groupName,
-			bindingName,
-			'render-target-selector-pending',
-			renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result ),
-		);
-		return pendingTexture;
+		const pendingTexture = (
+			textureTypeHint === '2d' &&
+			! shaderDeclaresDepthTexture( artifact, bindingName ) &&
+			! shaderDeclaresMultisampledTexture( artifact, bindingName ) &&
+			fallbacks.pendingRenderTargetColor
+		) || selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
+		if ( pendingTexture ) {
+
+			recordTextureResolutionStrategy(
+				artifact,
+				groupName,
+				bindingName,
+				'render-target-selector-pending',
+				textureResolutionDebugHook ? renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result ) : null,
+			);
+			return pendingTexture;
+
+		}
 
 	}
 	const artifactName = artifact && ( artifact.name || artifact.materialShape ) || '<unnamed>';
@@ -678,6 +688,7 @@ function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, t
 	error.groupName = groupName;
 	error.bindingName = bindingName;
 	error.retryable = retryable;
+	error.details = renderTargetResolutionDetails( source, textureEntry, textureTypeHint, result );
 	for ( const key of [
 		'observedTargetCount',
 		'candidateCount',
@@ -715,27 +726,20 @@ function resolveSelectedRenderTargetTexture( artifact, groupName, bindingName, t
  * @param {string} context.bindingName
  * @param {?Object} context.material
  * @param {?Object} context.options
+ * @param {?Object} context.planBinding - Hydration-owned group/entry references.
  * @param {Object} context.deps - { fallbacks, makeViewportFallback,
  *   wrapTextureFromSnapshot? }
  * @return {Object} the resolved texture (never null — falls back to the
  *   shape-appropriate 1×1 fallback when nothing else matches).
  */
-export function dispatchTextureBinding( { artifact, groupName, bindingName, material, options = null, deps = {} } ) {
+export function dispatchTextureBinding( { artifact, groupName, bindingName, material, options = null, deps = {}, planBinding = null } ) {
 
 	const fallbacks = deps && deps.fallbacks || {};
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const group = plan.find( ( item ) => item.name === groupName );
-	const textureEntry = group && ( group.textures || [] ).find( ( item ) => item.name === bindingName );
+	const group = planBinding ? planBinding.group
+		: ( Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [] ).find( item => item.name === groupName );
+	const textureEntry = planBinding ? planBinding.entry
+		: group && ( group.textures || [] ).find( item => item.name === bindingName );
 	const source = textureEntry && textureEntry.source || {};
-	const textureTypeHint = resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName );
-
-	const selectShapeFallback = () => selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
-	const selectPendingRenderTargetFallback = () => (
-		textureTypeHint === '2d' &&
-		! shaderDeclaresDepthTexture( artifact, bindingName ) &&
-		! shaderDeclaresMultisampledTexture( artifact, bindingName ) &&
-		fallbacks.pendingRenderTargetColor
-	) || selectShapeFallback();
 
 	// A captured render-target selector is authoritative. Resolve it before
 	// inspecting `_textureRefs`, material graphs, live UUID indexes, snapshots,
@@ -751,10 +755,10 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 			bindingName,
 			textureEntry,
 			source,
-			textureTypeHint,
+			resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName, planBinding?.textures ),
 			material,
 			options,
-			selectPendingRenderTargetFallback(),
+			fallbacks,
 		);
 
 	}
@@ -770,23 +774,15 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 			&& ! ( typeof source.lightIndex === 'number' && source.lightIndex >= 0 );
 		const internalPassDepth = textureEntry && textureEntry.__tslpInternalPassTextureBinding === true;
 		const live = ( passDepth || internalPassDepth ) && artifact._textureRefs && artifact._textureRefs.get( source.textureUuid );
-		return live && live.isTexture === true && textureMatchesShaderBinding( artifact, bindingName, live ) ? live : selectShapeFallback();
+		return live && live.isTexture === true && textureMatchesShaderBinding( artifact, bindingName, live ) ? live : selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
 
 	}
-
-	const builtinTexture = resolveBuiltinTextureBinding( {
-		artifact,
-		source,
-		bindingName,
-		fallbackTextureForBinding: selectShapeFallback,
-	} );
-	if ( builtinTexture !== undefined ) return builtinTexture;
 
 	if ( source.kind && source.kind.startsWith( 'material.' ) ) {
 
 		const property = source.property || source.kind.split( '.' )[ 1 ];
 		const live = material && material[ property ];
-		return live || selectShapeFallback();
+		return live || selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
 
 	}
 
@@ -802,6 +798,7 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 
 	if ( source.kind === 'artifact.texture' && source.textureUuid ) {
 
+		const textureTypeHint = resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName, planBinding?.textures );
 		const wrappedFromSnapshot = typeof deps.wrapTextureFromSnapshot === 'function'
 			? deps.wrapTextureFromSnapshot
 			: ( snapshotArtifact, uuid, snapshot, snapshotBindingName, snapshotTextureTypeHint ) => textureFromSnapshot(
@@ -847,13 +844,13 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 				groupName,
 				bindingName,
 				result.strategy,
-				textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, result.texture )
+				textureResolutionDebugHook ? textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, result.texture ) : null
 			);
 			return result.texture;
 
 		}
 
-		const shaderFallbackTexture = selectShapeFallback();
+		const shaderFallbackTexture = selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
 		const details = textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, shaderFallbackTexture );
 		recordTextureResolutionStrategy( artifact, groupName, bindingName, 'shader-fallback', details );
 		warnTextureMiss(
@@ -868,7 +865,15 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 
 	}
 
-	const fallbackTextureForKind = selectShapeFallback();
+	const builtinTexture = resolveBuiltinTextureBinding( {
+		artifact,
+		source,
+		bindingName,
+		fallbackTextureForBinding: () => selectFallbackTextureForBinding( artifact, bindingName, fallbacks ),
+	} );
+	if ( builtinTexture !== undefined ) return builtinTexture;
+
+	const fallbackTextureForKind = selectFallbackTextureForBinding( artifact, bindingName, fallbacks );
 	if ( source.kind
 		&& source.kind !== 'depth.texture'
 		&& source.kind !== 'viewport.texture'
@@ -877,6 +882,7 @@ export function dispatchTextureBinding( { artifact, groupName, bindingName, mate
 
 		// Unknown source.kind that asks for a texture: warn so the silent-
 		// fallback case is visible in coverage runs instead of rendering wrong.
+		const textureTypeHint = resolvePlanTextureTypeHint( artifact, group, textureEntry, source, bindingName, planBinding?.textures );
 		const details = textureResolutionDiagnosticDetails( source, textureEntry, textureTypeHint, fallbackTextureForKind );
 		recordTextureResolutionStrategy( artifact, groupName, bindingName, 'unknown-kind-fallback', details );
 		warnTextureMiss(

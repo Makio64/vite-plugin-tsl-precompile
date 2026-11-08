@@ -52,11 +52,13 @@ with generated UBO updates, and fails closed on missing or stale captures. The
 default compatibility mode runs the same artifact and freshness gates but keeps
 the live NodeMaterial/compiler authoritative while coverage is being audited.
 
-The canonical Three r185 gzip-9 fixture baselines and enforced caps live in
+The canonical Three r185 gzip-9 regression baselines and enforced caps live in
 [`packages/runtime/build-tools/slim-budget.json`](packages/runtime/build-tools/slim-budget.json).
-These are repository regression fixtures, not universal transfer sizes or a
-stock-Three comparison. `pnpm analyze:slim` recomputes the current exact
-measurements and provenance; measure your own production chunks.
+The checked baseline → cap pairs are 186,724 → 194,468 bytes for source-minimal,
+196,230 → 204,740 bytes for source-advanced, and 277,936 → 281,669 bytes for the
+prebuilt renderer. These are repository regression fixtures, not universal
+transfer sizes or a stock-Three comparison. `pnpm analyze:slim` recomputes the
+current exact measurements and provenance; measure your own production chunks.
 
 ## Requirements
 
@@ -64,7 +66,7 @@ measurements and provenance; measure your own production chunks.
 |---|---|
 | **Renderer** | `WebGPURenderer` with its WebGPU backend or WebGL 2 backend (`forceWebGL: true` and automatic fallback are supported) |
 | **Browser** | WebGPU or WebGL 2, matching the backend captured for each render path |
-| **three.js** | Exactly `0.185.1` for this alpha (use `"three": "0.185.1"`, not a range). Artifacts are versioned against the exact native-shader emitter package; see [MIGRATION.md](MIGRATION.md) for the deliberate upgrade and re-capture workflow. |
+| **three.js** | Exactly `0.186.1` for this alpha (use `"three": "0.186.1"`, not a range). Artifacts are versioned against the exact native-shader emitter package; see [MIGRATION.md](MIGRATION.md) for the deliberate upgrade and re-capture workflow. |
 | **Vite** | `>= 6.4.3 < 9` |
 | **Node** | `>= 24.0.0` (build tooling only; not a runtime requirement) |
 | **TypeScript** | `>= 5.6` when consuming the declarations (CI runs exact `5.6.3` and `5.9.3` packed consumers) |
@@ -75,6 +77,16 @@ backend selected by `WebGPURenderer`, so the application continues to use the
 WGSL is replayed on WebGPU and GLSL is replayed on WebGL 2. If production can
 choose either backend, capture and preview the full route/topology matrix on
 both; a shader captured for one backend is not a fallback for the other.
+
+The default release is r186 (`three@0.186.1`, `@types/three@0.186.0`).
+Experimental r187dev builds require the exact source snapshot pinned in
+[`slim-three-policy.js`](packages/contract/src/slim-three-policy.js); its nominal
+package version is `0.186.0`, so the version alone cannot identify it. Build with
+`TSLP_THREE_SOURCE_ROOT` and write candidate output with `TSLP_SLIM_OUTPUT_FILE`.
+Development artifacts require the pinned revision/commit identity and real
+recapture. The pinned r187dev source build captures and replays native cube PMREM
+from scenes, equirectangular textures and cubemaps; r186 keeps its CubeUV atlas
+path. The published prebuilt bundle remains r186.
 
 > **Adopting this manually?** Start at [BYO.md](BYO.md) for install, first
 > capture, the day-2 workflow, and common pitfalls.
@@ -93,12 +105,12 @@ Before installing packages or editing files, inspect the lockfile/package manage
 Vite config, renderer bootstrap and backend options, TSL NodeMaterials, routes,
 current three version, and matching @types/three. If this is not a Vite +
 WebGPURenderer + TSL app, if it uses classic WebGLRenderer, or if exact
-three@0.185.1 requires an unapproved migration, stop and report without mutating.
+three@0.186.1 requires an unapproved migration, stop and report without mutating.
 
 After the fit check passes, use this project's package manager (pnpm shown):
   pnpm add -D vite-plugin-tsl-precompile@alpha
-  pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
-  pnpm add -D @types/three@0.185.1 --save-exact  # TypeScript only
+  pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
+  pnpm add -D @types/three@0.186.0 --save-exact  # TypeScript only
   pnpm exec tsl-precompile-install-skill --json
   pnpm exec tsl-precompile-doctor --json --source src
 
@@ -138,13 +150,13 @@ the production build, or backend-matched production previews.
 
 ```sh
 pnpm add -D vite-plugin-tsl-precompile@alpha
-pnpm add @tsl-precompile/runtime@alpha three@0.185.1 --save-exact
+pnpm add @tsl-precompile/runtime@alpha three@0.186.1 --save-exact
 ```
 
 TypeScript projects must pin the matching Three declarations too:
 
 ```sh
-pnpm add -D @types/three@0.185.1 --save-exact
+pnpm add -D @types/three@0.186.0 --save-exact
 ```
 
 Run the read-only adoption audit before and after wiring the plugin:
@@ -207,7 +219,7 @@ import { setupPrecompile } from '@tsl-precompile/runtime/setup';
 const renderer = new WebGPURenderer();
 const setup = setupPrecompile( { renderer } );
 await renderer.init();
-await setup.ready;          // ← registers this renderer with the marker
+await setup.ready;          // marker and real-render observer are ready
 
 const material = new MeshStandardNodeMaterial();
 material.colorNode = mix( color( '#224' ), color( '#88c' ), uv().y );
@@ -427,7 +439,7 @@ This narrow path does not trigger an automatic background / shadow / PMREM /
 post-processing sweep; those feature-specific captures stay explicit through
 `captureAux()`.
 
-The published slim bundle is currently built against exactly three `0.185.1`.
+The published slim bundle is currently built against exactly three `0.186.1`.
 A slim build fails early when the consumer resolves another patch instead of
 combining incompatible renderer internals. Source mode uses the consumer's
 installed Three source, but capture and production build must still resolve
@@ -500,8 +512,14 @@ live TSL compiler from production without manually marking every material.
 | `autoMarkPrefix` | `'auto'` | Prefix used by `autoMark` to name artifacts. |
 | `slim` | `false` | `false` keeps the original live NodeMaterial and full Three compiler while validating/registering artifacts; `'source'` is the recommended guarded, tree-shaken compiler-free entry; `true` uses the checked single-file prebuilt runtime. Dev always keeps full Three for capture. |
 | `minifyWgsl` | `true` | Compact WGSL only in emitted virtual modules; captured JSON stays readable. |
+| `webgpuOnly` | `false` | With `slim: 'source'`, remove the WebGL backend from production. Requires WebGPU and rejects `forceWebGL`; dev keeps full Three for capture. |
 | `dedupeWgsl` | `true` | Hoist repeated native shader strings into the legacy-named `virtual:tsl-precompile/__wgsl` pool for tree-shakeable reuse; GLSL bytes are preserved. |
 | `threeVersion` | auto-detect | Override the exact three.js package version used in rewrite hashes. It must match the installed package (rarely needed). |
+
+For an application that requires WebGPU, select the smaller source build with
+`tslPrecompile({ slim: 'source', webgpuOnly: true })`. Keep the default when the
+application needs WebGL 2 fallback. The flag changes backend availability; it
+preserves captured shaders and the authored rendering quality.
 
 ## Troubleshooting
 
@@ -531,9 +549,9 @@ live TSL compiler from production without manually marking every material.
   You hit a code path that wasn't precompiled in a slim production mode. Add
   an explicit `.precompile()` marker if automatic detection cannot see its
   constructor (or re-enable `autoMark`), re-run dev to capture, then rebuild.
-- **`slim build refused: ... built against three 0.185.1`**
+- **`slim build refused: ... built against three 0.186.1`**
   The installed three.js patch does not match this release's checked-in slim
-  renderer. Pin three to `0.185.1`, or disable `slim` until a matching runtime
+  renderer. Pin three to `0.186.1`, or disable `slim` until a matching runtime
   slim bundle is published.
 - **`slim source policy mismatch`**
   The plugin and runtime packages came from incompatible releases. Install
@@ -610,7 +628,7 @@ presentation.
 Canonical schema-2 artifact descriptors are also checked against their stored
 byte length and SHA-256 before bounded decoding, with path containment,
 compression metadata, and exact uncompressed size validated. Because these v2
-harness changes alter the source fingerprint, no final 254-route result is
+harness changes alter the source fingerprint, no final 272-route result is
 claimed here until a fresh exact campaign completes and its manifest-bound
 report, artifacts, and screenshots validate together.
 
@@ -626,7 +644,7 @@ may work but aren't guarded against regression.
 | **Browsers** | Chromium (Playwright, SwiftShader Vulkan) | Firefox WebGPU is still flag-gated; Safari is untested in CI. |
 | **Node** | 24.18.0 | The complete suite, default package checks, and every packed-consumer lane run on the Node 24 LTS line. |
 | **Vite** | 6.4.3, 7.3.6, and 8.0.16 | Exact packed-consumer smokes exercise every major in the declared `>= 6.4.3 < 9` range. |
-| **three.js** | `0.185.1` (locked) + nightly run against `latest` ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
+| **three.js** | `0.186.1` (locked) + nightly probes of `latest` and pinned r187dev ([three-compat.yml](.github/workflows/three-compat.yml)) | Artifacts are pinned to a three.js patch — see [MIGRATION.md](MIGRATION.md). |
 | **TypeScript** | 5.6.3 and 5.9.3 | Packed public declarations are checked in strict NodeNext mode with library checking enabled at the documented floor and current pinned compiler. |
 | **Publish path** | `npm install` of `pnpm pack` tarballs into a clean temp project ([fresh-project-smoke](packages/examples/fresh-project-smoke)) | Verifies that `exports`, `files`, `peerDependencies`, and `.d.ts` resolve outside the monorepo. |
 | **Bundlers** | Vite only | Plugin is Vite-specific; Rollup/esbuild/webpack are not supported. |
@@ -645,6 +663,7 @@ pixel comparison is disabled.
 ## Examples in this repo
 
 - [`packages/examples/getting-started`](packages/examples/getting-started) — minimal compatibility-first repository example
+- [`packages/examples/performance`](packages/examples/performance) — six live workloads comparing shader nodes, startup CPU, frame CPU and GPU timestamps, with verified full/slim images
 - [`packages/examples/pbr-shadows`](packages/examples/pbr-shadows) — PBR sphere + ground + shadow-casting light (two markers in one scene)
 - [`packages/examples/ocean`](packages/examples/ocean) — flagship demo: animated TSL + Inspector + aux pass
 - [`packages/examples/bloom`](packages/examples/bloom) — post-processing bloom
@@ -675,8 +694,10 @@ pnpm dev:compute          # compute-shader demo
 pnpm dev:shadow-debug     # minimal shadow repro pages
 pnpm dev:site             # docs site
 pnpm test                 # fast default checks (heavy generation/rewrite suites excluded)
+pnpm test -- --scope=runtime --match=hydrate-storage-buffer
+                          # focused whole-file checks; --list previews the plan
 pnpm test:generation      # extractor and artifact-generation tests only
-pnpm test:full            # complete non-example package suites
+pnpm test:full            # complete Node package/tooling suites, compact output + full logs
 pnpm release:check        # clean-commit release gate (packages, examples, packed consumers)
 pnpm test:coverage        # coverage-matrix fixtures
 pnpm test:e2e -- --filter=webgpu_clearcoat

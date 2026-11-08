@@ -10,6 +10,8 @@ export interface PrecompiledComputeBindingEntry {
 	count?: number;
 	itemSize?: number;
 	byteLength?: number;
+	/** The captured WGSL storage array has no compile-time length. */
+	runtimeSized?: boolean;
 	textureType?: '2d' | '2d-array' | '3d' | 'cube';
 	dtype?: string;
 }
@@ -59,6 +61,7 @@ export interface PrecompiledComputeRunner<TResources extends PrecompiledComputeR
 	readonly node: unknown;
 	readonly disposed: boolean;
 	dispatch( dispatchSize?: PrecompiledComputeDispatchSize ): unknown;
+	compileAsync( onProgress?: ( ( event: ProgressEvent ) => void ) | null ): Promise<unknown>;
 	dispatchAsync( dispatchSize?: PrecompiledComputeDispatchSize ): Promise<unknown>;
 	dispose(): void;
 }

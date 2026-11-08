@@ -12,8 +12,22 @@ import { createPrecompiledComputeRunner } from '../src/precompiled-compute-runne
 import ReplayNodeManager from '../src/slim-replay-node-manager.js';
 import * as computeEntry from '@tsl-precompile/runtime/compute';
 import * as runtime from '@tsl-precompile/runtime';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-releases';
 
 const RUNTIME_ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
+
+test( 'direct compute replay rejects nominal development captures without their exact emitter pair', () => {
+
+	const release = THREE_RELEASE_PROFILES.development;
+	const artifact = { ...computeArtifact(), sourceThreeVersion: release.packageVersion };
+	assert.throws( () => createPrecompiledComputeRunner( rendererSpy(), artifact, resources() ), /sourceThreeRevision.*Recapture/ );
+	artifact.sourceThreeRevision = release.revision;
+	artifact.sourceThreeCommit = release.gitCommit;
+	const runner = createPrecompiledComputeRunner( rendererSpy(), artifact, resources() );
+	assert.equal( runner.dispatch(), 'sync-result' );
+	runner.dispose();
+
+} );
 
 function computeArtifact() {
 
@@ -128,6 +142,29 @@ function rendererSpy() {
 
 }
 
+test( 'runtime-sized compute storage accepts live lengths and preserves layout validation', () => {
+
+	const artifact = computeArtifact();
+	artifact.bindings[ 0 ].bindings[ 0 ].runtimeSized = true;
+	artifact.uniformPlan[ 0 ].storageBuffers[ 0 ].runtimeSized = true;
+	artifact.computeBindings.entries.find( entry => entry.key === 'positions' ).runtimeSized = true;
+	const bound = { ...resources(), positions: new StorageBufferAttribute( 7, 4 ) };
+	const runner = createPrecompiledComputeRunner( rendererSpy(), artifact, bound );
+	assert.equal( runner.dispatch(), 'sync-result' );
+	assert.equal( runner.resources.positions, bound.positions );
+	assert.throws( () => createPrecompiledComputeRunner( rendererSpy(), computeArtifact(), bound ),
+		error => error.code === 'TSLP_COMPUTE_RESOURCE_MISMATCH' );
+	assert.throws( () => createPrecompiledComputeRunner( rendererSpy(), artifact,
+		{ ...bound, positions: new StorageBufferAttribute( 7, 2 ) } ),
+		error => error.code === 'TSLP_COMPUTE_RESOURCE_MISMATCH' );
+	const inconsistent = structuredClone( artifact );
+	delete inconsistent.bindings[ 0 ].bindings[ 0 ].runtimeSized;
+	assert.throws( () => createPrecompiledComputeRunner( rendererSpy(), inconsistent, bound ),
+		error => error.code === 'TSLP_COMPUTE_BINDINGS_INVALID' );
+	runner.dispose();
+
+} );
+
 function deepFreeze( value, seen = new Set() ) {
 
 	if ( ! value || typeof value !== 'object' || seen.has( value ) ) return value;
@@ -221,7 +258,52 @@ test( 'standalone compute runner forwards default and override dispatches and di
 	assert.equal( nodeDisposals, 1 );
 	assert.equal( resourceDisposals, 0, 'caller-owned resources are never disposed by the runner' );
 	assert.throws( () => runner.dispatch(), ( error ) => error.code === 'TSLP_COMPUTE_RUNNER_DISPOSED' );
+	assert.throws( () => runner.compileAsync(), ( error ) => error.code === 'TSLP_COMPUTE_RUNNER_DISPOSED' );
 	await assert.rejects( async () => runner.dispatchAsync(), ( error ) => error.code === 'TSLP_COMPUTE_RUNNER_DISPOSED' );
+
+} );
+
+test( 'standalone compute runner pre-warms cold pipelines asynchronously on compileAsync and cold dispatchAsync', async () => {
+
+	const calls = [];
+	const compiled = new Set();
+	const renderer = {
+		__TSLP_SLIM__: true,
+		_pipelines: { has: ( node ) => compiled.has( node ) },
+		compute( ...args ) {
+
+			calls.push( [ 'sync', ...args ] );
+			return 'sync-result';
+
+		},
+		async compileComputeAsync( node, onProgress ) {
+
+			calls.push( [ 'compileAsync', node, onProgress ?? null ] );
+			compiled.add( node );
+
+		},
+		async computeAsync( ...args ) {
+
+			calls.push( [ 'async', ...args ] );
+			return 'async-result';
+
+		},
+	};
+	const runner = createPrecompiledComputeRunner( renderer, computeArtifact(), resources() );
+	const onProgress = () => {};
+	await runner.compileAsync( onProgress );
+	assert.deepEqual( calls, [ [ 'compileAsync', runner.node, onProgress ] ] );
+
+	calls.length = 0;
+	compiled.clear();
+	assert.equal( await runner.dispatchAsync( 64 ), 'async-result' );
+	assert.equal( await runner.dispatchAsync( 64 ), 'async-result' );
+	assert.deepEqual( calls, [
+		[ 'compileAsync', runner.node, null ],
+		[ 'async', runner.node, 64 ],
+		[ 'async', runner.node, 64 ],
+	] );
+	runner.dispose();
 
 } );
 

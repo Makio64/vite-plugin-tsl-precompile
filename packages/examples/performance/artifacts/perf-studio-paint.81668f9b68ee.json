@@ -1,0 +1,1509 @@
+{
+  "__hash": "81668f9b68eec8828c3b7d431fa58d2bc0866c6bc71376f4dfee9f2e48d122cc",
+  "__name": "perf-studio-paint",
+  "__sourceOwners": [
+    {
+      "identity": "src/scenes/studio.js:precompile:0",
+      "revision": "7a9fc2945abfece7280a2205699121014cad7c4bd299df038475c97830efee33",
+      "provenance": {
+        "schema": "marker-source-closure@1",
+        "dependencies": [
+          "src/common.js"
+        ]
+      }
+    }
+  ],
+  "artifact": {
+    "version": 3,
+    "cacheKey": 12889284462618498,
+    "shaderLanguage": "wgsl",
+    "variantKey": "webgpu:12889284462618498",
+    "materialShape": "mesh-physical",
+    "vertexShader": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform20 : mat4x4<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : mat4x4<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform28 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar189 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform5 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform20 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - v_positionView );\n\tVERTEX_nodeVar189 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar189;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+    "fragmentShader": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform21_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform21 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform27_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform27 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform9 : f32,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform20 : mat4x4<f32>,\n\tnodeUniform22 : f32,\n\tnodeUniform23 : mat4x4<f32>,\n\tnodeUniform25 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform28 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tcameraWorldMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> IOR : f32;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> nodeVar1 : f32;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> Clearcoat : f32;\nvar<private> ClearcoatRoughness : f32;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> clearcoatRadiance : vec3<f32>;\nvar<private> clearcoatSpecularDirect : vec3<f32>;\nvar<private> clearcoatSpecularIndirect : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> normalWorld : vec3<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : vec3<f32>;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : vec4<f32>;\nvar<private> nodeVar10 : vec4<f32>;\nvar<private> nodeVar11 : vec3<f32>;\nvar<private> nodeVar12 : vec3<f32>;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : vec3<f32>;\nvar<private> nodeVar15 : vec3<f32>;\nvar<private> clearcoatNormalView : vec3<f32>;\nvar<private> nodeVar16 : f32;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : f32;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : vec3<f32>;\nvar<private> nodeVar23 : vec3<f32>;\nvar<private> nodeVar24 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar25 : vec3<f32>;\nvar<private> nodeVar26 : vec3<f32>;\nvar<private> nodeVar27 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> nodeVar29 : f32;\nvar<private> nodeVar30 : f32;\nvar<private> nodeVar31 : f32;\nvar<private> nodeVar32 : vec4<f32>;\nvar<private> nodeVar33 : vec4<f32>;\nvar<private> nodeVar34 : vec3<f32>;\nvar<private> nodeVar35 : f32;\nvar<private> nodeVar36 : f32;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> nodeVar39 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar40 : f32;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : f32;\nvar<private> nodeVar43 : vec3<f32>;\nvar<private> nodeVar44 : f32;\nvar<private> nodeVar45 : f32;\nvar<private> nodeVar46 : f32;\nvar<private> nodeVar47 : vec2<f32>;\nvar<private> nodeVar48 : vec4<f32>;\nvar<private> nodeVar49 : vec3<f32>;\nvar<private> nodeVar50 : f32;\nvar<private> nodeVar51 : f32;\nvar<private> nodeVar52 : f32;\nvar<private> nodeVar53 : f32;\nvar<private> nodeVar54 : f32;\nvar<private> nodeVar55 : vec2<f32>;\nvar<private> nodeVar56 : vec4<f32>;\nvar<private> nodeVar57 : vec3<f32>;\nvar<private> nodeVar58 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar59 : f32;\nvar<private> nodeVar60 : f32;\nvar<private> nodeVar61 : f32;\nvar<private> nodeVar62 : f32;\nvar<private> nodeVar63 : f32;\nvar<private> nodeVar64 : f32;\nvar<private> nodeVar65 : vec2<f32>;\nvar<private> nodeVar66 : vec4<f32>;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : f32;\nvar<private> nodeVar69 : f32;\nvar<private> nodeVar70 : f32;\nvar<private> nodeVar71 : f32;\nvar<private> nodeVar72 : f32;\nvar<private> nodeVar73 : vec2<f32>;\nvar<private> nodeVar74 : vec4<f32>;\nvar<private> nodeVar75 : vec3<f32>;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> nodeVar77 : f32;\nvar<private> nodeVar78 : f32;\nvar<private> nodeVar79 : f32;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> nodeVar81 : f32;\nvar<private> nodeVar82 : f32;\nvar<private> nodeVar83 : f32;\nvar<private> nodeVar84 : vec2<f32>;\nvar<private> nodeVar85 : vec4<f32>;\nvar<private> nodeVar86 : vec3<f32>;\nvar<private> nodeVar87 : f32;\nvar<private> nodeVar88 : f32;\nvar<private> nodeVar89 : f32;\nvar<private> nodeVar90 : f32;\nvar<private> nodeVar91 : f32;\nvar<private> nodeVar92 : vec2<f32>;\nvar<private> nodeVar93 : vec4<f32>;\nvar<private> nodeVar94 : vec3<f32>;\nvar<private> nodeVar95 : vec3<f32>;\nvar<private> nodeVar96 : vec3<f32>;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar99 : vec3<f32>;\nvar<private> nodeVar100 : f32;\nvar<private> nodeVar101 : vec4<f32>;\nvar<private> nodeVar102 : vec3<f32>;\nvar<private> nodeVar103 : vec3<f32>;\nvar<private> nodeVar104 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar105 : f32;\nvar<private> nodeVar106 : vec4<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> nodeVar108 : f32;\nvar<private> nodeVar109 : vec3<f32>;\nvar<private> nodeVar110 : vec3<f32>;\nvar<private> nodeVar111 : vec3<f32>;\nvar<private> nodeVar112 : vec3<f32>;\nvar<private> nodeVar113 : vec3<f32>;\nvar<private> nodeVar114 : vec3<f32>;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : f32;\nvar<private> nodeVar117 : f32;\nvar<private> nodeVar118 : f32;\nvar<private> nodeVar119 : vec3<f32>;\nvar<private> nodeVar120 : vec3<f32>;\nvar<private> nodeVar121 : vec3<f32>;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> nodeVar124 : vec3<f32>;\nvar<private> nodeVar125 : f32;\nvar<private> nodeVar126 : vec4<f32>;\nvar<private> nodeVar127 : vec3<f32>;\nvar<private> nodeVar128 : f32;\nvar<private> nodeVar129 : vec3<f32>;\nvar<private> nodeVar130 : vec3<f32>;\nvar<private> nodeVar131 : vec3<f32>;\nvar<private> nodeVar132 : vec3<f32>;\nvar<private> nodeVar133 : vec3<f32>;\nvar<private> nodeVar134 : vec3<f32>;\nvar<private> nodeVar135 : vec3<f32>;\nvar<private> nodeVar136 : f32;\nvar<private> nodeVar137 : f32;\nvar<private> nodeVar138 : f32;\nvar<private> nodeVar139 : vec3<f32>;\nvar<private> nodeVar140 : vec3<f32>;\nvar<private> nodeVar141 : vec3<f32>;\nvar<private> nodeVar142 : vec3<f32>;\nvar<private> nodeVar143 : vec3<f32>;\nvar<private> nodeVar144 : vec3<f32>;\nvar<private> nodeVar145 : vec3<f32>;\nvar<private> nodeVar146 : vec3<f32>;\nvar<private> nodeVar147 : vec3<f32>;\nvar<private> nodeVar148 : vec3<f32>;\nvar<private> nodeVar149 : vec3<f32>;\nvar<private> nodeVar150 : vec3<f32>;\nvar<private> nodeVar151 : vec3<f32>;\nvar<private> nodeVar152 : vec3<f32>;\nvar<private> nodeVar153 : vec3<f32>;\nvar<private> nodeVar154 : vec3<f32>;\nvar<private> nodeVar155 : vec3<f32>;\nvar<private> nodeVar156 : vec3<f32>;\nvar<private> nodeVar157 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar158 : vec3<f32>;\nvar<private> nodeVar159 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar160 : vec3<f32>;\nvar<private> nodeVar161 : vec3<f32>;\nvar<private> nodeVar162 : f32;\nvar<private> nodeVar163 : f32;\nvar<private> nodeVar164 : f32;\nvar<private> nodeVar165 : f32;\nvar<private> nodeVar166 : f32;\nvar<private> nodeVar167 : f32;\nvar<private> nodeVar168 : f32;\nvar<private> nodeVar169 : f32;\nvar<private> nodeVar170 : f32;\nvar<private> nodeVar171 : f32;\nvar<private> nodeVar172 : f32;\nvar<private> nodeVar173 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar174 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar175 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar176 : vec3<f32>;\nvar<private> nodeVar177 : f32;\nvar<private> nodeVar178 : f32;\nvar<private> nodeVar179 : f32;\nvar<private> nodeVar180 : vec3<f32>;\nvar<private> nodeVar181 : vec3<f32>;\nvar<private> nodeVar182 : vec3<f32>;\nvar<private> nodeVar183 : vec3<f32>;\nvar<private> nodeVar184 : vec3<f32>;\nvar<private> nodeVar185 : vec3<f32>;\nvar<private> nodeVar186 : vec3<f32>;\nvar<private> nodeVar187 : vec3<f32>;\nvar<private> nodeVar188 : vec4<f32>;\n\n// codes\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\nfn roughnessToMip ( roughness : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = 0.0;\n\n\tif ( ( roughness >= 0.8 ) ) {\n\n\t\tnodeVar0 = ( ( ( ( 1.0 - roughness ) * ( -1.0 - -2.0 ) ) / ( 1.0 - 0.8 ) ) + -2.0 );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( roughness >= 0.4 ) ) {\n\n\t\t\tnodeVar0 = ( ( ( ( 0.8 - roughness ) * ( 2.0 - -1.0 ) ) / ( 0.8 - 0.4 ) ) + -1.0 );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( roughness >= 0.305 ) ) {\n\n\t\t\t\tnodeVar0 = ( ( ( ( 0.4 - roughness ) * ( 3.0 - 2.0 ) ) / ( 0.4 - 0.305 ) ) + 2.0 );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( roughness >= 0.21 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( ( ( ( 0.305 - roughness ) * ( 4.0 - 3.0 ) ) / ( 0.305 - 0.21 ) ) + 3.0 );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\t\t\t\t\tnodeVar0 = ( -2.0 * log2( ( 1.16 * roughness ) ) );\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\nfn getFace ( direction : vec3<f32> ) -> f32 {\n\n\tvar nodeVar0 : vec3<f32>;\n\tvar nodeVar1 : f32;\n\tvar nodeVar2 : f32;\n\tvar nodeVar3 : f32;\n\tvar nodeVar4 : f32;\n\tvar nodeVar5 : f32;\n\n\tnodeVar0 = abs( direction );\n\tnodeVar1 = -1.0;\n\n\tif ( ( nodeVar0.x > nodeVar0.z ) ) {\n\n\n\t\tif ( ( nodeVar0.x > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.x > 0.0 ) ) {\n\n\t\t\t\tnodeVar2 = 0.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar2 = 3.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar2;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar3 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar3 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar3;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( nodeVar0.z > nodeVar0.y ) ) {\n\n\n\t\t\tif ( ( direction.z > 0.0 ) ) {\n\n\t\t\t\tnodeVar4 = 2.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar4 = 5.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar4;\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( direction.y > 0.0 ) ) {\n\n\t\t\t\tnodeVar5 = 1.0;\n\n\t\t\t} else {\n\n\t\t\t\tnodeVar5 = 4.0;\n\n\t\t\t}\n\n\t\t\tnodeVar1 = nodeVar5;\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn nodeVar1;\n\n}\n\nfn getUV ( direction : vec3<f32>, face : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : vec2<f32>;\n\n\tnodeVar0 = vec2<f32>( 0.0, 0.0 );\n\n\tif ( ( face == 0.0 ) ) {\n\n\t\tnodeVar0 = ( vec2<f32>( direction.z, direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\n\n\t} else {\n\n\n\t\tif ( ( face == 1.0 ) ) {\n\n\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), ( - direction.z ) ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\n\n\t\t} else {\n\n\n\t\t\tif ( ( face == 2.0 ) ) {\n\n\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\n\n\t\t\t} else {\n\n\n\t\t\t\tif ( ( face == 3.0 ) ) {\n\n\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.z ), direction.y ) / vec2<f32>( abs( direction.x ) ) );\n\t\t\t\t\t\n\n\t\t\t\t} else {\n\n\n\t\t\t\t\tif ( ( face == 4.0 ) ) {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( ( - direction.x ), direction.z ) / vec2<f32>( abs( direction.y ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t} else {\n\n\t\t\t\t\t\tnodeVar0 = ( vec2<f32>( direction.x, direction.y ) / vec2<f32>( abs( direction.z ) ) );\n\t\t\t\t\t\t\n\n\t\t\t\t\t}\n\n\t\t\t\t\t\n\n\t\t\t\t}\n\n\t\t\t\t\n\n\t\t\t}\n\n\t\t\t\n\n\t\t}\n\n\t\t\n\n\t}\n\n\n\treturn ( vec2<f32>( 0.5 ) * ( nodeVar0 + vec2<f32>( 1.0 ) ) );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform0, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform1 );\n\tDiffuseColor.w = 1.0;\n\tMetalness = object.nodeUniform2;\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar0 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( object.nodeUniform3, 0.0525 ) + max( max( nodeVar0.x, nodeVar0.y ), nodeVar0.z ) ), 1.0 );\n\tIOR = object.nodeUniform6;\n\tnodeVar1 = ( ( IOR - 1.0 ) / ( IOR + 1.0 ) );\n\tSpecularColor = ( min( ( vec3<f32>( ( nodeVar1 * nodeVar1 ) ) * object.nodeUniform7 ), vec3<f32>( 1.0, 1.0, 1.0 ) ) * vec3<f32>( object.nodeUniform8 ) );\n\tSpecularColorBlended = mix( SpecularColor, DiffuseColor.xyz, Metalness );\n\tSpecularF90 = mix( object.nodeUniform8, 1.0, Metalness );\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - object.nodeUniform2 ) ) );\n\tClearcoat = object.nodeUniform9;\n\tnodeVar2 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tClearcoatRoughness = min( ( max( object.nodeUniform10, 0.0525 ) + max( max( nodeVar2.x, nodeVar2.y ), nodeVar2.z ) ), 1.0 );\n\tEmissiveColor = ( object.nodeUniform11 * vec3<f32>( object.nodeUniform12 ) );\n\tclearcoatRadiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tclearcoatSpecularDirect = vec3<f32>( 0.0, 0.0, 0.0 );\n\tclearcoatSpecularIndirect = vec3<f32>( 0.0, 0.0, 0.0 );\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tNORMAL_normalView = normalViewGeometry;\n\tnormalView = NORMAL_normalView;\n\tnormalWorld = normalize( ( vec4<f32>( normalView, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tnodeVar3 = dot( normalWorld, normalize( render.nodeUniform16 ) );\n\tnodeVar4 = ( nodeVar3 * 0.5 );\n\tnodeVar5 = ( nodeVar4 + 0.5 );\n\tnodeVar6 = mix( render.nodeUniform13, render.nodeUniform14, nodeVar5 );\n\tnodeVar7 = ( irradiance + nodeVar6 );\n\tirradiance = nodeVar7;\n\tnodeVar8 = ( render.nodeUniform17 - render.nodeUniform18 );\n\tnodeVar9 = vec4<f32>( nodeVar8, 0.0 );\n\tnodeVar10 = ( render.cameraViewMatrix * nodeVar9 );\n\tnodeVar11 = normalize( nodeVar10.xyz );\n\tnodeVar12 = nodeVar11;\n\tnodeVar13 = dot( normalView, nodeVar12 );\n\tnodeVar14 = ( vec3<f32>( clamp( nodeVar13, 0.0, 1.0 ) ) * render.nodeUniform19 );\n\tnodeVar15 = nodeVar14;\n\tclearcoatNormalView = NORMAL_normalView;\n\tnodeVar16 = dot( clearcoatNormalView, nodeVar12 );\n\tnodeVar17 = ( vec3<f32>( clamp( nodeVar16, 0.0, 1.0 ) ) * render.nodeUniform19 );\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar18 = normalize( ( nodeVar12 + positionViewDirection ) );\n\tnodeVar19 = clamp( dot( positionViewDirection, nodeVar18 ), 0.0, 1.0 );\n\tnodeVar20 = exp2( ( ( ( nodeVar19 * -5.55473 ) - 6.98316 ) * nodeVar19 ) );\n\tnodeVar21 = ( ClearcoatRoughness * ClearcoatRoughness );\n\tnodeVar22 = ( ( ( ( vec3<f32>( 0.04, 0.04, 0.04 ) * vec3<f32>( ( 1.0 - nodeVar20 ) ) ) + vec3<f32>( ( 1.0 * nodeVar20 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar21, clamp( dot( clearcoatNormalView, nodeVar12 ), 0.0, 1.0 ), clamp( dot( clearcoatNormalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar21, clamp( dot( clearcoatNormalView, nodeVar18 ), 0.0, 1.0 ) ) ) );\n\tnodeVar23 = ( nodeVar17 * nodeVar22 );\n\tnodeVar24 = ( clearcoatSpecularDirect + nodeVar23 );\n\tclearcoatSpecularDirect = nodeVar24;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar25 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar26 = ( nodeVar15 * nodeVar25 );\n\tnodeVar27 = ( directDiffuse + nodeVar26 );\n\tdirectDiffuse = nodeVar27;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar28 = normalize( ( nodeVar12 + positionViewDirection ) );\n\tnodeVar29 = clamp( dot( positionViewDirection, nodeVar28 ), 0.0, 1.0 );\n\tnodeVar30 = exp2( ( ( ( nodeVar29 * -5.55473 ) - 6.98316 ) * nodeVar29 ) );\n\tnodeVar31 = ( Roughness * Roughness );\n\tnodeVar32 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( Roughness, clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) );\n\tnodeVar33 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( Roughness, clamp( dot( normalView, nodeVar12 ), 0.0, 1.0 ) ) );\n\tnodeVar34 = ( SpecularColorBlended + ( ( vec3<f32>( 1.0 ) - SpecularColorBlended ) * vec3<f32>( 0.047619 ) ) );\n\tnodeVar35 = ( 1.0 - ( nodeVar32.xy.x + nodeVar32.xy.y ) );\n\tnodeVar36 = ( 1.0 - ( nodeVar33.xy.x + nodeVar33.xy.y ) );\n\tnodeVar37 = ( ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar30 ) ) ) + vec3<f32>( ( 1.0 * nodeVar30 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar31, clamp( dot( normalView, nodeVar12 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar31, clamp( dot( normalView, nodeVar28 ), 0.0, 1.0 ) ) ) ) + ( ( ( ( ( ( SpecularColorBlended * vec3<f32>( nodeVar32.xy.x ) ) + vec3<f32>( ( 1.0 * nodeVar32.xy.y ) ) ) * ( ( SpecularColorBlended * vec3<f32>( nodeVar33.xy.x ) ) + vec3<f32>( ( 1.0 * nodeVar33.xy.y ) ) ) ) * nodeVar34 ) / ( ( vec3<f32>( 1.0 ) - ( ( vec3<f32>( ( nodeVar35 * nodeVar36 ) ) * nodeVar34 ) * nodeVar34 ) ) + vec3<f32>( 0.000001 ) ) ) * vec3<f32>( ( nodeVar35 * nodeVar36 ) ) ) );\n\tnodeVar38 = ( nodeVar15 * nodeVar37 );\n\tnodeVar39 = ( directSpecular + nodeVar38 );\n\tdirectSpecular = nodeVar39;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar40 = clamp( roughnessToMip( Roughness ), -2.0, object.nodeUniform22 );\n\tnodeVar41 = floor( nodeVar40 );\n\tnodeVar42 = nodeVar41;\n\tnodeVar43 = normalize( ( render.cameraWorldMatrix * vec4<f32>( normalize( mix( reflect( ( - positionViewDirection ), normalView ), normalView, ( ( ( Roughness * Roughness ) * Roughness ) * Roughness ) ) ), 0.0 ) ).xyz );\n\tnodeVar44 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar43.x, ( - nodeVar43.y ), nodeVar43.z ), 1.0 ) ).xyz );\n\tnodeVar45 = max( ( 4.0 - nodeVar42 ), 0.0 );\n\tnodeVar42 = max( nodeVar42, 4.0 );\n\tnodeVar46 = exp2( nodeVar42 );\n\tnodeVar47 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar43.x, ( - nodeVar43.y ), nodeVar43.z ), 1.0 ) ).xyz, nodeVar44 ) * vec2<f32>( ( nodeVar46 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar44 > 2.0 ) ) {\n\n\t\tnodeVar47.y = ( nodeVar47.y + nodeVar46 );\n\t\tnodeVar44 = ( nodeVar44 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar47.x = ( nodeVar47.x + ( nodeVar44 * nodeVar46 ) );\n\tnodeVar47.x = ( nodeVar47.x + ( nodeVar45 * ( 3.0 * 16.0 ) ) );\n\tnodeVar47.y = ( nodeVar47.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar46 ) ) );\n\tnodeVar47.x = ( nodeVar47.x * object.nodeUniform25 );\n\tnodeVar47.y = ( nodeVar47.y * object.nodeUniform26 );\n\tnodeVar48 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar47, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar49 = nodeVar48.xyz;\n\tnodeVar50 = fract( nodeVar40 );\n\n\tif ( ( nodeVar50 != 0.0 ) ) {\n\n\t\tnodeVar51 = ( nodeVar41 + 1.0 );\n\t\tnodeVar52 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar43.x, ( - nodeVar43.y ), nodeVar43.z ), 1.0 ) ).xyz );\n\t\tnodeVar53 = max( ( 4.0 - nodeVar51 ), 0.0 );\n\t\tnodeVar51 = max( nodeVar51, 4.0 );\n\t\tnodeVar54 = exp2( nodeVar51 );\n\t\tnodeVar55 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar43.x, ( - nodeVar43.y ), nodeVar43.z ), 1.0 ) ).xyz, nodeVar52 ) * vec2<f32>( ( nodeVar54 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar52 > 2.0 ) ) {\n\n\t\t\tnodeVar55.y = ( nodeVar55.y + nodeVar54 );\n\t\t\tnodeVar52 = ( nodeVar52 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar55.x = ( nodeVar55.x + ( nodeVar52 * nodeVar54 ) );\n\t\tnodeVar55.x = ( nodeVar55.x + ( nodeVar53 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar55.y = ( nodeVar55.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar54 ) ) );\n\t\tnodeVar55.x = ( nodeVar55.x * object.nodeUniform25 );\n\t\tnodeVar55.y = ( nodeVar55.y * object.nodeUniform26 );\n\t\tnodeVar56 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar55, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar57 = nodeVar56.xyz;\n\t\tnodeVar49 = mix( nodeVar49, nodeVar57, nodeVar50 );\n\t\t\n\n\t}\n\n\tnodeVar58 = ( radiance + ( nodeVar49 * vec3<f32>( object.nodeUniform28 ) ) );\n\tradiance = nodeVar58;\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar59 = clamp( roughnessToMip( 1.0 ), -2.0, object.nodeUniform22 );\n\tnodeVar60 = floor( nodeVar59 );\n\tnodeVar61 = nodeVar60;\n\tnodeVar62 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( normalWorld.x, ( - normalWorld.y ), normalWorld.z ), 1.0 ) ).xyz );\n\tnodeVar63 = max( ( 4.0 - nodeVar61 ), 0.0 );\n\tnodeVar61 = max( nodeVar61, 4.0 );\n\tnodeVar64 = exp2( nodeVar61 );\n\tnodeVar65 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( normalWorld.x, ( - normalWorld.y ), normalWorld.z ), 1.0 ) ).xyz, nodeVar62 ) * vec2<f32>( ( nodeVar64 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar62 > 2.0 ) ) {\n\n\t\tnodeVar65.y = ( nodeVar65.y + nodeVar64 );\n\t\tnodeVar62 = ( nodeVar62 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar65.x = ( nodeVar65.x + ( nodeVar62 * nodeVar64 ) );\n\tnodeVar65.x = ( nodeVar65.x + ( nodeVar63 * ( 3.0 * 16.0 ) ) );\n\tnodeVar65.y = ( nodeVar65.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar64 ) ) );\n\tnodeVar65.x = ( nodeVar65.x * object.nodeUniform25 );\n\tnodeVar65.y = ( nodeVar65.y * object.nodeUniform26 );\n\tnodeVar66 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar65, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar67 = nodeVar66.xyz;\n\tnodeVar68 = fract( nodeVar59 );\n\n\tif ( ( nodeVar68 != 0.0 ) ) {\n\n\t\tnodeVar69 = ( nodeVar60 + 1.0 );\n\t\tnodeVar70 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( normalWorld.x, ( - normalWorld.y ), normalWorld.z ), 1.0 ) ).xyz );\n\t\tnodeVar71 = max( ( 4.0 - nodeVar69 ), 0.0 );\n\t\tnodeVar69 = max( nodeVar69, 4.0 );\n\t\tnodeVar72 = exp2( nodeVar69 );\n\t\tnodeVar73 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( normalWorld.x, ( - normalWorld.y ), normalWorld.z ), 1.0 ) ).xyz, nodeVar70 ) * vec2<f32>( ( nodeVar72 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar70 > 2.0 ) ) {\n\n\t\t\tnodeVar73.y = ( nodeVar73.y + nodeVar72 );\n\t\t\tnodeVar70 = ( nodeVar70 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar73.x = ( nodeVar73.x + ( nodeVar70 * nodeVar72 ) );\n\t\tnodeVar73.x = ( nodeVar73.x + ( nodeVar71 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar73.y = ( nodeVar73.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar72 ) ) );\n\t\tnodeVar73.x = ( nodeVar73.x * object.nodeUniform25 );\n\t\tnodeVar73.y = ( nodeVar73.y * object.nodeUniform26 );\n\t\tnodeVar74 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar73, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar75 = nodeVar74.xyz;\n\t\tnodeVar67 = mix( nodeVar67, nodeVar75, nodeVar68 );\n\t\t\n\n\t}\n\n\tnodeVar76 = ( iblIrradiance + ( ( nodeVar67 * vec3<f32>( 3.141592653589793 ) ) * vec3<f32>( object.nodeUniform28 ) ) );\n\tiblIrradiance = nodeVar76;\n\tnodeVar77 = clamp( roughnessToMip( ClearcoatRoughness ), -2.0, object.nodeUniform22 );\n\tnodeVar78 = floor( nodeVar77 );\n\tnodeVar79 = nodeVar78;\n\tnodeVar80 = normalize( ( render.cameraWorldMatrix * vec4<f32>( normalize( mix( reflect( ( - positionViewDirection ), clearcoatNormalView ), clearcoatNormalView, ( ( ( ClearcoatRoughness * ClearcoatRoughness ) * ClearcoatRoughness ) * ClearcoatRoughness ) ) ), 0.0 ) ).xyz );\n\tnodeVar81 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar80.x, ( - nodeVar80.y ), nodeVar80.z ), 1.0 ) ).xyz );\n\tnodeVar82 = max( ( 4.0 - nodeVar79 ), 0.0 );\n\tnodeVar79 = max( nodeVar79, 4.0 );\n\tnodeVar83 = exp2( nodeVar79 );\n\tnodeVar84 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar80.x, ( - nodeVar80.y ), nodeVar80.z ), 1.0 ) ).xyz, nodeVar81 ) * vec2<f32>( ( nodeVar83 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\tif ( ( nodeVar81 > 2.0 ) ) {\n\n\t\tnodeVar84.y = ( nodeVar84.y + nodeVar83 );\n\t\tnodeVar81 = ( nodeVar81 - 3.0 );\n\t\t\n\n\t}\n\n\tnodeVar84.x = ( nodeVar84.x + ( nodeVar81 * nodeVar83 ) );\n\tnodeVar84.x = ( nodeVar84.x + ( nodeVar82 * ( 3.0 * 16.0 ) ) );\n\tnodeVar84.y = ( nodeVar84.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar83 ) ) );\n\tnodeVar84.x = ( nodeVar84.x * object.nodeUniform25 );\n\tnodeVar84.y = ( nodeVar84.y * object.nodeUniform26 );\n\tnodeVar85 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar84, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\tnodeVar86 = nodeVar85.xyz;\n\tnodeVar87 = fract( nodeVar77 );\n\n\tif ( ( nodeVar87 != 0.0 ) ) {\n\n\t\tnodeVar88 = ( nodeVar78 + 1.0 );\n\t\tnodeVar89 = getFace( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar80.x, ( - nodeVar80.y ), nodeVar80.z ), 1.0 ) ).xyz );\n\t\tnodeVar90 = max( ( 4.0 - nodeVar88 ), 0.0 );\n\t\tnodeVar88 = max( nodeVar88, 4.0 );\n\t\tnodeVar91 = exp2( nodeVar88 );\n\t\tnodeVar92 = ( ( getUV( ( object.nodeUniform23 * vec4<f32>( vec3<f32>( nodeVar80.x, ( - nodeVar80.y ), nodeVar80.z ), 1.0 ) ).xyz, nodeVar89 ) * vec2<f32>( ( nodeVar91 - 2.0 ) ) ) + vec2<f32>( 1.0 ) );\n\n\t\tif ( ( nodeVar89 > 2.0 ) ) {\n\n\t\t\tnodeVar92.y = ( nodeVar92.y + nodeVar91 );\n\t\t\tnodeVar89 = ( nodeVar89 - 3.0 );\n\t\t\t\n\n\t\t}\n\n\t\tnodeVar92.x = ( nodeVar92.x + ( nodeVar89 * nodeVar91 ) );\n\t\tnodeVar92.x = ( nodeVar92.x + ( nodeVar90 * ( 3.0 * 16.0 ) ) );\n\t\tnodeVar92.y = ( nodeVar92.y + ( 4.0 * ( exp2( object.nodeUniform22 ) - nodeVar91 ) ) );\n\t\tnodeVar92.x = ( nodeVar92.x * object.nodeUniform25 );\n\t\tnodeVar92.y = ( nodeVar92.y * object.nodeUniform26 );\n\t\tnodeVar93 = textureSampleGrad( nodeUniform27, nodeUniform27_sampler, nodeVar92, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) );\n\t\tnodeVar94 = nodeVar93.xyz;\n\t\tnodeVar86 = mix( nodeVar86, nodeVar94, nodeVar87 );\n\t\t\n\n\t}\n\n\tnodeVar95 = ( clearcoatRadiance + ( nodeVar86 * vec3<f32>( object.nodeUniform28 ) ) );\n\tclearcoatRadiance = nodeVar95;\n\tnodeVar96 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar97 = ( irradiance * nodeVar96 );\n\tnodeVar98 = nodeVar97;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar99 = ( indirectDiffuse + nodeVar98 );\n\tindirectDiffuse = nodeVar99;\n\tnodeVar100 = dot( clearcoatNormalView, positionViewDirection );\n\tnodeVar101 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( ClearcoatRoughness, clamp( nodeVar100, 0.0, 1.0 ) ) );\n\tnodeVar102 = ( ( vec3<f32>( 0.04, 0.04, 0.04 ) * vec3<f32>( nodeVar101.xy.x ) ) + vec3<f32>( ( 1.0 * nodeVar101.xy.y ) ) );\n\tnodeVar103 = ( clearcoatRadiance * nodeVar102 );\n\tnodeVar104 = ( clearcoatSpecularIndirect + nodeVar103 );\n\tclearcoatSpecularIndirect = nodeVar104;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar105 = dot( normalView, positionViewDirection );\n\tnodeVar106 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( Roughness, clamp( nodeVar105, 0.0, 1.0 ) ) );\n\tnodeVar107 = ( SpecularColor * vec3<f32>( nodeVar106.xy.x ) );\n\tnodeVar108 = ( SpecularF90 * nodeVar106.xy.y );\n\tnodeVar109 = ( nodeVar107 + vec3<f32>( nodeVar108 ) );\n\tnodeVar110 = ( singleScatteringDielectric + nodeVar109 );\n\tsingleScatteringDielectric = nodeVar110;\n\tnodeVar111 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar112 = nodeVar111;\n\tnodeVar113 = ( nodeVar112 * vec3<f32>( 0.047619 ) );\n\tnodeVar114 = ( SpecularColor + nodeVar113 );\n\tnodeVar115 = ( nodeVar109 * nodeVar114 );\n\tnodeVar116 = ( nodeVar106.xy.x + nodeVar106.xy.y );\n\tnodeVar117 = ( 1.0 - nodeVar116 );\n\tnodeVar118 = nodeVar117;\n\tnodeVar119 = ( vec3<f32>( nodeVar118 ) * nodeVar114 );\n\tnodeVar120 = ( vec3<f32>( 1.0 ) - nodeVar119 );\n\tnodeVar121 = nodeVar120;\n\tnodeVar122 = ( nodeVar115 / nodeVar121 );\n\tnodeVar123 = ( nodeVar122 * vec3<f32>( nodeVar118 ) );\n\tnodeVar124 = ( multiScatteringDielectric + nodeVar123 );\n\tmultiScatteringDielectric = nodeVar124;\n\tnodeVar125 = dot( normalView, positionViewDirection );\n\tnodeVar126 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( Roughness, clamp( nodeVar125, 0.0, 1.0 ) ) );\n\tnodeVar127 = ( DiffuseColor.xyz * vec3<f32>( nodeVar126.xy.x ) );\n\tnodeVar128 = ( SpecularF90 * nodeVar126.xy.y );\n\tnodeVar129 = ( nodeVar127 + vec3<f32>( nodeVar128 ) );\n\tnodeVar130 = ( singleScatteringMetallic + nodeVar129 );\n\tsingleScatteringMetallic = nodeVar130;\n\tnodeVar131 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar132 = nodeVar131;\n\tnodeVar133 = ( nodeVar132 * vec3<f32>( 0.047619 ) );\n\tnodeVar134 = ( DiffuseColor.xyz + nodeVar133 );\n\tnodeVar135 = ( nodeVar129 * nodeVar134 );\n\tnodeVar136 = ( nodeVar126.xy.x + nodeVar126.xy.y );\n\tnodeVar137 = ( 1.0 - nodeVar136 );\n\tnodeVar138 = nodeVar137;\n\tnodeVar139 = ( vec3<f32>( nodeVar138 ) * nodeVar134 );\n\tnodeVar140 = ( vec3<f32>( 1.0 ) - nodeVar139 );\n\tnodeVar141 = nodeVar140;\n\tnodeVar142 = ( nodeVar135 / nodeVar141 );\n\tnodeVar143 = ( nodeVar142 * vec3<f32>( nodeVar138 ) );\n\tnodeVar144 = ( multiScatteringMetallic + nodeVar143 );\n\tmultiScatteringMetallic = nodeVar144;\n\tnodeVar145 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar146 = ( radiance * nodeVar145 );\n\tnodeVar147 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tnodeVar148 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar149 = ( nodeVar147 * nodeVar148 );\n\tnodeVar150 = ( nodeVar146 + nodeVar149 );\n\tnodeVar151 = nodeVar150;\n\tnodeVar152 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar153 = ( vec3<f32>( 1.0 ) - nodeVar152 );\n\tnodeVar154 = nodeVar153;\n\tnodeVar155 = ( DiffuseContribution * nodeVar154 );\n\tnodeVar156 = ( nodeVar155 * nodeVar148 );\n\tnodeVar157 = nodeVar156;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar158 = ( indirectSpecular + nodeVar151 );\n\tindirectSpecular = nodeVar158;\n\tnodeVar159 = ( indirectDiffuse + nodeVar157 );\n\tindirectDiffuse = nodeVar159;\n\tambientOcclusion = 1.0;\n\tnodeVar160 = ( clearcoatSpecularIndirect * vec3<f32>( ambientOcclusion ) );\n\tclearcoatSpecularIndirect = nodeVar160;\n\tnodeVar161 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar161;\n\tnodeVar162 = dot( normalView, positionViewDirection );\n\tnodeVar163 = ( clamp( nodeVar162, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar164 = ( Roughness * -16.0 );\n\tnodeVar165 = ( 1.0 - nodeVar164 );\n\tnodeVar166 = nodeVar165;\n\tnodeVar167 = ( - nodeVar166 );\n\tnodeVar168 = exp2( nodeVar167 );\n\tnodeVar169 = pow( nodeVar163, nodeVar168 );\n\tnodeVar170 = ( 1.0 - nodeVar169 );\n\tnodeVar171 = nodeVar170;\n\tnodeVar172 = ( ambientOcclusion - nodeVar171 );\n\tnodeVar173 = ( indirectSpecular * vec3<f32>( clamp( nodeVar172, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar173;\n\tnodeVar174 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar174;\n\tnodeVar175 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar175;\n\tnodeVar176 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar176;\n\tnodeVar177 = dot( clearcoatNormalView, positionViewDirection );\n\tnodeVar178 = clamp( nodeVar177, 0.0, 1.0 );\n\tnodeVar179 = exp2( ( ( ( nodeVar178 * -5.55473 ) - 6.98316 ) * nodeVar178 ) );\n\tnodeVar180 = ( ( vec3<f32>( 0.04, 0.04, 0.04 ) * vec3<f32>( ( 1.0 - nodeVar179 ) ) ) + vec3<f32>( ( 1.0 * nodeVar179 ) ) );\n\tnodeVar181 = ( vec3<f32>( Clearcoat ) * nodeVar180 );\n\tnodeVar182 = ( vec3<f32>( 1.0 ) - nodeVar181 );\n\tnodeVar183 = nodeVar182;\n\tnodeVar184 = ( outgoingLight * nodeVar183 );\n\tnodeVar185 = ( clearcoatSpecularDirect + clearcoatSpecularIndirect );\n\tnodeVar186 = ( nodeVar185 * vec3<f32>( Clearcoat ) );\n\tnodeVar187 = ( nodeVar184 + nodeVar186 );\n\toutgoingLight = nodeVar187;\n\tnodeVar188 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar188;\n\n\t// result\n\n\toutput.color = nodeVar188;\n\n\treturn output;\n\n}\n",
+    "computeShader": "",
+    "attributes": [
+      {
+        "name": "normal",
+        "type": "vec3",
+        "source": "geometry"
+      },
+      {
+        "name": "position",
+        "type": "vec3",
+        "source": "geometry"
+      }
+    ],
+    "bindings": [
+      {
+        "name": "render",
+        "bindings": [
+          {
+            "name": "render",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 288,
+            "access": null
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "bindings": [
+          {
+            "name": "object",
+            "kind": "uniform-buffer",
+            "visibility": 7,
+            "textureType": null,
+            "byteLength": 304,
+            "access": null
+          },
+          {
+            "name": "nodeUniform21_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform21",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          },
+          {
+            "name": "nodeUniform27_sampler",
+            "kind": "sampler",
+            "visibility": 2,
+            "textureType": null,
+            "byteLength": null,
+            "access": null,
+            "comparison": false
+          },
+          {
+            "name": "nodeUniform27",
+            "kind": "sampled-texture",
+            "visibility": 2,
+            "textureType": "2d",
+            "byteLength": null,
+            "access": "readOnly"
+          }
+        ]
+      }
+    ],
+    "uniformPlan": [
+      {
+        "name": "render",
+        "shared": true,
+        "visibility": 7,
+        "byteLength": 288,
+        "slots": [
+          {
+            "name": "cameraProjectionMatrix",
+            "offset": 0,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.projectionMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1.7367260431292009,
+                  0,
+                  0,
+                  0,
+                  0,
+                  2.6050890646938014,
+                  0,
+                  0,
+                  0,
+                  0,
+                  -1.0006671114076051,
+                  -1,
+                  0,
+                  0,
+                  -0.1000667111407605,
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "name": "cameraViewMatrix",
+            "offset": 64,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.viewMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  0.7893522173763265,
+                  -0.2032403467988396,
+                  0.5793241220216575,
+                  0,
+                  5.551115123125784e-17,
+                  0.9436158958517549,
+                  0.3310423554409473,
+                  0,
+                  -0.6139406135149204,
+                  -0.26130901731279377,
+                  0.7448452997421312,
+                  0,
+                  -1.8873791418627665e-15,
+                  -0.471807947925876,
+                  -12.248567151315047,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform14",
+            "offset": 128,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "light.colorScaled",
+              "lightIndex": 0,
+              "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  0.5682377953661487,
+                  0.8326461135428277,
+                  1.2
+                ]
+              },
+              "lightIdentity": 0
+            }
+          },
+          {
+            "name": "nodeUniform16",
+            "offset": 144,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "light.position",
+              "lightIndex": 0,
+              "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  0,
+                  1,
+                  0
+                ]
+              },
+              "lightIdentity": 0
+            }
+          },
+          {
+            "name": "nodeUniform13",
+            "offset": 160,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "light.colorScaled",
+              "property": "groundColor",
+              "lightIndex": 0,
+              "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  0.009627831579024675,
+                  0.009627831579024675,
+                  0.017332612310675358
+                ]
+              },
+              "lightIdentity": 0
+            }
+          },
+          {
+            "name": "nodeUniform19",
+            "offset": 176,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "light.colorScaled",
+              "lightIndex": 1,
+              "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  3,
+                  2.3738938209844656,
+                  1.6750211688773904
+                ]
+              },
+              "lightIdentity": 1
+            }
+          },
+          {
+            "name": "nodeUniform17",
+            "offset": 192,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "light.position",
+              "lightIndex": 1,
+              "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  4,
+                  8,
+                  5
+                ]
+              },
+              "lightIdentity": 1
+            }
+          },
+          {
+            "name": "nodeUniform18",
+            "offset": 208,
+            "size": 12,
+            "dtype": "vec3",
+            "source": {
+              "kind": "light.targetPosition",
+              "lightIndex": 1,
+              "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+              "valueSnapshot": {
+                "type": "vec3",
+                "data": [
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "lightIdentity": 1
+            }
+          },
+          {
+            "name": "cameraWorldMatrix",
+            "offset": 224,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "camera.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  0.7893522173763263,
+                  1.3877787807814457e-17,
+                  -0.6139406135149204,
+                  0,
+                  -0.20324034679883946,
+                  0.9436158958517546,
+                  -0.26130901731279366,
+                  0,
+                  0.5793241220216574,
+                  0.3310423554409472,
+                  0.7448452997421312,
+                  0,
+                  7,
+                  4.5,
+                  9,
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        "textures": [],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "render",
+            "byteLength": 288,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "cameraProjectionMatrix",
+                "offset": 0,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.projectionMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1.7367260431292009,
+                      0,
+                      0,
+                      0,
+                      0,
+                      2.6050890646938014,
+                      0,
+                      0,
+                      0,
+                      0,
+                      -1.0006671114076051,
+                      -1,
+                      0,
+                      0,
+                      -0.1000667111407605,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "cameraViewMatrix",
+                "offset": 64,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.viewMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      0.7893522173763265,
+                      -0.2032403467988396,
+                      0.5793241220216575,
+                      0,
+                      5.551115123125784e-17,
+                      0.9436158958517549,
+                      0.3310423554409473,
+                      0,
+                      -0.6139406135149204,
+                      -0.26130901731279377,
+                      0.7448452997421312,
+                      0,
+                      -1.8873791418627665e-15,
+                      -0.471807947925876,
+                      -12.248567151315047,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform14",
+                "offset": 128,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "light.colorScaled",
+                  "lightIndex": 0,
+                  "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      0.5682377953661487,
+                      0.8326461135428277,
+                      1.2
+                    ]
+                  },
+                  "lightIdentity": 0
+                }
+              },
+              {
+                "name": "nodeUniform16",
+                "offset": 144,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "light.position",
+                  "lightIndex": 0,
+                  "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      0,
+                      1,
+                      0
+                    ]
+                  },
+                  "lightIdentity": 0
+                }
+              },
+              {
+                "name": "nodeUniform13",
+                "offset": 160,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "light.colorScaled",
+                  "property": "groundColor",
+                  "lightIndex": 0,
+                  "lightUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      0.009627831579024675,
+                      0.009627831579024675,
+                      0.017332612310675358
+                    ]
+                  },
+                  "lightIdentity": 0
+                }
+              },
+              {
+                "name": "nodeUniform19",
+                "offset": 176,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "light.colorScaled",
+                  "lightIndex": 1,
+                  "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      3,
+                      2.3738938209844656,
+                      1.6750211688773904
+                    ]
+                  },
+                  "lightIdentity": 1
+                }
+              },
+              {
+                "name": "nodeUniform17",
+                "offset": 192,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "light.position",
+                  "lightIndex": 1,
+                  "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      4,
+                      8,
+                      5
+                    ]
+                  },
+                  "lightIdentity": 1
+                }
+              },
+              {
+                "name": "nodeUniform18",
+                "offset": 208,
+                "size": 12,
+                "dtype": "vec3",
+                "source": {
+                  "kind": "light.targetPosition",
+                  "lightIndex": 1,
+                  "lightUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+                  "valueSnapshot": {
+                    "type": "vec3",
+                    "data": [
+                      0,
+                      0,
+                      0
+                    ]
+                  },
+                  "lightIdentity": 1
+                }
+              },
+              {
+                "name": "cameraWorldMatrix",
+                "offset": 224,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "camera.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      0.7893522173763263,
+                      1.3877787807814457e-17,
+                      -0.6139406135149204,
+                      0,
+                      -0.20324034679883946,
+                      0.9436158958517546,
+                      -0.26130901731279366,
+                      0,
+                      0.5793241220216574,
+                      0.3310423554409472,
+                      0.7448452997421312,
+                      0,
+                      7,
+                      4.5,
+                      9,
+                      1
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "object",
+        "shared": false,
+        "visibility": 7,
+        "byteLength": 304,
+        "slots": [
+          {
+            "name": "nodeUniform0",
+            "offset": 0,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "material.color",
+              "property": "color",
+              "uniformType": "color",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  0.3813260114221238,
+                  0.014443843592229466,
+                  0.04666508633021928
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform1",
+            "offset": 12,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.opacity",
+              "property": "opacity",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              }
+            }
+          },
+          {
+            "name": "nodeUniform2",
+            "offset": 16,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.metalness",
+              "property": "metalness",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.5
+              }
+            }
+          },
+          {
+            "name": "nodeUniform3",
+            "offset": 20,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.roughness",
+              "property": "roughness",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.22
+              }
+            }
+          },
+          {
+            "name": "nodeUniform5",
+            "offset": 32,
+            "size": 48,
+            "dtype": "mat3",
+            "source": {
+              "kind": "object.normalMatrix",
+              "valueSnapshot": {
+                "type": "mat3",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform6",
+            "offset": 80,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.ior",
+              "property": "ior",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1.5
+              }
+            }
+          },
+          {
+            "name": "nodeUniform7",
+            "offset": 96,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "material.specularColor",
+              "property": "specularColor",
+              "uniformType": "color",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  1,
+                  1,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform8",
+            "offset": 108,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.specularIntensity",
+              "property": "specularIntensity",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              }
+            }
+          },
+          {
+            "name": "nodeUniform9",
+            "offset": 112,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.clearcoat",
+              "property": "clearcoat",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              }
+            }
+          },
+          {
+            "name": "nodeUniform10",
+            "offset": 116,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.clearcoatRoughness",
+              "property": "clearcoatRoughness",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.12
+              }
+            }
+          },
+          {
+            "name": "nodeUniform11",
+            "offset": 128,
+            "size": 12,
+            "dtype": "color",
+            "source": {
+              "kind": "material.emissive",
+              "property": "emissive",
+              "uniformType": "color",
+              "valueSnapshot": {
+                "type": "color",
+                "data": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform12",
+            "offset": 140,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "material.emissiveIntensity",
+              "property": "emissiveIntensity",
+              "uniformType": "float",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1
+              }
+            }
+          },
+          {
+            "name": "nodeUniform20",
+            "offset": 144,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "object.worldMatrix",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  -1.1,
+                  0.28,
+                  -2,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform22",
+            "offset": 208,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "pmrem.maxMip",
+              "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 6
+              }
+            }
+          },
+          {
+            "name": "nodeUniform23",
+            "offset": 224,
+            "size": 64,
+            "dtype": "mat4",
+            "source": {
+              "kind": "environment.rotation",
+              "valueSnapshot": {
+                "type": "mat4",
+                "data": [
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0,
+                  0,
+                  0,
+                  1
+                ]
+              }
+            }
+          },
+          {
+            "name": "nodeUniform25",
+            "offset": 288,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "pmrem.texelWidth",
+              "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.002976190476190476
+              }
+            }
+          },
+          {
+            "name": "nodeUniform26",
+            "offset": 292,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "pmrem.texelHeight",
+              "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 0.00390625
+              }
+            }
+          },
+          {
+            "name": "nodeUniform28",
+            "offset": 296,
+            "size": 4,
+            "dtype": "number",
+            "source": {
+              "kind": "environment.intensity",
+              "valueSnapshot": {
+                "type": "number",
+                "data": 1.5
+              }
+            }
+          }
+        ],
+        "textures": [
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform21_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "builtin.dfgLUT"
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform21",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "builtin.dfgLUT"
+            }
+          },
+          {
+            "bindingKind": "sampler",
+            "name": "nodeUniform27_sampler",
+            "textureType": "unknown",
+            "access": null,
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+              "textureName": "performance-room-environment",
+              "mapping": 306,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "srgb-linear",
+              "flipY": false,
+              "imageWidth": 336,
+              "imageHeight": 256,
+              "imageDepth": 1
+            },
+            "comparison": false
+          },
+          {
+            "bindingKind": "sampled-texture",
+            "name": "nodeUniform27",
+            "textureType": "2d",
+            "access": "readOnly",
+            "visibility": 2,
+            "source": {
+              "kind": "artifact.texture",
+              "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+              "textureName": "performance-room-environment",
+              "mapping": 306,
+              "wrapS": 1001,
+              "wrapT": 1001,
+              "magFilter": 1006,
+              "minFilter": 1006,
+              "anisotropy": 1,
+              "generateMipmaps": false,
+              "colorSpace": "srgb-linear",
+              "flipY": false,
+              "imageWidth": 336,
+              "imageHeight": 256,
+              "imageDepth": 1
+            }
+          }
+        ],
+        "storageBuffers": [],
+        "orderedBindings": [
+          {
+            "type": "ubo",
+            "name": "object",
+            "byteLength": 304,
+            "visibility": 7,
+            "slots": [
+              {
+                "name": "nodeUniform0",
+                "offset": 0,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "material.color",
+                  "property": "color",
+                  "uniformType": "color",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      0.3813260114221238,
+                      0.014443843592229466,
+                      0.04666508633021928
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform1",
+                "offset": 12,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.opacity",
+                  "property": "opacity",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform2",
+                "offset": 16,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.metalness",
+                  "property": "metalness",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.5
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform3",
+                "offset": 20,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.roughness",
+                  "property": "roughness",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.22
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform5",
+                "offset": 32,
+                "size": 48,
+                "dtype": "mat3",
+                "source": {
+                  "kind": "object.normalMatrix",
+                  "valueSnapshot": {
+                    "type": "mat3",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform6",
+                "offset": 80,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.ior",
+                  "property": "ior",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1.5
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform7",
+                "offset": 96,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "material.specularColor",
+                  "property": "specularColor",
+                  "uniformType": "color",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform8",
+                "offset": 108,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.specularIntensity",
+                  "property": "specularIntensity",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform9",
+                "offset": 112,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.clearcoat",
+                  "property": "clearcoat",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform10",
+                "offset": 116,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.clearcoatRoughness",
+                  "property": "clearcoatRoughness",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.12
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform11",
+                "offset": 128,
+                "size": 12,
+                "dtype": "color",
+                "source": {
+                  "kind": "material.emissive",
+                  "property": "emissive",
+                  "uniformType": "color",
+                  "valueSnapshot": {
+                    "type": "color",
+                    "data": [
+                      0,
+                      0,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform12",
+                "offset": 140,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "material.emissiveIntensity",
+                  "property": "emissiveIntensity",
+                  "uniformType": "float",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform20",
+                "offset": 144,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "object.worldMatrix",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      -1.1,
+                      0.28,
+                      -2,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform22",
+                "offset": 208,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "pmrem.maxMip",
+                  "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 6
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform23",
+                "offset": 224,
+                "size": 64,
+                "dtype": "mat4",
+                "source": {
+                  "kind": "environment.rotation",
+                  "valueSnapshot": {
+                    "type": "mat4",
+                    "data": [
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform25",
+                "offset": 288,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "pmrem.texelWidth",
+                  "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.002976190476190476
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform26",
+                "offset": 292,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "pmrem.texelHeight",
+                  "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 0.00390625
+                  }
+                }
+              },
+              {
+                "name": "nodeUniform28",
+                "offset": 296,
+                "size": 4,
+                "dtype": "number",
+                "source": {
+                  "kind": "environment.intensity",
+                  "valueSnapshot": {
+                    "type": "number",
+                    "data": 1.5
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform21_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "builtin.dfgLUT"
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform21",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "builtin.dfgLUT"
+              }
+            }
+          },
+          {
+            "type": "sampler",
+            "ref": {
+              "bindingKind": "sampler",
+              "name": "nodeUniform27_sampler",
+              "textureType": "unknown",
+              "access": null,
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+                "textureName": "performance-room-environment",
+                "mapping": 306,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "srgb-linear",
+                "flipY": false,
+                "imageWidth": 336,
+                "imageHeight": 256,
+                "imageDepth": 1
+              },
+              "comparison": false
+            }
+          },
+          {
+            "type": "sampled-texture",
+            "ref": {
+              "bindingKind": "sampled-texture",
+              "name": "nodeUniform27",
+              "textureType": "2d",
+              "access": "readOnly",
+              "visibility": 2,
+              "source": {
+                "kind": "artifact.texture",
+                "textureUuid": "63925c5a-c262-427a-8a4b-a7e1d5dfb7e9",
+                "textureName": "performance-room-environment",
+                "mapping": 306,
+                "wrapS": 1001,
+                "wrapT": 1001,
+                "magFilter": 1006,
+                "minFilter": 1006,
+                "anisotropy": 1,
+                "generateMipmaps": false,
+                "colorSpace": "srgb-linear",
+                "flipY": false,
+                "imageWidth": 336,
+                "imageHeight": 256,
+                "imageDepth": 1
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "defaults": {
+      "color": {
+        "type": "color",
+        "data": [
+          0.3813260114221238,
+          0.014443843592229466,
+          0.04666508633021928
+        ]
+      },
+      "opacity": 1,
+      "metalness": 0.5,
+      "roughness": 0.22,
+      "ior": 1.5,
+      "specularColor": {
+        "type": "color",
+        "data": [
+          1,
+          1,
+          1
+        ]
+      },
+      "specularIntensity": 1,
+      "clearcoat": 1,
+      "clearcoatRoughness": 0.12,
+      "emissive": {
+        "type": "color",
+        "data": [
+          0,
+          0,
+          0
+        ]
+      },
+      "emissiveIntensity": 1
+    },
+    "renderState": {
+      "transparent": false,
+      "opacity": 1,
+      "alphaTest": 0,
+      "alphaHash": false,
+      "alphaToCoverage": false,
+      "side": 0,
+      "depthTest": true,
+      "depthWrite": true,
+      "depthFunc": 3,
+      "blending": 1,
+      "blendSrc": 204,
+      "blendDst": 205,
+      "blendEquation": 100,
+      "colorWrite": true,
+      "premultipliedAlpha": false,
+      "dithering": false,
+      "toneMapped": true,
+      "vertexColors": false,
+      "wireframe": false,
+      "wireframeLinewidth": 1,
+      "flatShading": false,
+      "fog": true,
+      "lights": true,
+      "allowOverride": true,
+      "forceSinglePass": false,
+      "polygonOffset": false,
+      "polygonOffsetFactor": 0,
+      "polygonOffsetUnits": 0,
+      "stencilWrite": false,
+      "stencilWriteMask": 255,
+      "stencilFunc": 519,
+      "stencilRef": 0,
+      "stencilFuncMask": 255,
+      "stencilFail": 7680,
+      "stencilZFail": 7680,
+      "stencilZPass": 7680
+    },
+    "meta": {
+      "updateNodes": 26,
+      "updateBeforeNodes": 1,
+      "updateAfterNodes": 0
+    },
+    "lightIdentities": [
+      {
+        "schema": "light-identity@1",
+        "captureUuid": "debc1d5d-4c27-4073-94a9-1486de1c0a77",
+        "captureIndex": 0,
+        "type": "HemisphereLight",
+        "snapshot": {
+          "position": [
+            0,
+            1,
+            0
+          ],
+          "color": [
+            0.4735314961384573,
+            0.6938717612856897,
+            1
+          ],
+          "intensity": 1.2,
+          "castShadow": false
+        }
+      },
+      {
+        "schema": "light-identity@1",
+        "captureUuid": "e6b05918-9608-4f11-b551-c1849c81b422",
+        "captureIndex": 1,
+        "type": "DirectionalLight",
+        "snapshot": {
+          "position": [
+            4,
+            8,
+            5
+          ],
+          "targetPosition": [
+            0,
+            0,
+            0
+          ],
+          "color": [
+            1,
+            0.7912979403281551,
+            0.5583403896257968
+          ],
+          "intensity": 3,
+          "castShadow": false,
+          "shadowType": "DirectionalLightShadow",
+          "cameraType": "OrthographicCamera"
+        }
+      }
+    ],
+    "renderContextSelectors": [
+      "{\"camera\":{\"array\":false,\"arrayViewCount\":0,\"coordinateSystem\":2001,\"projection\":null},\"clipping\":{\"contextIntersection\":null,\"intersection\":false,\"intersectionPlaneCount\":0,\"materialPlaneCount\":0,\"shadowPass\":false,\"shadows\":false,\"unionPlaneCount\":0},\"lights\":[{\"castShadow\":false,\"colorNode\":false,\"map\":null,\"shadow\":null,\"type\":\"HemisphereLight\"},{\"castShadow\":false,\"colorNode\":false,\"map\":null,\"shadow\":{\"cameraType\":\"orthographic\",\"type\":\"DirectionalLightShadow\"},\"type\":\"DirectionalLight\"}],\"material\":{\"alphaHash\":false,\"alphaToCoverage\":false,\"dashed\":false,\"dithering\":false,\"flatShading\":false,\"fog\":true,\"forceSinglePass\":false,\"lights\":true,\"maps\":[],\"normalMapType\":0,\"positive\":{\"alphaTest\":false,\"anisotropy\":false,\"clearcoat\":true,\"dispersion\":false,\"iridescence\":false,\"sheen\":false,\"transmission\":false},\"premultipliedAlpha\":false,\"shadowSide\":null,\"side\":0,\"sizeAttenuation\":true,\"transparent\":false,\"vertexColors\":false,\"wireframe\":false,\"worldUnits\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"boneCount\":0,\"geometry\":{\"attributes\":[[\"normal\",{\"itemSize\":3,\"normalized\":false}],[\"position\",{\"itemSize\":3,\"normalized\":false}],[\"uv\",{\"itemSize\":2,\"normalized\":false}]],\"index\":true,\"morphAttributes\":[],\"morphTargetsRelative\":false},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"morphInfluences\":false,\"receiveShadow\":false,\"skinned\":false},\"renderer\":{\"backend\":{\"compatibilityMode\":false,\"kind\":\"webgpu\"},\"contextNode\":true,\"coordinateSystem\":2001,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"shadowMap\":{\"enabled\":false,\"type\":1}},\"scene\":{\"environment\":{\"channel\":0,\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\",\"magFilter\":1006,\"mapping\":306,\"minFilter\":1006,\"wrapS\":1001,\"wrapT\":1001},\"environmentNode\":false,\"fog\":null,\"overrideMaterial\":null},\"target\":{\"activeCubeFace\":0,\"activeMipmapLevel\":0,\"color\":true,\"colors\":[{\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\"}],\"depth\":true,\"depthTexture\":{\"colorSpace\":\"\",\"dataType\":1014,\"format\":1026,\"internalFormat\":null,\"kind\":\"depth\"},\"multiview\":false,\"sampleCount\":4,\"stencil\":false,\"surface\":\"output-intermediate\"},\"version\":\"render-object-selector@1\"}"
+    ],
+    "materialUuid": "9bde4535-391c-48b8-a83e-a636ed36f0e0",
+    "userMaterialUuid": "9bde4535-391c-48b8-a83e-a636ed36f0e0",
+    "captureClock": 0.08990000009536743,
+    "sourceGraphHash": "75fd800c2873a2c53f7d3f7f372a53f634d21a64a0a9b7433915bb103a74c8f3",
+    "sourceHashVersion": "0.1.0",
+    "sourceThreeVersion": "0.185.1",
+    "renderContextSignature": "{\"camera\":{\"array\":false,\"coordinateSystem\":2001,\"layers\":1,\"orthographic\":false,\"perspective\":true,\"type\":\"PerspectiveCamera\",\"viewEnabled\":false,\"views\":[]},\"clipping\":{\"groups\":[],\"intersection\":false,\"materialPlaneCount\":0,\"shadows\":false},\"mrt\":null,\"object\":{\"batchColors\":false,\"batched\":false,\"castShadow\":false,\"geometry\":{\"attributes\":[[\"normal\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"position\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":3,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}],[\"uv\",{\"arrayType\":\"Float32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":2,\"normalized\":false,\"type\":\"Float32BufferAttribute\"}]],\"index\":{\"arrayType\":\"Uint32Array\",\"gpuType\":1015,\"instanced\":false,\"itemSize\":1,\"normalized\":false,\"type\":\"Uint16BufferAttribute\"},\"morphAttributes\":[],\"morphTargetsRelative\":false,\"type\":\"SphereGeometry\"},\"instanceColor\":false,\"instanceMatrix\":false,\"instanced\":false,\"receiveShadow\":false,\"skinned\":false,\"type\":\"Mesh\",\"visible\":true},\"renderTarget\":null,\"renderer\":{\"backend\":\"WebGPUBackend\",\"coordinateSystem\":2001,\"currentSamples\":0,\"depth\":true,\"highPrecision\":null,\"logarithmicDepthBuffer\":false,\"outputColorSpace\":\"srgb\",\"shadowMap\":{\"enabled\":false,\"type\":1},\"toneMapping\":4,\"transparent\":true,\"type\":\"WebGPURenderer\"},\"scene\":{\"backgroundNode\":null,\"environment\":{\"channel\":0,\"colorSpace\":\"srgb-linear\",\"dataType\":1016,\"format\":1023,\"internalFormat\":null,\"kind\":\"render-target\",\"mapping\":306,\"type\":\"Texture\"},\"environmentNode\":null,\"fog\":null,\"lights\":[{\"castShadow\":false,\"colorNode\":null,\"layers\":1,\"map\":null,\"shadow\":null,\"type\":\"HemisphereLight\",\"visible\":true,\"visibleToCameraLayers\":true},{\"castShadow\":false,\"colorNode\":null,\"layers\":1,\"map\":null,\"shadow\":{\"camera\":\"OrthographicCamera\",\"type\":\"DirectionalLightShadow\"},\"type\":\"DirectionalLight\",\"visible\":true,\"visibleToCameraLayers\":true}],\"overrideMaterial\":null,\"type\":\"Scene\"},\"version\":\"render-context@0.1.0\"}",
+    "artifactContentHashVersion": "artifact-content@3",
+    "sourceValidationMode": "runtime-graph",
+    "sourceMaterial": {
+      "type": "MeshPhysicalNodeMaterial",
+      "name": "",
+      "nodeProps": [],
+      "object": {
+        "type": "Mesh",
+        "renderOrder": 0,
+        "castShadow": false,
+        "receiveShadow": false,
+        "isInstancedMesh": false,
+        "count": 1,
+        "isSkinnedMesh": false,
+        "position": [
+          -1.1,
+          0.28,
+          -2
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  }
+}

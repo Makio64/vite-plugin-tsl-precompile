@@ -492,11 +492,14 @@ const expected = [
 	'writeBytes',
 	'writeColor',
 	'writeColorRGBA',
+	'writeEnvironmentRotation',
 	'writeF32',
 	'writeI32',
 	'writeMat3',
 	'writeMat4',
 	'writeMat4FromEuler',
+	'writePMREMScalar',
+	'writeTextureUVFlip',
 	'writeU32',
 	'writeVec2',
 	'writeVec3',
@@ -673,6 +676,7 @@ async function probePage( url, label, resultsSubdir, opts = {} ) {
 		writeFileSync( resolve( resultsSubdir, `${ label }.png` ), firstShot );
 
 		const pixelEvidence = await analyzePngFrames( page, firstShot, secondShot );
+		await failureCollector.settle();
 		const browserFailures = failureCollector.failuresSince( browserFailureCheckpoint );
 		const pageErrors = browserFailures
 			.filter( failure => failure.kind === 'pageerror' )

@@ -1,78 +1,78 @@
 {
   "__aux": {
-    "post-process:95a79006ef5048dafaa592587955dfd8c943eca218fbe64c39bba25fb3457932": {
-      "file": "aux-post-process-95a79006ef50.json",
+    "post-process:94c44a749752503f9e131d738cd258f7374c2e15a5dce96ef55f306f9d6bd655": {
+      "file": "aux-post-process-94c44a749752.json",
       "shape": "post-process",
-      "configHash": "95a79006ef5048dafaa592587955dfd8c943eca218fbe64c39bba25fb3457932",
-      "hash": "b75319752a568708a14394bb776de985abf9f78b11a925b6475d481240b96fb4",
-      "threeVersion": "0.185.1",
+      "configHash": "94c44a749752503f9e131d738cd258f7374c2e15a5dce96ef55f306f9d6bd655",
+      "hash": "bd738cf38c20ef0e9eaf3f6bcea726b23674cdb104c0f32594473fa540a907b1",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:24.919Z"
+      "capturedAt": "2026-10-13T10:36:00.214Z"
     },
-    "mrt:e92a56f4c16ed26ce064653b851f64bed59fe5efb630c7d378b2f874d58a8acc": {
-      "file": "aux-mrt-e92a56f4c16e.json",
+    "mrt:189b6818af67c5d2431e9a7bd9adb99030aafa6e5e1d13416de7a0b813dc5fcc": {
+      "file": "aux-mrt-189b6818af67.json",
       "shape": "mrt",
-      "configHash": "e92a56f4c16ed26ce064653b851f64bed59fe5efb630c7d378b2f874d58a8acc",
-      "hash": "1a1e96a6a0e06716bd29d8c3af02d0d5745330f42b5d130ace0fbf85f9ac0506",
-      "threeVersion": "0.185.1",
+      "configHash": "189b6818af67c5d2431e9a7bd9adb99030aafa6e5e1d13416de7a0b813dc5fcc",
+      "hash": "8f1c12aa398f8e80f037907bd20a7108ed81c8aabf23af35d48a278843438a59",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:24.953Z"
+      "capturedAt": "2026-10-13T10:36:00.303Z"
     },
-    "lights:3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36": {
-      "file": "aux-lights-3247ab5f57af.json",
+    "lights:499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673": {
+      "file": "aux-lights-499bfad6a893.json",
       "shape": "lights",
-      "configHash": "3247ab5f57afbed8de1051aaa826048a8ce76487e956badfbc74de21d1f31e36",
-      "hash": "88e5bf6d5dfe5edfa9b43a86d3428fced3f4d9af1b64126d9417455d5b526f7d",
-      "threeVersion": "0.185.1",
+      "configHash": "499bfad6a8931822a0af963f74ce44184baf18eeef4cd87baa5618535b78e673",
+      "hash": "7ffaef3c96c6f4efb3fd172d8b2818b980119db1f986222c2b7e1f608fa3e2ca",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:24.955Z"
+      "capturedAt": "2026-10-13T10:36:00.305Z"
     },
-    "render-output:3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8": {
-      "file": "aux-render-output-3f1fa57642fc.json",
+    "render-output:f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f": {
+      "file": "aux-render-output-f9eeeab16476.json",
       "shape": "render-output",
-      "configHash": "3f1fa57642fc25853acfba2dc883bb163239d8f1fa99cd1456cec76d558ecac8",
-      "hash": "fbf62cafa11eb05af50b39147230903e70cc61c098904c8b802aef1743a4856b",
-      "threeVersion": "0.185.1",
+      "configHash": "f9eeeab1647629a910c028ef2f0173e9f6f6546ae1d08a21dbe2be911850016f",
+      "hash": "a1090c1614fe64efa414d5be5f820a300029fd7591fb3ab4f3d2f906ddb4e23e",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:27.566Z"
+      "capturedAt": "2026-10-13T10:36:00.330Z"
     },
-    "post-process:d7bef45c124d209bf742a820747f84ea8cba2f06a8f8d345cd21f85f137d4569": {
-      "file": "aux-post-process-d7bef45c124d.json",
+    "post-process:7b3db37a8838a4775e70f81349c568bb8a6ca1934d575c086066dad3a98242e5": {
+      "file": "aux-post-process-7b3db37a8838.json",
       "shape": "post-process",
-      "configHash": "d7bef45c124d209bf742a820747f84ea8cba2f06a8f8d345cd21f85f137d4569",
-      "hash": "537450dcc243cce99e0020fd540696ac0517d1bc8aa4bd1909755e28b8a028c9",
-      "threeVersion": "0.185.1",
+      "configHash": "7b3db37a8838a4775e70f81349c568bb8a6ca1934d575c086066dad3a98242e5",
+      "hash": "aed18ddb53995a86db2aed8e3f67eda15e83edce5073fbe249771d8499d656a1",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:26.316Z"
+      "capturedAt": "2026-10-13T10:36:01.648Z"
     },
-    "mrt:94cc6644a9587fca45279a67b1aa08ceace3573c2da9a2025fbbb90cd24366a0": {
-      "file": "aux-mrt-94cc6644a958.json",
+    "mrt:3ad406b643fa580ccb64a1a2160a11353ed37a2fc26bb60abbf479ddfd4fd5f1": {
+      "file": "aux-mrt-3ad406b643fa.json",
       "shape": "mrt",
-      "configHash": "94cc6644a9587fca45279a67b1aa08ceace3573c2da9a2025fbbb90cd24366a0",
-      "hash": "63f6ef4b418c4213c0af3626db68da6bc3b1437d7e063843f311fd3738b824d1",
-      "threeVersion": "0.185.1",
+      "configHash": "3ad406b643fa580ccb64a1a2160a11353ed37a2fc26bb60abbf479ddfd4fd5f1",
+      "hash": "31915dd29c382dd028fa1c6d4d56b08f80bce5e1f59906b6a8d888c9e5512185",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:26.374Z"
+      "capturedAt": "2026-10-13T10:36:01.749Z"
     },
-    "post-process:d9caf3a6dcac78af3766cc70da81ce884085873a8e85a97677dbb3e8a796f2c2": {
-      "file": "aux-post-process-d9caf3a6dcac.json",
+    "post-process:27ee023d0eb19bd09918e1dd03ba764c058441459bee324720240c4fd2031ebf": {
+      "file": "aux-post-process-27ee023d0eb1.json",
       "shape": "post-process",
-      "configHash": "d9caf3a6dcac78af3766cc70da81ce884085873a8e85a97677dbb3e8a796f2c2",
-      "hash": "08b02cdb7f59b6e20a8ca809ef894cdfb8f077f51339a0358b638e2a8d639e75",
-      "threeVersion": "0.185.1",
+      "configHash": "27ee023d0eb19bd09918e1dd03ba764c058441459bee324720240c4fd2031ebf",
+      "hash": "cdff62863a5ce1dafcb499072b70e205ab872dda2882a6c105569671a45efc81",
+      "threeVersion": "0.186.1",
       "pluginVersion": "0.1.0",
-      "capturedAt": "2026-07-30T12:10:27.529Z"
+      "capturedAt": "2026-10-13T10:36:03.052Z"
     }
   },
   "mrt-pass-floor": {
-    "file": "mrt-pass-floor.418c255db57d.json",
-    "hash": "418c255db57dff1daa599295dbd7d48bd65204dbf434c3ab1190c86401b35f2c",
+    "file": "mrt-pass-floor.e29d1166d078.json",
+    "hash": "e29d1166d078df34d526f423c1eb3dd5907179862f7cf0304d948baa78e8821e",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/pass.js:precompile:0",
-        "revision": "57ca54f5d3e0ba370d0ff0e3377736a9e9d5a58d51518783cdb66210e5fa0381",
+        "revision": "e557debcc2c67ef99672797d8173ae660d1db87133c95cb0f4afeb7ddf7ba821",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -81,17 +81,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:25.049Z"
+    "capturedAt": "2026-10-13T10:36:00.373Z"
   },
   "mrt-pass-cube": {
-    "file": "mrt-pass-cube.7e7398678f06.json",
-    "hash": "7e7398678f064415c1601f1108bfe9eb38f6bba33aed914c184e220af5c1db41",
+    "file": "mrt-pass-cube.2c54c6c19ef7.json",
+    "hash": "2c54c6c19ef7084e09605f3eef05ed90b2b1f3cdbf4ff539e494e7a7e7881637",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/pass.js:precompile:0",
-        "revision": "57ca54f5d3e0ba370d0ff0e3377736a9e9d5a58d51518783cdb66210e5fa0381",
+        "revision": "e557debcc2c67ef99672797d8173ae660d1db87133c95cb0f4afeb7ddf7ba821",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -100,17 +100,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:25.075Z"
+    "capturedAt": "2026-10-13T10:36:00.385Z"
   },
   "mrt-pass-sphere": {
-    "file": "mrt-pass-sphere.9cc60bdd0c8d.json",
-    "hash": "9cc60bdd0c8dc16a1d87df0f985591249f787ca440d978c75481d45dbe22a6d0",
+    "file": "mrt-pass-sphere.89bc2d7180d2.json",
+    "hash": "89bc2d7180d2d1ce5894b9d93672276f61d383a71c085273dc5aaef158583562",
     "sourceIdentity": "9aab25769f15ec33d788be47fe78d9316b2ae1509756cba611fb8619a745c43a",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/pass.js:precompile:0",
-        "revision": "57ca54f5d3e0ba370d0ff0e3377736a9e9d5a58d51518783cdb66210e5fa0381",
+        "revision": "e557debcc2c67ef99672797d8173ae660d1db87133c95cb0f4afeb7ddf7ba821",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -119,17 +119,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:25.097Z"
+    "capturedAt": "2026-10-13T10:36:00.395Z"
   },
   "mrt-mask-floor": {
-    "file": "mrt-mask-floor.5f4764ab8ceb.json",
-    "hash": "5f4764ab8ceb1f94e0b42d2fe407dd726641c5cb92153b7b8fe95d0163445641",
+    "file": "mrt-mask-floor.e6f3f5a1864b.json",
+    "hash": "e6f3f5a1864b8bdf882b706f646a640e74d3ce8475111190b1c681cf95df58cf",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/mask.js:precompile:0",
-        "revision": "cb1f130cbe4d403e61192be56c2261ab2e7b944862da4f88b77e854a6a0b3b08",
+        "revision": "4437813be6dd69d22984e5b1799b1349e7d9cfd7d1a2ea018bbfc52a1ba72b70",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -138,17 +138,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:26.446Z"
+    "capturedAt": "2026-10-13T10:36:01.817Z"
   },
   "mrt-mask-cube": {
-    "file": "mrt-mask-cube.6e455b85b906.json",
-    "hash": "6e455b85b9065886e570dd7a956634eda0ffa49d48f83665d0a77e408cadb170",
+    "file": "mrt-mask-cube.b975c9466bba.json",
+    "hash": "b975c9466bba68e4a3e8af5d2a11030b11d5803ac34440c19239b23ea704fee4",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/mask.js:precompile:0",
-        "revision": "cb1f130cbe4d403e61192be56c2261ab2e7b944862da4f88b77e854a6a0b3b08",
+        "revision": "4437813be6dd69d22984e5b1799b1349e7d9cfd7d1a2ea018bbfc52a1ba72b70",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -157,17 +157,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:26.461Z"
+    "capturedAt": "2026-10-13T10:36:01.829Z"
   },
   "mrt-mask-sphere": {
-    "file": "mrt-mask-sphere.02f5836f3e4d.json",
-    "hash": "02f5836f3e4dbf8256468b8dbb0369928032cc8ff28f99b79633162fe6747dab",
+    "file": "mrt-mask-sphere.fc147d199b44.json",
+    "hash": "fc147d199b442834a49164622abf85b45f4dc3afa8ab975912802b9d4763a048",
     "sourceIdentity": "5fac8ae1a2d2d52d4353e71da11b83463833f406257dd2f4d7498e74acb0a187",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/mask.js:precompile:0",
-        "revision": "cb1f130cbe4d403e61192be56c2261ab2e7b944862da4f88b77e854a6a0b3b08",
+        "revision": "4437813be6dd69d22984e5b1799b1349e7d9cfd7d1a2ea018bbfc52a1ba72b70",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -176,17 +176,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:26.472Z"
+    "capturedAt": "2026-10-13T10:36:01.840Z"
   },
   "mrt-manual-floor": {
-    "file": "mrt-manual-floor.c75a257754b2.json",
-    "hash": "c75a257754b2df19d49c2d80a1b06601b434e2b361cd257f46be2808a5354963",
+    "file": "mrt-manual-floor.dde9d8c8b1a2.json",
+    "hash": "dde9d8c8b1a2f5179220e953eb32a194d1ee193fefb3cb5537c1612327ea08ab",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/manual.js:precompile:0",
-        "revision": "5e24837368b41fbe80574aba3a1cf25d57acd00550cc6e457210fb15420603e0",
+        "revision": "70751e7db024a50612b9b0e03a4469a4ad4e6f184afd2c673713f4e69d9834c7",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -195,17 +195,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:27.582Z"
+    "capturedAt": "2026-10-13T10:36:03.168Z"
   },
   "mrt-manual-cube": {
-    "file": "mrt-manual-cube.a4d92a647451.json",
-    "hash": "a4d92a64745170b33964227933dba464fb07aed96cf7c2417ea0128b83b74933",
+    "file": "mrt-manual-cube.4e642a112738.json",
+    "hash": "4e642a112738dc75d42049e0e9d154c80c635524e57deb1e5bbcf54fb42aac76",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/manual.js:precompile:0",
-        "revision": "5e24837368b41fbe80574aba3a1cf25d57acd00550cc6e457210fb15420603e0",
+        "revision": "70751e7db024a50612b9b0e03a4469a4ad4e6f184afd2c673713f4e69d9834c7",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -214,17 +214,17 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:27.605Z"
+    "capturedAt": "2026-10-13T10:36:03.341Z"
   },
   "mrt-manual-sphere": {
-    "file": "mrt-manual-sphere.04ebefba0a9f.json",
-    "hash": "04ebefba0a9f833463ce4f4632e2062c9a85eadffafb34ac664cb37f6397f235",
+    "file": "mrt-manual-sphere.b217946c02c5.json",
+    "hash": "b217946c02c5a6dafeaba4604d9a12328901ee2a200f61967b3091a2f5f61070",
     "sourceIdentity": "c7772fef526b95b0d3f721764636ea62cf26d4e26e7f64ecffcf88abffca8eee",
     "sourceIdentityKind": "callsite",
     "sourceOwners": [
       {
         "identity": "src/manual.js:precompile:0",
-        "revision": "5e24837368b41fbe80574aba3a1cf25d57acd00550cc6e457210fb15420603e0",
+        "revision": "70751e7db024a50612b9b0e03a4469a4ad4e6f184afd2c673713f4e69d9834c7",
         "provenance": {
           "schema": "marker-source-closure@1",
           "dependencies": [
@@ -233,6 +233,6 @@
         }
       }
     ],
-    "capturedAt": "2026-07-30T12:10:27.618Z"
+    "capturedAt": "2026-10-13T10:36:03.362Z"
   }
 }

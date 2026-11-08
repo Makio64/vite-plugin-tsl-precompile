@@ -1,6 +1,7 @@
 import { collectArtifactVariantCandidates } from './artifact-variants.js';
 import {
 	PMREM_SUPPORT_PROFILES,
+	isPMREMCubeLayout,
 	pmremRequiredStages,
 	pmremSourceInputTopology,
 	samePMREMConfig,
@@ -13,6 +14,36 @@ import {
 	validateVSMSupportConfig,
 } from './vsm-config.js';
 import { stableJsonStringify } from './stable-json.js';
+export { stabilizePMREMInternalPassTextureSources } from './pmrem-capture-inputs.js';
+
+/** Replace capture-local standalone UBO labels with their stable binding address. */
+export function stabilizeInternalPassUniformBufferNames( artifact ) {
+
+	for ( const member of new Set( [ artifact, ...collectArtifactVariantCandidates( artifact ) ] ) ) {
+
+		for ( const [ groupIndex, group ] of ( member.uniformPlan || [] ).entries() ) {
+
+			for ( const [ bindingIndex, binding ] of ( group.orderedBindings || [] ).entries() ) {
+
+				const previousName = binding?.ref?.name;
+				if ( binding?.type !== 'buffer-uniform' || ! /^UniformBuffer_\d+$/.test( previousName || '' ) ) continue;
+				const descriptors = ( member.bindings || [] ).find( entry => entry.name === group.name )?.bindings || [];
+				const descriptor = descriptors.find( entry => entry.kind === 'uniform-buffer' && entry.name === previousName );
+				if ( ! descriptor ) throw new Error( `Internal-pass buffer ${ group.name }.${ previousName } has no binding descriptor.` );
+				// These are UniformBuffer object labels, not WGSL/GLSL identifiers.
+				// Keep shader bytes and the binding order untouched.
+				const name = `UniformBuffer_tslp_${ groupIndex }_${ bindingIndex }`;
+				descriptor.name = name;
+				binding.ref.name = name;
+
+			}
+
+		}
+
+	}
+	return artifact;
+
+}
 
 /**
  * Durable descriptor for renderer-owned draw programs whose shaders are
@@ -26,6 +57,18 @@ import { stableJsonStringify } from './stable-json.js';
 export const INTERNAL_PASS_SCHEMA = 'internal-pass@1';
 
 const PMREM_BLUR_UNIFORMS = Object.freeze( [ 'samples', 'latitudinal', 'd-theta', 'mip-int', 'pole-axis' ] );
+const PMREM_SPHERICAL_BLUR_DEFINITION = deepFreeze( {
+	shape: 'pmrem-blur',
+	requiredUniforms: [ 'sigma', 'mip-int' ],
+	optionalUniforms: [],
+	requiredInputs: { 'env-map': 'texture' },
+	optionalInputs: {},
+} );
+const PMREM_CUBE_STAGE_DEFINITIONS = deepFreeze( {
+	blur: { shape: 'pmrem-blur', requiredUniforms: [ 'sigma' ], optionalUniforms: [], requiredInputs: { 'env-map': 'texture' }, optionalInputs: {} },
+	ggx: { shape: 'pmrem-ggx', requiredUniforms: [ 'roughness', 'lod-bias' ], optionalUniforms: [], requiredInputs: { 'env-map': 'texture' }, optionalInputs: {} },
+	integration: { shape: 'pmrem-integration', requiredUniforms: [ 'roughness', 'source-size', 'source-lod' ], optionalUniforms: [], requiredInputs: { 'env-map': 'texture' }, optionalInputs: {} },
+} );
 const VSM_UNIFORMS = Object.freeze( [ 'blur-samples', 'radius', 'map-size' ] );
 const VSM_UNIFORM_SOURCE_KINDS = Object.freeze( {
 	'blur-samples': 'light.shadowBlurSamples',
@@ -64,6 +107,7 @@ export const INTERNAL_PASS_STAGE_DEFINITIONS = deepFreeze( {
 			requiredInputs: { 'env-map': 'texture' },
 			optionalInputs: {},
 		},
+		integration: PMREM_CUBE_STAGE_DEFINITIONS.integration,
 	},
 	'shadow-vsm': {
 		vertical: {
@@ -170,8 +214,10 @@ export function internalPassShape( family, stage ) {
 
 }
 
-export function getInternalPassStageDefinition( family, stage ) {
+export function getInternalPassStageDefinition( family, stage, config = null ) {
 
+	if ( family === 'pmrem' && isPMREMCubeLayout( config?.layout ) && PMREM_CUBE_STAGE_DEFINITIONS[ stage ] ) return PMREM_CUBE_STAGE_DEFINITIONS[ stage ];
+	if ( family === 'pmrem' && stage === 'blur' && config?.profile === 'scene' && config?.blur?.algorithm === 'spherical-gaussian' ) return PMREM_SPHERICAL_BLUR_DEFINITION;
 	return INTERNAL_PASS_STAGE_DEFINITIONS[ family ]?.[ stage ] || null;
 
 }
@@ -268,7 +314,7 @@ export function validateInternalPassFamilyStages( family, stages, options = {} )
 	let profileStages = null;
 	if ( family === 'pmrem' && profile !== null ) {
 
-		profileStages = pmremRequiredStages( profile );
+		profileStages = pmremRequiredStages( profile, options.config );
 		if ( profileStages.length === 0 ) issues.push( issue(
 			'internal-pass.family.profile',
 			'internalPass.config.profile',
@@ -522,7 +568,7 @@ export function validateInternalPassDescriptor( descriptor, artifact = null ) {
 		) );
 
 	}
-	const definition = getInternalPassStageDefinition( descriptor.family, descriptor.stage );
+	const definition = getInternalPassStageDefinition( descriptor.family, descriptor.stage, descriptor.config );
 	if ( ! definition ) {
 
 		issues.push( issue(
@@ -549,7 +595,7 @@ export function validateInternalPassDescriptor( descriptor, artifact = null ) {
 	if ( descriptor.family === 'pmrem' ) {
 
 		issues.push( ...validatePMREMSupportConfig( descriptor.config, 'internalPass.config' ) );
-		const allowedStages = pmremRequiredStages( descriptor.config?.profile );
+		const allowedStages = pmremRequiredStages( descriptor.config?.profile, descriptor.config );
 		if ( definition && allowedStages.length > 0 && ! allowedStages.includes( descriptor.stage ) ) issues.push( issue(
 			'internal-pass.pmrem.profile-stage',
 			'internalPass.stage',
@@ -956,6 +1002,9 @@ function validatePMREMDescriptorConfigAgreement( descriptor, artifact, inputs, i
 
 	const config = descriptor.config;
 	if ( ! isRecord( config ) ) return;
+	if ( isPMREMCubeLayout( config.layout ) && descriptor.output?.topology?.dimension !== 'cube' ) issues.push( issue(
+		'internal-pass.pmrem.cube-output', 'internalPass.output.topology.dimension', 'Cube PMREM passes must render to a cube target.',
+	) );
 	const sourceInput = inputs.find( ( input ) => input && input.role === 'source' && input.kind === 'texture' );
 	if ( sourceInput && isRecord( config.source ) ) {
 
@@ -1032,14 +1081,14 @@ function validateInternalPassFamilyEdges( family, descriptorsByStage, issues ) {
 
 		const sourceProducer = descriptorsByStage.get( 'equirect' ) || descriptorsByStage.get( 'cubemap' );
 		const producer = sourceProducer || descriptorsByStage.get( 'blur' );
-		const consumer = descriptorsByStage.get( 'ggx' );
-		if ( producer && consumer ) validateFamilyTextureEdge(
-			producer,
-			consumer,
-			'env-map',
-			sourceProducer ? 'PMREM source conversion output' : 'PMREM scene blur output',
-			issues,
-		);
+		for ( const stage of [ 'ggx', 'integration' ] ) {
+
+			const consumer = descriptorsByStage.get( stage );
+			if ( producer && consumer ) validateFamilyTextureEdge(
+				producer, consumer, 'env-map', sourceProducer ? 'PMREM source conversion output' : 'PMREM scene blur output', issues,
+			);
+
+		}
 
 	}
 
@@ -1137,7 +1186,7 @@ function validateUniformAddress( candidate, uniform, passDescriptor, candidatePa
 
 	}
 	const slot = matches[ 0 ];
-	const definition = getInternalPassStageDefinition( passDescriptor.family, passDescriptor.stage );
+	const definition = getInternalPassStageDefinition( passDescriptor.family, passDescriptor.stage, passDescriptor.config );
 	const expectedSourceKind = definition?.uniformSourceKinds?.[ uniform.role ] || 'uniform.live';
 	if ( slot.source?.kind !== expectedSourceKind ) issues.push( issue(
 		'internal-pass.uniform.source-kind',

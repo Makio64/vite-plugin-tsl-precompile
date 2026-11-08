@@ -69,7 +69,7 @@ test( 'public declarations track the runtime signatures that previously drifted'
 	assert.match( source, /hashArtifactContentSync\( artifact: unknown, opts: HashVersionOptions \): string;/ );
 	assert.match( source, /cubeRenderTargetOptions\?: Record<string, unknown>;/ );
 
-	assert.match( source, /registerAuxArtifact<TArtifact = unknown>\( shape: string, configHash: string, artifact: TArtifact, opts\?: \{ name\?: string; threeVersion\?: string; pluginVersion\?: string \} \): void;/ );
+	assert.match( source, /registerAuxArtifact<TArtifact = unknown>\( shape: string, configHash: string, artifact: TArtifact, opts\?: \{ name\?: string; threeVersion\?: string; threeRevision\?: string; threeCommit\?: string; pluginVersion\?: string \} \): void;/ );
 	assert.match( source, /findAux<TArtifact = unknown>\( shape: string, nameOrConfigHash: string \): AuxArtifactEntry<TArtifact> \| null;/ );
 	assert.match( source, /bindAuxConfig<TNode = unknown>\( node: TNode, shapeOrEntry:/ );
 	assert.match( source, /bindAuxByName<TNode = unknown>\( node: TNode, shape: string, nameOrConfigHash: string \): TNode;/ );

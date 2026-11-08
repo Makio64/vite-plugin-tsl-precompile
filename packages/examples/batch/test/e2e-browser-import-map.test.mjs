@@ -69,7 +69,9 @@ function localTslpSpecifiers() {
 	const found = new Map();
 	for ( const project of LOCAL_PROJECTS ) {
 
-		const sourceRoot = resolve( REPO, 'packages/examples', project, 'src' );
+		const projectRoot = resolve( REPO, 'packages/examples', project );
+		const src = join( projectRoot, 'src' );
+		const sourceRoot = existsSync( src ) ? src : projectRoot;
 		for ( const file of sourceFilesBelow( sourceRoot ) ) {
 
 			const source = readFileSync( file, 'utf8' );
@@ -117,6 +119,7 @@ test( 'every local-cohort @tsl-precompile browser import has an exact native map
 	for ( const required of [
 		'@tsl-precompile/runtime/setup',
 		'@tsl-precompile/runtime/compute',
+		'@tsl-precompile/runtime/compute-capture',
 		'@tsl-precompile/runtime/material-variants',
 		'@tsl-precompile/runtime/slim-support/precompiled-shadows',
 	] ) {

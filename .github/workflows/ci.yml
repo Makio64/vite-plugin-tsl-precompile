@@ -42,21 +42,16 @@ jobs:
   minimum-node:
     name: Package checks (Node 24 LTS)
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 5
+    # Both jobs used the exact same Node version and package suites. Preserve
+    # the required status name while running those checks once in unit.
+    needs: unit
+    if: always()
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24.18.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Default package suites
-        run: pnpm test
-      - name: Strict public TypeScript declarations
-        run: pnpm test:types
-      - name: Release guard compatibility
-        run: pnpm test:release-guard
+      - name: Require the complete Node 24 package checks
+        env:
+          PACKAGE_RESULT: ${{ needs.unit.result }}
+        run: test "$PACKAGE_RESULT" = success
 
   verify:
     name: Staleness audit
@@ -78,11 +73,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select shared stable Three release
+        id: three-release
+        run: >-
+          node --input-type=module -e
+          "import { THREE_RELEASE_PROFILES } from './packages/contract/src/slim-three-policy.js';
+          console.log('commit=' + THREE_RELEASE_PROFILES.stable.gitCommit);" >> "$GITHUB_OUTPUT"
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: mrdoob/three.js
-          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          ref: ${{ steps.three-release.outputs.commit }}
           path: three.js
           fetch-depth: 1
           sparse-checkout: |
@@ -99,8 +100,7 @@ jobs:
         run: pnpm --filter examples-batch catalogue:check:corpus
         env:
           TSLP_THREE_REPO: ${{ github.workspace }}/three.js
-      - name: Test evidence, transform, accessibility, and content contracts
-        run: pnpm --filter @tsl-precompile/site test
+      # Evidence, transform, accessibility, and content contracts run in unit.
 
   # The gate spends ~91% of its wall clock inside the visual run (574s of a 628s
   # job on the last measured CI run) and only ~52s on setup, so splitting it
@@ -126,11 +126,17 @@ jobs:
       - name: Configure runner-temporary output paths
         run: echo "TSLP_E2E_OUT=$RUNNER_TEMP/tier1-e2e" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select shared stable Three release
+        id: three-release
+        run: >-
+          node --input-type=module -e
+          "import { THREE_RELEASE_PROFILES } from './packages/contract/src/slim-three-policy.js';
+          console.log('commit=' + THREE_RELEASE_PROFILES.stable.gitCommit);" >> "$GITHUB_OUTPUT"
       - name: Check out the matching three.js examples corpus
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: mrdoob/three.js
-          ref: 2431a09f46f34c560bc8e44b33be0e567723d5b9 # official r185 commit
+          ref: ${{ steps.three-release.outputs.commit }}
           path: three.js
           fetch-depth: 1
           sparse-checkout: |

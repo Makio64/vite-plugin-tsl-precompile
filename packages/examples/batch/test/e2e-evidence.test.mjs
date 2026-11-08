@@ -34,6 +34,7 @@ test( 'canonical environment override policy distinguishes behavior from logging
 		evidenceAffectingEnvironmentOverrides( {
 			TSLP_DEBUG_REPLAY_OPS: '1',
 			TSLP_DEBUG_FRAME_TEXTURES: '1',
+			TSLP_E2E_CASE_TIMEOUT_MS: '300001',
 			TSLP_E2E_MAX_RUNS_PER_BROWSER: '12',
 			TSLP_E2E_VERBOSE: '1',
 			TSLP_DEBUG_TORNADO_TRACE: '1',
@@ -41,6 +42,7 @@ test( 'canonical environment override policy distinguishes behavior from logging
 		[
 			'TSLP_DEBUG_FRAME_TEXTURES',
 			'TSLP_DEBUG_REPLAY_OPS',
+			'TSLP_E2E_CASE_TIMEOUT_MS',
 			'TSLP_E2E_MAX_RUNS_PER_BROWSER',
 		],
 	);

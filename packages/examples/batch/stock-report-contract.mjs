@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
-	assertOfficialThreeR185SourceVerification,
-	THREE_R185_OFFICIAL_COMMIT,
+	assertPinnedThreeSourceVerification,
+	officialThreeReleaseForEvidence,
 } from './_three-version.mjs';
 import { resolveRepositoryStaticImportClosure } from './e2e-evidence.mjs';
 import { assertEvidenceEnvironment } from './e2e-environment.mjs';
@@ -172,6 +172,7 @@ export function validateCanonicalStockReport( report, {
 	assertEvidenceEnvironment( configuration.environment, 'Stock report execution environment' );
 
 	const threeCheckout = configuration.threeCheckout;
+	const release = officialThreeReleaseForEvidence( catalogue.threeVersion );
 	assertObject( threeCheckout, 'stock report Three checkout' );
 	if ( threeCheckout.packageVersion !== catalogue.threeVersion ) {
 
@@ -184,13 +185,14 @@ export function validateCanonicalStockReport( report, {
 		throw new Error( `stock report used Three REVISION ${ threeCheckout.revision }, expected ${ expectedRevision }` );
 
 	}
-	if ( threeCheckout.gitCommit !== THREE_R185_OFFICIAL_COMMIT || threeCheckout.clean !== true ) {
+	if ( threeCheckout.gitCommit !== release.gitCommit || threeCheckout.clean !== true ) {
 
-		throw new Error( `stock report was not captured from the clean official r185 commit ${ THREE_R185_OFFICIAL_COMMIT }` );
+		throw new Error( `stock report was not captured from the clean official ${ release.ref } commit ${ release.gitCommit }` );
 
 	}
 	const sourceVerification = threeCheckout.sourceVerification;
-	assertOfficialThreeR185SourceVerification( sourceVerification, {
+	assertPinnedThreeSourceVerification( sourceVerification, {
+		profile: release,
 		label: 'stock report',
 	} );
 	if ( ! Number.isSafeInteger( threeCheckout.discoveredCases ) || threeCheckout.discoveredCases < expectedNames.length ) {

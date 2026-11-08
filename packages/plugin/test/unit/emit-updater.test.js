@@ -43,6 +43,24 @@ test( 'emitUpdaterSource — empty plan → empty update body', () => {
 
 } );
 
+test( 'caller-owned compute uniforms are live only with a validated exact slot descriptor', () => {
+
+	const artifact = {
+		kind: 'compute',
+		uniformPlan: [ { name: 'compute', slots: [ { dtype: 'int', offset: 0, source: { kind: 'uniform.live', valueSnapshot: { type: 'number', data: 8 } } } ] } ],
+		computeBindings: { version: 'compute-bindings@1', entries: [ { key: 'width', target: 'uniform-slot', group: 0, slot: 0, dtype: 'int' } ] },
+	};
+	const generated = emitUpdaterSource( artifact );
+	assert.deepEqual( generated.unsupportedKinds, [] );
+	parse( generated.source, { sourceType: 'module' } );
+	assert.match( generated.source, /compute runner writes this exact slot/ );
+	assert.equal( emitUpdaterSource( { ...artifact, computeBindings: undefined } ).unsupportedKinds.length, 1 );
+	assert.equal( emitUpdaterSource( { ...artifact, kind: 'material' } ).unsupportedKinds.length, 1 );
+	artifact.computeBindings.entries[ 0 ].slot = 1;
+	assert.throws( () => emitUpdaterSource( artifact ), /does not identify a uniform slot/ );
+
+} );
+
 test( 'emitUpdaterSource — updateGroup gates writes by bind-group name', () => {
 
 	const artifact = {
@@ -705,6 +723,73 @@ test( 'emitUpdaterSource — texture UV flip uses a frozen texture source descri
 	assert.match( source, /const __textureUVFlipSource0 = Object\.freeze\(\{"kind":"texture\.uvFlipY","textureUuid":"gradient-map","imageSrc":"https:\/\/cdn\.example\/gradient\.png","valueSnapshot":Object\.freeze\(\{"type":"uint","data":1\}\)\}\);/ );
 	assert.match( source, /writeTextureUVFlip\(view, byteOffset \+ 28, material && material\.precompiledArtifact, __textureUVFlipSource0\);/ );
 	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+
+} );
+
+test( 'generated PMREM writers reuse frozen descriptors while following live atlas changes', () => {
+
+	const kinds = [ 'pmrem.maxMip', 'pmrem.texelWidth', 'pmrem.texelHeight' ];
+	const artifact = { uniformPlan: [ { name: 'object', slots: kinds.map( ( kind, index ) => ( {
+		offset: index * 4,
+		source: { kind, textureUuid: 'atlas', valueSnapshot: { type: 'number', data: index + 10 } },
+	} ) ) } ] };
+	const { source } = emitUpdaterSource( artifact );
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+	const calls = [];
+	const executable = source.replace( /^import .*;\n?/gm, '' ).replace( /export /g, '' );
+	const update = Function( 'writePMREMScalar', `${ executable };return update;` )( ( ...args ) => {
+
+		calls.push( args[ 6 ] );
+		writePMREMScalar( ...args );
+
+	} );
+	const material = { precompiledArtifact: { _textureRefs: new Map() } };
+	const view = new DataView( new ArrayBuffer( 12 ) );
+	const atlas = { isTexture: true, mapping: 306, image: { height: 512 } };
+	for ( const height of [ 512, 256, null ] ) {
+
+		if ( height === null ) material.precompiledArtifact._textureRefs.clear();
+		else {
+
+			atlas.image.height = height;
+			material.precompiledArtifact._textureRefs.set( 'atlas', atlas );
+
+		}
+		update( {}, material, view, 0 );
+		const expected = height === null ? [ 10, 11, 12 ] : [ Math.log2( height ) - 2, 1 / ( 3 * Math.max( height / 4, 112 ) ), 1 / height ];
+		for ( let i = 0; i < 3; i ++ ) assert.equal( view.getFloat32( i * 4, true ), Math.fround( expected[ i ] ) );
+
+	}
+	for ( let i = 0; i < calls.length; i ++ ) {
+
+		assert.equal( calls[ i ], calls[ i % 3 ] );
+		assert.ok( Object.isFrozen( calls[ i ] ) && Object.isFrozen( calls[ i ].valueSnapshot ) );
+
+	}
+
+} );
+
+test( 'generated cube PMREM writers address live mip metadata with frozen exact texture identity', () => {
+
+	const kinds = [ 'pmrem.maxLod', 'pmrem.size' ];
+	const artifact = { uniformPlan: [ { name: 'object', slots: kinds.map( ( kind, index ) => ( {
+		offset: index * 4, source: { kind, textureUuid: 'cube-pmrem', valueSnapshot: { type: 'number', data: - 1 } },
+	} ) ) } ], _textureRefs: new Map() };
+	const { source, unsupportedKinds } = emitUpdaterSource( artifact );
+	assert.deepEqual( unsupportedKinds, [] );
+	assert.doesNotThrow( () => parse( source, { sourceType: 'module' } ) );
+	const { updateGroup } = executeEnvironmentUpdater( source );
+	const material = { precompiledArtifact: artifact };
+	const view = new DataView( new ArrayBuffer( 8 ) );
+	for ( const size of [ 256, 512 ] ) {
+
+		const mipmaps = Array.from( { length: Math.log2( size ) - 2 }, ( _, level ) => ( { width: size / 2 ** level, height: size / 2 ** level } ) );
+		artifact._textureRefs.set( 'cube-pmrem', { isTexture: true, isCubeTexture: true, isPMREMTexture: true, mipmaps } );
+		updateGroup( {}, material, view, 0, 'object' );
+		assert.equal( view.getFloat32( 0, true ), mipmaps.length - 1 );
+		assert.equal( view.getFloat32( 4, true ), size );
+
+	}
 
 } );
 

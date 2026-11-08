@@ -9,7 +9,7 @@
 
 import { validateArtifact } from '@tsl-precompile/contract/kinds';
 
-import { __applyPrecompiledWithValidation } from './apply-precompiled.js';
+import { __applyPrecompiledWithValidation, __applyPrecompiledCallsite as applyCallsite } from './apply-precompiled.js';
 
 function validateArtifactInDevelopment( artifact, label ) {
 
@@ -23,6 +23,12 @@ function validateArtifactInDevelopment( artifact, label ) {
 export function __applyPrecompiled( material, artifactModule, expectedHash ) {
 
 	return __applyPrecompiledWithValidation( material, artifactModule, expectedHash, validateArtifactInDevelopment );
+
+}
+
+export function __applyPrecompiledCallsite( material, artifactModule, expectedHash ) {
+
+	return applyCallsite( material, artifactModule, expectedHash, validateArtifactInDevelopment );
 
 }
 

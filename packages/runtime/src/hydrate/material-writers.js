@@ -24,7 +24,9 @@ import { Vector4 } from 'three/src/math/Vector4.js';
 import { findShadowMatrixLightForSlot, updateLightShadowMatrixForFrame, writeLightValue } from './light-writers.js';
 import { writeColor, writeInt, writeLiveValue, writeMat3, writeMat4, writeNumber, writeSnapshot, writeUint, writeVec2, writeVec3, writeVec4 } from './snapshot-writers.js';
 import { logicalFrameKey, shouldAdvanceTemporalState } from '../slim-support/temporal-frame.js';
+import { resolveLiveUniformValue } from '../slim-support/live-uniform-path.js';
 import { writeEnvironmentRotation, writePMREMScalar, writeTextureUVFlip } from '../writers.js';
+import { PMREM_UNIFORM_SLOT_KINDS } from '@tsl-precompile/contract/pmrem-config';
 
 // Module-scoped scratch — reused per frame to avoid GC pressure.
 const _rSize = new Vector2( 1, 1 );
@@ -429,7 +431,7 @@ export function writeUniformGroup( group, frame, view, material, materialBinding
 			writeEnvironmentRotation( view, offset, frame.material || material, frame.scene );
 
 		}
-		else if ( kind === 'pmrem.maxMip' || kind === 'pmrem.texelWidth' || kind === 'pmrem.texelHeight' ) {
+		else if ( PMREM_UNIFORM_SLOT_KINDS.includes( kind ) ) {
 
 			writePMREMScalar( view, offset, kind, artifact, frame.material || material, frame, source );
 
@@ -501,13 +503,14 @@ export function writeUniformGroup( group, frame, view, material, materialBinding
 				if ( value !== undefined && value !== null ) writeLiveValue( view, offset, value, slot.dtype );
 				else writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
 
-			} else if ( slot.__tslpLiveSidecarOverlay === true && slot._liveNode && slot._liveNode.value !== null && slot._liveNode.value !== undefined ) {
-
-				writeLiveValue( view, offset, slot._liveNode.value, slot.dtype );
-
 			} else {
 
-				writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
+				const ownerMaterial = materialBindingOwner
+					? materialBindingOwner.materialForSource( source, frame )
+					: frame.material || material;
+				const value = resolveLiveUniformValue( slot, ownerMaterial );
+				if ( value !== null && value !== undefined ) writeLiveValue( view, offset, value, slot.dtype );
+				else writeSnapshot( view, offset, source.valueSnapshot || { type: source.valueType, data: source.value }, slot.dtype );
 
 			}
 

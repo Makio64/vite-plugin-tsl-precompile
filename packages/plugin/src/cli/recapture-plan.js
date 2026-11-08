@@ -5,11 +5,29 @@ import {
 	INTERNAL_PASS_STAGES,
 	internalPassShape,
 } from '@tsl-precompile/contract/internal-pass';
+import {
+	PMREM_SUPPORT_PROFILES,
+	createPMREMCubeLayoutConfig,
+	createPMREMLayoutConfig,
+	pmremRequiredStages,
+	validatePMREMLayoutConfig,
+} from '@tsl-precompile/contract/pmrem-config';
+import { THREE_RELEASE_PROFILES } from '@tsl-precompile/contract/slim-three-policy';
 import { discoverLocalExampleCases } from '../../../examples/batch/local-example-discovery.mjs';
 
 function internalPassFamilyShapes( family ) {
 
 	return INTERNAL_PASS_STAGES[ family ].map( ( stage ) => internalPassShape( family, stage ) );
+
+}
+
+function pmremCaptureShapes( layout ) {
+
+	const issues = validatePMREMLayoutConfig( layout );
+	if ( issues.length > 0 ) throw new TypeError( `Invalid recapture PMREM layout: ${ issues[ 0 ].message }` );
+	const required = new Set( PMREM_SUPPORT_PROFILES.flatMap( profile => pmremRequiredStages( profile, { layout } ) ) );
+	return INTERNAL_PASS_STAGES.pmrem.filter( stage => required.has( stage ) )
+		.map( stage => internalPassShape( 'pmrem', stage ) );
 
 }
 
@@ -92,7 +110,7 @@ const EXAMPLE_SPECS = [
 		cases: 'packages/examples/pmrem-debug/e2e-cases.json',
 		sources: [ 'src' ],
 		timeout: 60000,
-		requiredAuxiliaryShapes: internalPassFamilyShapes( 'pmrem' ),
+		pmrem: true,
 		productionPreviewRoutes: [
 			{
 				path: '/equirect.html',
@@ -170,7 +188,23 @@ function normalizeRoute( route, source ) {
 
 }
 
-export function createRecapturePlan( repoRoot ) {
+/**
+ * The installed Three decides which PMREM family the checked examples recapture: the stable
+ * release renders CubeUV atlases, the pinned r187dev build cube targets plus an integration stage.
+ */
+export function recapturePMREMLayoutForRevision( revision ) {
+
+	return ( revision === THREE_RELEASE_PROFILES.development.revision || revision === '187' )
+		? createPMREMCubeLayoutConfig( 256 )
+		: createPMREMLayoutConfig( 256 );
+
+}
+
+export function createRecapturePlan( repoRoot, { pmremLayout = createPMREMLayoutConfig( 256 ) } = {} ) {
+
+	// The checked examples target the stable atlas release. A cube target must
+	// carry its validated layout so the development integration stage is required.
+	const pmremShapes = pmremCaptureShapes( pmremLayout );
 
 	return EXAMPLE_SPECS.map( ( spec ) => ( {
 		name: spec.name,
@@ -184,7 +218,7 @@ export function createRecapturePlan( repoRoot ) {
 			: spec.paths.map( ( route ) => normalizeRoute( route, spec.name ) ),
 		backends: [ ...( spec.backends || [] ) ],
 		...( spec.mode ? { mode: spec.mode } : {} ),
-			requiredAuxiliaryShapes: [ ...( spec.requiredAuxiliaryShapes || [] ) ],
+			requiredAuxiliaryShapes: [ ...( spec.requiredAuxiliaryShapes || [] ), ...( spec.pmrem ? pmremShapes : [] ) ],
 		productionPreviewRoutes: ( spec.productionPreviewRoutes || [] ).map( ( route ) => ( {
 				path: normalizeRoute( route.path, `${ spec.name } production preview` ),
 				receiptId: route.receiptId,

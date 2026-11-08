@@ -56,6 +56,7 @@ import {
 } from './slim-browser-gate.mjs';
 import { loadSlimBundle, slimBundleHashOptions, slimBundleReportProvenance } from './slim-bundle-provenance.mjs';
 import { createSlimPixelGateRunRoot, runSlimPixelGateChild } from './slim-pixel-gate-child.mjs';
+import { launchOwnedBrowser, closeOwnedEvidenceBrowser } from './e2e-browser-process.mjs';
 
 const SELF = dirname( fileURLToPath( import.meta.url ) );
 const OUT = resolve( SELF, 'results' );
@@ -457,37 +458,66 @@ const WAIT_MS = 4000;
 async function runOne( browser, name ) {
 
 	const context = await browser.newContext( { viewport: { width: 640, height: 480 } } );
-	const page = await context.newPage();
-	const pageUrl = `http://localhost:${ port }/examples/${ name }`;
-	const browserFailures = installBrowserFailureCollector( page, { pageUrl } );
+	let browserFailures = null;
 
 	try {
 
-		await page.goto( pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
-		await new Promise( ( r ) => setTimeout( r, WAIT_MS ) );
+		const page = await context.newPage();
+		const pageUrl = `http://localhost:${ port }/examples/${ name }`;
+		browserFailures = installBrowserFailureCollector( page, { pageUrl } );
+		try {
 
-	} catch ( e ) {
+			await page.goto( pageUrl, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS } );
+			await new Promise( ( r ) => setTimeout( r, WAIT_MS ) );
 
-		browserFailures.dispose();
-		await context.close();
-		return { name, status: 'fail', category: 'navigation-timeout', firstError: e.message };
+		} catch ( e ) {
+
+			return { name, status: 'fail', category: 'navigation-timeout', firstError: e.message };
+
+		}
+		await browserFailures.settle();
+		const classified = classifySlimBrowserFailures( browserFailures.failures() );
+		return {
+			name,
+			status: classified.status,
+			category: classified.category,
+			firstError: classified.firstError,
+		};
+
+	} finally {
+
+		browserFailures?.dispose();
+		await context.close().catch( () => {} );
 
 	}
 
-	const classified = classifySlimBrowserFailures( browserFailures.failures() );
-	browserFailures.dispose();
-	await context.close();
-	return {
-		name,
-		status: classified.status,
-		category: classified.category,
-		firstError: classified.firstError,
-	};
+}
+
+async function launchSlimBrowser() {
+
+	return launchOwnedBrowser( async () => {
+
+		let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
+		if ( browser ) return { browser, channel: 'chrome' };
+		browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+		return { browser, channel: 'playwright-chromium' };
+
+	} );
 
 }
 
-let browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
-if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
+let browser = null;
+let interruptedSignal = null;
+for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
+
+	process.once( signal, () => {
+
+		interruptedSignal = signal;
+		void closeOwnedEvidenceBrowser( browser ).catch( () => {} );
+
+	} );
+
+}
 
 const report = {
 	total: candidates.length,
@@ -503,26 +533,31 @@ const report = {
 	details: [],
 };
 let runsSinceRestart = 0;
+const lifecycleErrors = [];
 
 try {
 
+	( { browser } = await launchSlimBrowser() );
 	for ( let i = 0; i < candidates.length; i ++ ) {
 
+		if ( interruptedSignal ) break;
 		const name = candidates[ i ];
 		const label = `[${ i + 1 }/${ candidates.length }] ${ name }`;
 
+		if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
+
+			await closeOwnedEvidenceBrowser( browser );
+			browser = null;
+			( { browser } = await launchSlimBrowser() );
+			runsSinceRestart = 0;
+
+		}
+		if ( interruptedSignal ) break;
+
 		try {
 
-			if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
-
-				await browser.close().catch( () => {} );
-				browser = await chromium.launch( { channel: 'chrome', headless: true, args: BROWSER_ARGS } ).catch( () => null );
-				if ( ! browser ) browser = await chromium.launch( { headless: true, args: BROWSER_ARGS } );
-				runsSinceRestart = 0;
-
-			}
-
 			const result = await runOne( browser, name );
+			if ( interruptedSignal ) break;
 			runsSinceRestart ++;
 
 			if ( result.status === 'pass' ) report.pass ++; else report.fail ++;
@@ -534,6 +569,7 @@ try {
 
 		} catch ( e ) {
 
+			if ( interruptedSignal ) break;
 			report.fail ++;
 			report.details.push( { name, status: 'fail', category: 'harness-error', firstError: e.message } );
 			console.log( `${ label } — FAIL harness-error "${ e.message }"` );
@@ -542,10 +578,26 @@ try {
 
 	}
 
+} catch ( error ) {
+
+	lifecycleErrors.push( error );
+
 } finally {
 
-	await browser.close().catch( () => {} );
-	server.close();
+	try { await closeOwnedEvidenceBrowser( browser ); } catch ( error ) { lifecycleErrors.push( error ); }
+	try {
+
+		if ( server.listening ) await new Promise( ( resolveClose, rejectClose ) => server.close( error => error ? rejectClose( error ) : resolveClose() ) );
+
+	} catch ( error ) { lifecycleErrors.push( error ); }
+
+}
+if ( lifecycleErrors.length ) throw new AggregateError( lifecycleErrors, 'Slim browser lifecycle failed.' );
+
+if ( interruptedSignal ) {
+
+	console.error( `[batch-slim] interrupted by ${ interruptedSignal }; no completed report written.` );
+	process.exit( interruptedSignal === 'SIGINT' ? 130 : interruptedSignal === 'SIGTERM' ? 143 : 129 );
 
 }
 

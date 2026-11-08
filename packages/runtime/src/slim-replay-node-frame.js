@@ -16,7 +16,7 @@ class ReplayNodeFrame {
 		this.updateMap = new WeakMap();
 		this.updateBeforeMap = new WeakMap();
 		this.updateAfterMap = new WeakMap();
-		this.renderer = this.material = this.camera = this.object = this.scene = null;
+		this.renderer = this.material = this.camera = this.object = this.scene = this.compute = null;
 
 	}
 
@@ -47,7 +47,7 @@ class ReplayNodeFrame {
 	u( node, suffix = '' ) {
 
 		const method = 'update' + suffix;
-		const updateType = node[ 'getUpdate' + suffix + 'Type' ]();
+		const updateType = node[ 'getUpdate' + suffix + 'Type' ]( this );
 		const reference = node.updateReference( this );
 		if ( updateType === 'object' ) return node[ method ]( this );
 		if ( updateType !== 'frame' && updateType !== 'render' ) return;

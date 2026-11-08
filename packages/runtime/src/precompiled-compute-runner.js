@@ -10,6 +10,7 @@ import { validateComputeBindingsDescriptor } from '@tsl-precompile/contract/comp
 
 import PrecompiledComputeNode from './precompiled-compute-node.js';
 import { assertArtifactShaderLanguageForRenderer } from './hydrate/shader-language-routing.js';
+import { validateRuntimeArtifactThreeEmitterIdentity } from './three-emitter-identity.js';
 
 const ERROR_PREFIX = '[tsl-precompile/compute]';
 
@@ -203,10 +204,12 @@ function validateStorageBuffer( entry, resource ) {
 		resource.isStorageBufferAttribute !== true
 		&& resource.isStorageInstancedBufferAttribute !== true
 	) || ! ArrayBuffer.isView( resource.array ) ) mismatch( entry, 'expected a StorageBufferAttribute-like object with typed-array storage' );
-	if ( resource.count !== entry.count ) mismatch( entry, `count must be ${ entry.count }` );
+	if ( entry.runtimeSized !== true && resource.count !== entry.count ) mismatch( entry, `count must be ${ entry.count }` );
 	if ( resource.itemSize !== entry.itemSize ) mismatch( entry, `itemSize must be ${ entry.itemSize }` );
 	if ( resource.array.constructor.name !== entry.arrayType ) mismatch( entry, `array type must be ${ entry.arrayType }` );
-	if ( resource.array.byteLength !== entry.byteLength ) mismatch( entry, `byteLength must be ${ entry.byteLength }` );
+	if ( entry.runtimeSized !== true && resource.array.byteLength !== entry.byteLength ) mismatch( entry, `byteLength must be ${ entry.byteLength }` );
+	if ( entry.runtimeSized === true && ( ! Number.isSafeInteger( resource.count ) || resource.count <= 0 ||
+		resource.array.length !== resource.count * resource.itemSize ) ) mismatch( entry, 'runtime-sized storage must contain a positive whole number of elements' );
 
 }
 
@@ -420,10 +423,35 @@ class PrecompiledComputeRunner {
 
 	}
 
-	dispatchAsync( dispatchSize ) {
+	compileAsync( onProgress = null ) {
 
 		this._assertActive();
-		return arguments.length > 0
+		if ( typeof this.renderer.compileComputeAsync === 'function' ) {
+
+			return onProgress !== null && onProgress !== undefined
+				? this.renderer.compileComputeAsync( this.node, onProgress )
+				: this.renderer.compileComputeAsync( this.node );
+
+		}
+		return Promise.resolve();
+
+	}
+
+	async dispatchAsync( dispatchSize ) {
+
+		const hasDispatchSize = arguments.length > 0;
+		this._assertActive();
+		if (
+			typeof this.renderer.compileComputeAsync === 'function'
+			&& this.renderer._pipelines
+			&& typeof this.renderer._pipelines.has === 'function'
+			&& this.renderer._pipelines.has( this.node ) === false
+		) {
+
+			await this.renderer.compileComputeAsync( this.node );
+
+		}
+		return hasDispatchSize
 			? this.renderer.computeAsync( this.node, dispatchSize )
 			: this.renderer.computeAsync( this.node );
 
@@ -456,6 +484,7 @@ export function createPrecompiledComputeRunner( renderer, artifactOrModule, reso
 	assertSlimRenderer( renderer );
 	const { artifact, updateGroup } = normalizeArtifactInput( artifactOrModule );
 	validateArtifact( artifact );
+	validateRuntimeArtifactThreeEmitterIdentity( artifact, '[tsl-precompile/compute] artifact' );
 	assertArtifactShaderLanguageForRenderer( artifact, renderer );
 	const boundArtifact = bindResources( artifact, resources );
 	if ( updateGroup ) Object.defineProperty( boundArtifact, '_generatedUpdateGroup', {

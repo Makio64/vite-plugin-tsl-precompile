@@ -33,9 +33,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { aggregateFailureCategories } from '../../plugin/src/_shared/batch-report.js';
 import { installBrowserFailureCollector } from '../browser-failure-policy.mjs';
 import {
-	assertOfficialThreeR185Checkout,
+	assertOfficialThreeCheckout,
 	assertThreeCheckoutMatchesVersion,
-	createOfficialThreeR185SourceVerifier,
+	createOfficialThreeSourceVerifier,
 } from './_three-version.mjs';
 import { readSafeContainedFile } from './e2e-evidence.mjs';
 import { shouldSkipE2EExample } from './example-skip-policy.mjs';
@@ -49,8 +49,8 @@ import {
 import {
 	assertEvidenceEnvironmentMatches,
 	collectEvidenceEnvironment,
-	launchEvidenceBrowser,
 } from './e2e-environment.mjs';
+import { launchOwnedEvidenceBrowser, closeOwnedEvidenceBrowser } from './e2e-browser-process.mjs';
 import {
 	drainAndSettleE2EGpuDiagnostics,
 	e2eGpuObservationIssues,
@@ -154,10 +154,10 @@ const catalogueRaw = readSafeContainedFile( REPO, CATALOGUE_PATH, {
 const catalogue = JSON.parse( catalogueRaw.toString( 'utf8' ) );
 const expectedStockNames = upstreamStockExampleNames( catalogue );
 const threeCheckout = exactFullSelection
-	? assertOfficialThreeR185Checkout( threeRepo, 'batch' )
+	? assertOfficialThreeCheckout( threeRepo, 'batch' )
 	: assertThreeCheckoutMatchesVersion( threeRepo, catalogue.threeVersion, 'batch' );
 const officialThreeSourceVerifier = stockRun.canonical
-	? createOfficialThreeR185SourceVerifier( threeRepo, 'canonical stock Three sources' )
+	? createOfficialThreeSourceVerifier( threeRepo, 'canonical stock Three sources' )
 	: null;
 const stockHarnessSourceFiles = resolveStockHarnessSourceFiles( REPO );
 const harnessSha256 = stockHarnessFingerprint( stockHarnessSourceFiles.map( ( file ) => (
@@ -428,6 +428,7 @@ async function runOne( browser, name ) {
 		const gpuErrors = Array.isArray( diagnostics?.gpuErrors )
 			? diagnostics.gpuErrors.map( ( error ) => String( error ) )
 			: [];
+		await failureCollector.settle();
 		const failures = failureCollector.messages();
 		const gpuValidation = [ ...failures, ...gpuErrors ]
 			.filter( ( error ) => /ShaderStage|BindGroup|Binding|BufferBindingType|Invalid|validation/i.test( error ) );
@@ -458,7 +459,7 @@ let interruptedSignal = null;
 
 async function launchStockBrowser( expectedEnvironment = null ) {
 
-	const launched = await launchEvidenceBrowser( chromium, {
+	const launched = await launchOwnedEvidenceBrowser( chromium, {
 		args: BROWSER_ARGS,
 		headless: true,
 	} );
@@ -478,7 +479,8 @@ async function launchStockBrowser( expectedEnvironment = null ) {
 
 	} catch ( error ) {
 
-		await launched.browser.close().catch( () => {} );
+		try { await closeOwnedEvidenceBrowser( launched.browser ); }
+		catch ( cleanupError ) { throw new AggregateError( [ error, cleanupError ], 'Stock environment probe and browser cleanup failed.' ); }
 		throw error;
 
 	}
@@ -498,7 +500,7 @@ for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 	process.once( signal, () => {
 
 		interruptedSignal = signal;
-		void browser?.close().catch( () => {} );
+		void closeOwnedEvidenceBrowser( browser ).catch( () => {} );
 
 	} );
 
@@ -569,6 +571,7 @@ function shouldPass( result ) {
 
 }
 
+const lifecycleErrors = [];
 try {
 
 	const initialBrowser = await launchStockBrowser();
@@ -581,16 +584,18 @@ try {
 		const name = candidates[ i ];
 		const label = `[${ i + 1 }/${ candidates.length }] ${ name }`;
 
+		if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
+
+			await closeOwnedEvidenceBrowser( browser );
+			browser = null;
+			const recycled = await launchStockBrowser( report.configuration.environment );
+			browser = recycled.browser;
+			runsSinceRestart = 0;
+
+		}
+		if ( interruptedSignal ) break;
+
 		try {
-
-			if ( runsSinceRestart >= MAX_RUNS_PER_BROWSER ) {
-
-				await browser.close().catch( () => {} );
-				const recycled = await launchStockBrowser( report.configuration.environment );
-				browser = recycled.browser;
-				runsSinceRestart = 0;
-
-			}
 
 			const result = await runOne( browser, name );
 			if ( interruptedSignal ) break;
@@ -627,12 +632,21 @@ try {
 
 	}
 
+} catch ( error ) {
+
+	lifecycleErrors.push( error );
+
 } finally {
 
-	await browser?.close().catch( () => {} );
-	if ( server.listening ) await new Promise( ( resolveClose ) => server.close( resolveClose ) );
+	try { await closeOwnedEvidenceBrowser( browser ); } catch ( error ) { lifecycleErrors.push( error ); }
+	try {
+
+		if ( server.listening ) await new Promise( ( resolveClose, rejectClose ) => server.close( error => error ? rejectClose( error ) : resolveClose() ) );
+
+	} catch ( error ) { lifecycleErrors.push( error ); }
 
 }
+if ( lifecycleErrors.length ) throw new AggregateError( lifecycleErrors, 'Stock browser lifecycle failed.' );
 
 if ( interruptedSignal ) {
 
@@ -650,7 +664,7 @@ if ( officialThreeSourceVerifier ) {
 	try {
 
 		const sourceVerification = officialThreeSourceVerifier.assertValid();
-		assertOfficialThreeR185Checkout( threeRepo, 'batch post-run canonical evidence' );
+		assertOfficialThreeCheckout( threeRepo, 'batch post-run canonical evidence' );
 		report.configuration.threeCheckout.sourceVerification = sourceVerification;
 
 	} catch ( error ) {

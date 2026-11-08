@@ -9,20 +9,17 @@
  * (`Pipelines.js`), render-object wiring (`RenderObject.js`), and the
  * per-frame update loop to find the fields they read off of it.
  *
- * Non-goals of this POC hydrator:
- *   - Full runtime parity with the TSL builder. Live-binding / shadow /
- *     complex-uniform paths that depend on the full binding class tree
- *     are deferred. This version returns empty bindings, empty update
- *     arrays, and a minimal observer, which is enough for static-material rendering but NOT for
- *     materials that need per-frame updates through the node system.
- *   - The UBO write path goes through `PrecompiledMaterial`'s generated
- *     updater instead — that's already wired via `apply-precompiled.js`.
+ * Each hydration owns its artifact view, indexed plan, live resource bindings,
+ * and ordered update nodes. Shared artifacts never cache a material's resources.
  *
  * @module Hydrator
  */
 
+import { createUniformPlanIndex } from './hydrate/uniform-plan.js';
+import { getSharedRenderUniformGroups, resolveUniformGroupUpdateType } from './hydrate/shared-uniform-groups.js';
+import { GENERATED_SHARED_UNIFORM_GROUP_KEY } from '@tsl-precompile/contract/dynamic-bindings';
 import BindGroup from 'three/src/renderers/common/BindGroup.js';
-import UniformBuffer from 'three/src/renderers/common/UniformBuffer.js';
+import { ReplayUniformBuffer } from './hydrate/kinds/uniform-buffer.js';
 import { NodeUpdateType } from './slim-replay-node-core-primitives.js';
 import { dispatchTextureBinding } from './hydrate/artifact-texture-resolver.js';
 import { linkArtifactLightIdentities } from './hydrate/light-identities.js';
@@ -43,14 +40,17 @@ import { inferTextureTypeFromShader, shaderDeclaresComparisonSampler, shaderDecl
 import { textureBindingFallbacks, makeViewportFallback } from './hydrate/fallback-textures.js';
 import { clippingPlaneSetsForFrame, selectClippingPlaneArray } from './hydrate/clipping-planes.js';
 import { applyCapturedInstancedDrawCount, bindUserNodeAttributesToArtifact, bindUserStorageBuffersToArtifact, createHydrationBindingArtifactView, hydrateNodeAttributes } from './hydrate/user-attributes.js';
-import { updateDynamicLightUniforms } from './hydrate/dynamic-light-buffers.js';
+import { createDynamicLightUniformUpdater } from './hydrate/dynamic-light-buffers.js';
 import { selectArtifactVariant } from './hydrate/variants/artifact-variant-selector.js';
 import { assertArtifactShaderLanguageForRenderer } from './hydrate/shader-language-routing.js';
+import { stabilizeWgslBufferIdentifiers } from '@tsl-precompile/contract/shader-language';
 import { logicalFrameKey, shouldAdvanceTemporalState } from './slim-support/temporal-frame.js';
 import { wireLiveNodeSidecarsToArtifact } from './slim-support/live-node-sidecars.js';
+import { resolveLiveUniformValue } from './slim-support/live-uniform-path.js';
 import { applyMaterialComputeAttributeBindings } from './hydrate/material-compute-bindings.js';
 import { hydrateMaterialCompute } from './hydrate/material-compute.js';
 import { hydrateComputeTransforms } from './hydrate/compute-transforms.js';
+import { artifactNeedsPMREM } from './slim-support/pmrem.js';
 
 export { clearLiveTextureIndex, installTextureLoaderTracking, registerLiveTexture } from './hydrate/live-texture-registry.js';
 
@@ -119,7 +119,10 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	const effective = traceHydrationPhase(
 		'createHydrationBindingArtifactView',
 		hydrationTrace,
-		() => createHydrationBindingArtifactView( selectedArtifact, { resetLiveNodeSidecars: requiresShadowCaster } ),
+		() => createHydrationBindingArtifactView( selectedArtifact, {
+			resetLiveNodeSidecars: requiresShadowCaster,
+			forceArtifactView: typeof selection.resolvePMREMTexture === 'function' && artifactNeedsPMREM( selectedArtifact ),
+		} ),
 	);
 	// Frozen serialized sources are linked through a WeakMap because they
 	// cannot accept non-enumerable sidecars. Link the state-local view after
@@ -207,29 +210,31 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 		hydrationTrace,
 		() => hydrateMaterialCompute( artifact, effective, material, graphMaterial ),
 	);
+	const uniformPlan = createUniformPlanIndex( effective );
 	const textureRenderer = selection.renderer || selection.renderObject && selection.renderObject.renderer || null;
+	const textureContext = textureRenderer ? {
+		renderer: textureRenderer,
+		scene: selection.renderObject?.scene || null,
+		resolvePMREMTexture: selection.resolvePMREMTexture,
+		deferRenderTargetPending: true,
+	} : null;
 
 	const resolveInitialTextureBinding = traceHydrationPhase(
 		'createTextureBindingResolvers',
 		hydrationTrace,
-		() => createOwnedTextureBindingResolver( materialBindingOwner, resolveTextureBinding, {
+		() => createOwnedTextureBindingResolver( uniformPlan, materialBindingOwner, resolveTextureBinding, {
 			cacheMaterialNodeTextures: true,
-			defaultOptions: textureRenderer ? {
-				renderer: textureRenderer,
-				deferRenderTargetPending: true,
-			} : null,
+			defaultOptions: textureContext,
 		} ),
 	);
-	const resolveLiveTextureBinding = createOwnedTextureBindingResolver( materialBindingOwner, memoizedResolveTextureBinding, {
-		defaultOptions: textureRenderer ? {
-			renderer: textureRenderer,
-			deferRenderTargetPending: true,
-		} : null,
+	const resolveLiveTextureBinding = createOwnedTextureBindingResolver( uniformPlan, materialBindingOwner, memoizedResolveTextureBinding, {
+		defaultOptions: textureContext,
 	} );
 	const runtimeBindings = traceHydrationPhase(
 		'hydrateRuntimeBindings',
 		hydrationTrace,
-		() => hydrateRuntimeBindings( effective, material, graphMaterial, resolveInitialTextureBinding ),
+		() => hydrateRuntimeBindings( effective, material, graphMaterial, resolveInitialTextureBinding, uniformPlan,
+			getSharedRenderUniformGroups( textureRenderer, selection.renderObject ) ),
 	);
 	const { bindings, uniformBuffers, clippingUniformBuffers } = runtimeBindings;
 	const { uniformBufferTargets, updateNode, clippingUniformUpdateNode } = traceHydrationPhase(
@@ -277,7 +282,7 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	const materialReflectorUpdateBeforeNodes = traceHydrationPhase(
 		'collectMaterialReflectorBaseNodes',
 		hydrationTrace,
-		() => collectMaterialReflectorBaseNodes( graphMaterial )
+		() => collectMaterialReflectorBaseNodes( graphMaterial, effective )
 			.filter( ( node ) => ! liveUpdateBeforeNodes.includes( node ) ),
 	);
 	const nodeAttributes = traceHydrationPhase(
@@ -292,9 +297,9 @@ export function hydrateNodeBuilderState( artifact, material = null, object = nul
 	);
 
 	const base = {
-		vertexShader: String( effective.vertexShader || '' ),
-		fragmentShader: String( effective.fragmentShader || '' ),
-		computeShader: String( effective.computeShader || '' ),
+		vertexShader: stabilizeWgslBufferIdentifiers( String( effective.vertexShader || '' ) ),
+		fragmentShader: stabilizeWgslBufferIdentifiers( String( effective.fragmentShader || '' ) ),
+		computeShader: stabilizeWgslBufferIdentifiers( String( effective.computeShader || '' ) ),
 		transforms,
 		nodeAttributes,
 		bindings,
@@ -566,7 +571,7 @@ function cloneBinding( binding, groupNode ) {
 
 		const view = binding.buffer;
 		const newBuffer = view ? new view.constructor( view ) : new Float32Array( 0 );
-		const cloned = new UniformBuffer( binding.name, newBuffer );
+		const cloned = new ReplayUniformBuffer( binding.name, newBuffer );
 		cloned.visibility = binding.visibility | 0;
 		cloned.groupNode = groupNode;
 		if ( binding.__tslpLiveArrayResolver ) attachLiveUniformBufferUpdater( cloned, binding.__tslpLiveArrayResolver );
@@ -657,7 +662,7 @@ function indexUniformBuffers( bindings ) {
 
 }
 
-function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResolver ) {
+function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResolver, uniformPlan, sharedGroups ) {
 
 	const uniformBuffers = new Map();
 	const shadowDepthBindings = [];
@@ -672,11 +677,20 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 	if ( ! Array.isArray( bindings ) ) return { bindings: [], uniformBuffers, shadowDepthBindings, materialDepthBindings, artifactTextureBindings, lateArtifactTextureBindings, materialTextureBindings, viewportTextureBindings, reflectorTextureBindings, clippingUniformBuffers };
 	const hasClippingUniformBuffers = artifactUsesClippingUniformBuffers( artifact );
 
-	// Full three.js artifacts contain JSON descriptors. Rehydrate the subset
-	// needed by WGSL pipeline layout creation and UBO uploads. Texture/storage
-	// descriptors still need dedicated runtime registries, so leave them out
-	// until those resources can be resolved safely.
+	// Allocate serialized GPU bindings, then classify their live resource owners.
 	const groups = [];
+	const deps = {
+		attachLiveUniformBufferUpdater,
+		createLiveUniformArrayResolver: ( name, byteLength, owner, sourceArtifact, groupName ) => createLiveUniformArrayResolver( name, byteLength, owner, sourceArtifact, groupName, uniformPlan ),
+		findUniformGroupByteLength: ( _artifact, groupName, name ) => uniformPlan.byteLength( groupName, name ),
+		findUniformGroupRequiredByteLength: ( _artifact, groupName, name ) => uniformPlan.requiredByteLength( groupName, name ),
+		inferTextureTypeFromShader,
+		resolvePlanBufferUniform: ( _artifact, groupName, name ) => uniformPlan.bufferUniform( groupName, name ),
+		resolvePlanStorageBuffer: ( _artifact, groupName, name ) => uniformPlan.storageBuffer( groupName, name ),
+		resolveTextureBinding: textureResolver,
+		seedUniformBufferSnapshots: ( sourceArtifact, groupName, name, buffer ) => seedUniformBufferSnapshots( sourceArtifact, groupName, uniformPlan.group( groupName, name ), buffer ),
+		shaderDeclaresComparisonSampler,
+	};
 
 	// Dynamic-texture entries indexed by `${groupName}::${bindingName}`. Generated
 	// modules reconstruct their public `dynamicBindings` view from uniform-plan
@@ -686,6 +700,7 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 	const dynamicTextureIndex = indexDynamicTextureBindings( artifact );
 	const classifierContext = {
 		artifact,
+		uniformPlan,
 		material,
 		graphMaterial,
 		shadowDepthBindings,
@@ -703,17 +718,29 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 
 	for ( const group of bindings ) {
 
+		const planGroup = uniformPlan.group( group.name );
+		const sharedKey = planGroup?.[ GENERATED_SHARED_UNIFORM_GROUP_KEY ];
+		const existing = sharedKey && sharedGroups?.get( sharedKey );
+		// Reuse before allocating or seeding. Three releases the CPU array
+		// with the last render-object owner; released bindings must be replaced.
+		if ( existing?.bindings[ 0 ].buffer ) {
+
+			groups.push( existing );
+			uniformBuffers.set( group.name, existing.bindings[ 0 ] );
+			continue;
+
+		}
 		const runtimeBindings = [];
-		const shared = findUniformGroupShared( artifact, group.name );
+		const shared = !! planGroup?.shared;
 		const groupNode = {
 			shared,
 			version: 0,
-			updateType: resolveUniformGroupUpdateType( artifact, group, shared ),
+			updateType: resolveUniformGroupUpdateType( uniformPlan, group, shared ),
 		};
 
 		for ( const descriptor of group.bindings || [] ) {
 
-			const runtimeBinding = createRuntimeBinding( artifact, group, descriptor, material, groupNode, textureResolver );
+			const runtimeBinding = createRuntimeBindingFromKind( { artifact, group, descriptor, material, groupNode, deps } );
 			if ( ! runtimeBinding ) continue;
 
 			runtimeBindings.push( runtimeBinding );
@@ -741,8 +768,9 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 		if ( runtimeBindings.length > 0 ) {
 
 			const bindGroup = new BindGroup( group.name || '', runtimeBindings );
-			attachObjectUboUploadDiagnostic( artifact, findUniformGroup( artifact, group.name ), bindGroup );
+			attachObjectUboUploadDiagnostic( artifact, planGroup, bindGroup );
 			groups.push( bindGroup );
+			if ( sharedKey ) sharedGroups?.set( sharedKey, bindGroup );
 
 		}
 
@@ -752,9 +780,9 @@ function hydrateRuntimeBindings( artifact, material, graphMaterial, textureResol
 
 }
 
-function createLiveUniformArrayResolver( bindingName, byteLength, material, artifact = null, groupName = '' ) {
+function createLiveUniformArrayResolver( bindingName, byteLength, material, artifact, groupName, uniformPlan ) {
 
-	const planBuffer = resolvePlanBufferUniform( artifact, groupName, bindingName );
+	const planBuffer = uniformPlan.bufferUniform( groupName, bindingName );
 	if ( planBuffer && typeof planBuffer._liveArrayResolver === 'function' ) {
 
 		return function resolveInternalPassUniformArray() {
@@ -910,33 +938,7 @@ function attachLiveUniformBufferUpdater( uniformBuffer, liveArrayResolver ) {
 
 }
 
-function createRuntimeBinding( artifact, group, descriptor, material, groupNode, textureResolver = resolveTextureBinding ) {
-
-	return createRuntimeBindingFromKind( {
-		artifact,
-		group,
-		descriptor,
-		material,
-		groupNode,
-		deps: {
-			attachLiveUniformBufferUpdater,
-			createLiveUniformArrayResolver,
-			findUniformGroupByteLength,
-			findUniformGroupRequiredByteLength,
-			inferTextureTypeFromShader,
-			resolvePlanBufferUniform,
-			resolvePlanStorageBuffer,
-			resolveTextureBinding: textureResolver,
-			seedUniformBufferSnapshots,
-			shaderDeclaresComparisonSampler,
-		},
-	} );
-
-}
-
-function seedUniformBufferSnapshots( artifact, groupName, bindingName, buffer ) {
-
-	const group = findUniformGroup( artifact, groupName, bindingName );
+function seedUniformBufferSnapshots( artifact, groupName, group, buffer ) {
 	if ( ! group || ! Array.isArray( group.slots ) || group.slots.length === 0 ) return;
 
 	const view = new DataView( buffer.buffer, buffer.byteOffset, buffer.byteLength );
@@ -966,7 +968,7 @@ function seedUniformBufferSnapshots( artifact, groupName, bindingName, buffer ) 
 // emits the loud-warn-on-miss diagnostic gated by `TSLP_WARN_TEXTURE_MISS`.
 // The hydrator passes through its locally-owned fallback texture singletons
 // + the `makeViewportFallback` factory; everything else is sibling imports.
-function resolveTextureBinding( artifact, groupName, bindingName, material, options = null ) {
+function resolveTextureBinding( artifact, groupName, bindingName, material, options = null, planBinding = null ) {
 
 	return dispatchTextureBinding( {
 		artifact,
@@ -974,6 +976,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 		bindingName,
 		material,
 		options,
+		planBinding,
 		deps: {
 			fallbacks: textureBindingFallbacks,
 			makeViewportFallback,
@@ -982,7 +985,7 @@ function resolveTextureBinding( artifact, groupName, bindingName, material, opti
 
 }
 
-function createOwnedTextureBindingResolver( ownerContext, resolve, resolverOptions = {} ) {
+function createOwnedTextureBindingResolver( uniformPlan, ownerContext, resolve, resolverOptions = {} ) {
 
 	const materialNodeTextureCache = resolverOptions.cacheMaterialNodeTextures === true ? new WeakMap() : null;
 	const defaultOptions = resolverOptions.defaultOptions && typeof resolverOptions.defaultOptions === 'object'
@@ -991,7 +994,8 @@ function createOwnedTextureBindingResolver( ownerContext, resolve, resolverOptio
 
 	return function resolveOwnedTextureBinding( artifact, groupName, bindingName, material, options = null ) {
 
-		const source = findUniformTextureSource( artifact, groupName, bindingName );
+		const planBinding = uniformPlan.textureBinding( groupName, bindingName );
+		const source = planBinding.owner?.source;
 		const frame = options && options.frame || null;
 		let bindingMaterial = material;
 		if ( source && source.kind && source.kind.startsWith( 'material.' ) ) {
@@ -1014,7 +1018,7 @@ function createOwnedTextureBindingResolver( ownerContext, resolve, resolverOptio
 				...( materialNodeTextureCache ? { materialNodeTextureCache } : {} ),
 			}
 			: options;
-		return resolve( artifact, groupName, bindingName, bindingMaterial, scopedOptions );
+		return resolve( artifact, groupName, bindingName, bindingMaterial, scopedOptions, planBinding );
 
 	};
 
@@ -1028,170 +1032,6 @@ function artifactUsesClippingUniformBuffers( artifact ) {
 
 	const wgsl = `${ artifact && artifact.vertexShader || '' }\n${ artifact && artifact.fragmentShader || '' }`;
 	return /\bclip_distances\b|\bhw_clip_distances\b|\bclipped\b|\bclipOpacity\b|\bdistanceToPlane\b/.test( wgsl );
-
-}
-
-// Per-artifact `(groupName, bindingName) → plan group` memo. The uniform plan
-// is never mutated after load, and hydration probes the same names repeatedly
-// (seeding, byte-length, required-byte-length per binding).
-const _uniformGroupIndex = new WeakMap();
-
-function findUniformGroup( artifact, groupName, bindingName ) {
-
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	if ( plan.length === 0 ) return null;
-	let cache = _uniformGroupIndex.get( artifact );
-	if ( ! cache ) {
-
-		cache = new Map();
-		_uniformGroupIndex.set( artifact, cache );
-
-	}
-
-	const key = `${ groupName }::${ bindingName }`;
-	if ( cache.has( key ) ) return cache.get( key );
-	const group = plan.find( ( item ) => item.name === groupName || item.name === bindingName ) || null;
-	cache.set( key, group );
-	return group;
-
-}
-
-function findUniformTextureSource( artifact, groupName, bindingName ) {
-
-	const group = findUniformGroup( artifact, groupName, bindingName );
-	const texture = group && Array.isArray( group.textures )
-		? group.textures.find( ( item ) => item && item.name === bindingName )
-		: null;
-	return texture && texture.source || null;
-
-}
-
-function findUniformGroupByteLength( artifact, groupName, bindingName ) {
-
-	const group = findUniformGroup( artifact, groupName, bindingName );
-	return group && group.byteLength || 16;
-
-}
-
-function findUniformGroupRequiredByteLength( artifact, groupName, bindingName ) {
-
-	const group = findUniformGroup( artifact, groupName, bindingName );
-	if ( ! group || ! Array.isArray( group.slots ) ) return 16;
-	let byteLength = group.byteLength || 16;
-	for ( const slot of group.slots ) {
-
-		const offset = slot.offset ?? slot.byteOffset ?? 0;
-		const source = slot.source || {};
-		const snapshot = source.valueSnapshot || ( source.valueType ? { type: source.valueType, data: source.value } : null );
-		const snapshotSize = snapshot && Array.isArray( snapshot.data ) ? snapshot.data.length * 4 : 0;
-		const slotSize = slot.byteLength || snapshotSize || uniformSlotByteLength( slot.type || slot.valueType || source.valueType );
-		byteLength = Math.max( byteLength, offset + slotSize );
-
-	}
-	return Math.ceil( byteLength / 16 ) * 16;
-
-}
-
-function uniformSlotByteLength( type ) {
-
-	switch ( type ) {
-
-		case 'float':
-		case 'int':
-		case 'uint':
-		case 'bool':
-			return 4;
-		case 'vec2':
-			return 8;
-		case 'vec3':
-		case 'vec4':
-			return 16;
-		case 'mat3':
-			return 48;
-		case 'mat4':
-			return 64;
-		default:
-			return 64;
-
-	}
-
-}
-
-/**
- * Locate a storage-buffer plan entry by group and binding name.
- *
- * @param {Object} artifact
- * @param {string} groupName
- * @param {string} bindingName
- * @return {?Object}
- */
-function resolvePlanStorageBuffer( artifact, groupName, bindingName ) {
-
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const group = plan.find( ( g ) => g.name === groupName );
-	if ( ! group ) return null;
-
-	// storageBuffers list on the group entry
-	const sbList = group.storageBuffers || [];
-	const sb = sbList.find( ( s ) => s.name === bindingName );
-	if ( sb ) return sb;
-
-	// Also search orderedBindings in case only that list was serialised
-	for ( const ob of group.orderedBindings || [] ) {
-
-		if ( ob.type === 'storage-buffer' && ob.ref && ob.ref.name === bindingName ) return ob.ref;
-
-	}
-
-	return null;
-
-}
-
-/**
- * Locate a NodeUniformBuffer (buffer-uniform) plan entry by group and name.
- * These are flat UBOs used by post-process shaders (FXAA, DoF, etc.) —
- * they carry a valueSnapshot of the full typed array at capture time.
- *
- * @param {Object} artifact
- * @param {string} groupName
- * @param {string} bindingName
- * @return {?Object}
- */
-function resolvePlanBufferUniform( artifact, groupName, bindingName ) {
-
-	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
-	const group = plan.find( ( g ) => g.name === groupName || g.name === bindingName );
-	if ( ! group ) return null;
-
-	for ( const ob of group.orderedBindings || [] ) {
-
-		if ( ob.type === 'buffer-uniform' && ob.ref && ( ob.ref.name === bindingName || ob.ref.name === groupName ) ) return ob.ref;
-
-	}
-
-	return null;
-
-}
-
-function findUniformGroupShared( artifact, groupName, bindingName ) {
-
-	const group = findUniformGroup( artifact, groupName, bindingName );
-	return !! ( group && group.shared );
-
-}
-
-function resolveUniformGroupUpdateType( artifact, bindingGroup, shared ) {
-
-	const groupName = bindingGroup && bindingGroup.name || '';
-	const planGroup = findUniformGroup( artifact, groupName );
-	const explicit = bindingGroup && bindingGroup.updateType != null
-		? bindingGroup.updateType
-		: planGroup && planGroup.updateType;
-	if ( explicit != null ) return explicit;
-	if ( groupName === 'object' && shared !== true ) return NodeUpdateType.OBJECT;
-	if ( groupName === 'render' && shared === true ) return NodeUpdateType.RENDER;
-	if ( groupName === 'frame' && shared === true ) return NodeUpdateType.FRAME;
-	return null;
 
 }
 
@@ -1257,6 +1097,13 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 	const plan = Array.isArray( artifact.uniformPlan ) ? artifact.uniformPlan : [];
 	if ( plan.length === 0 || uniformBuffers.size === 0 ) return null;
 	const generatedUpdateGroup = typeof artifact._generatedUpdateGroup === 'function' ? artifact._generatedUpdateGroup : null;
+	const groups = plan.map( group => ( {
+		group,
+		// Live callbacks and pass-local sidecars may change within one render ID.
+		perDraw: group.slots?.some( slot => slot.source?.kind === 'uniform.live' || slot.__tslpInternalPassSidecar === true ),
+		sidecars: ( group.slots || [] ).filter( slot => slot.__tslpInternalPassSidecar === true || slot.source?.kind === 'uniform.live' && ! slot.source.property ),
+		updateLights: createDynamicLightUniformUpdater( artifact, group ),
+	} ) );
 
 	return {
 		getUpdateType() {
@@ -1277,10 +1124,10 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 				? materialBindingOwner.materialForGeneratedUpdater( frame )
 				: null;
 			const frameUniformBuffers = uniformBufferTargets.forFrame( frame );
-			for ( const group of plan ) {
+			for ( const { group, perDraw, sidecars, updateLights } of groups ) {
 
 				const binding = frameUniformBuffers.get( group.name );
-				if ( ! binding ) continue;
+				if ( ! binding || ! perDraw && ! binding.needsWrite( frame ) ) continue;
 
 				// The staging typed array survives across frames; rebuilding a DataView
 				// per group per object per frame is the only allocation that scales with
@@ -1296,8 +1143,7 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 				if ( generatedUpdateGroup && generatedMaterial ) {
 
 					generatedUpdateGroup( frame, generatedMaterial, view, 0, group.name || '' );
-					writeFrozenUniformLiveSnapshots( group, view );
-					writeLiveUniformSidecars( group, view );
+					if ( sidecars.length ) writeUniformSidecars( sidecars, view, frame, materialBindingOwner );
 
 				} else {
 
@@ -1305,9 +1151,9 @@ function createUniformUpdateNode( artifact, uniformBuffers, material, uniformBuf
 
 				}
 				writeSkinnedBindMatrices( artifact, group, view, frame );
-				updateDynamicLightUniforms( artifact, group, view, frameUniformBuffers, frame );
-				recordUniformUpdateDiagnostic( artifact, group, view );
-				binding.groupNode.version ++;
+				updateLights?.( view, frameUniformBuffers, frame );
+				if ( artifact.materialShape === 'mesh-basic' ) recordUniformUpdateDiagnostic( artifact, group, view );
+				binding.didWrite( frame );
 				recordObjectUboUpdateDiagnostic( binding, frame );
 
 			}
@@ -1355,14 +1201,20 @@ function writeSkinnedBindMatrices( artifact, group, view, frame ) {
 
 }
 
-function writeFrozenUniformLiveSnapshots( group, view ) {
+function writeUniformSidecars( slots, view, frame, materialBindingOwner ) {
 
-	for ( const slot of group && group.slots || [] ) {
+	for ( const slot of slots ) {
 
 		const source = slot && slot.source || {};
+		const owner = materialBindingOwner.materialForSource( source, frame );
+		const value = resolveLiveUniformValue( slot, owner );
+		if ( value !== null && value !== undefined ) {
+
+			writeLiveValue( view, slot.offset ?? slot.byteOffset ?? 0, value, slot.dtype );
+			continue;
+
+		}
 		if ( source.kind !== 'uniform.live' || source.property ) continue;
-		const value = slot && slot._liveNode && slot._liveNode.value;
-		if ( slot.__tslpLiveSidecarOverlay === true && value !== null && value !== undefined ) continue;
 		const snapshot = source.valueSnapshot || ( Object.prototype.hasOwnProperty.call( source, 'value' )
 			? { type: source.valueType, data: source.value }
 			: null );
@@ -1377,7 +1229,6 @@ function writeFrozenUniformLiveSnapshots( group, view ) {
 function recordUniformUpdateDiagnostic( artifact, group, view ) {
 
 	if ( typeof globalThis === 'undefined' || globalThis.__TSLP_DEBUG_FRAME_TEXTURES !== true ) return;
-	if ( ! artifact || artifact.materialShape !== 'mesh-basic' ) return;
 	const diag = globalThis.__tslpHarnessDiagnostics || ( globalThis.__tslpHarnessDiagnostics = { colorTransferFallbacks: Object.create( null ), healedNullTextureImages: 0 } );
 	const list = diag.uniformUpdateSamples || ( diag.uniformUpdateSamples = [] );
 	if ( list.length >= 40 ) return;
@@ -1400,40 +1251,11 @@ function recordUniformUpdateDiagnostic( artifact, group, view ) {
 
 }
 
-function writeLiveUniformSidecars( group, view ) {
-
-	for ( const slot of group && group.slots || [] ) {
-
-		const source = slot && slot.source || {};
-		const value = slot && slot._liveNode && slot._liveNode.value;
-		const internalPassOverlay = slot && slot.__tslpInternalPassSidecar === true;
-		if ( ( ! internalPassOverlay && source.kind !== 'uniform.live' ) ||
-			( ! internalPassOverlay && source.property ) ||
-			slot.__tslpLiveSidecarOverlay !== true ||
-			value === null ||
-			value === undefined ) continue;
-		const offset = slot.offset ?? slot.byteOffset ?? 0;
-		writeLiveValue( view, offset, value, slot.dtype );
-
-	}
-
-}
-
 function createStaticObserver() {
 
-	// Always-refresh observer. Returning anything other than `true` here
-	// causes three.js's renderer to skip `updateForRender(renderObject)`
-	// for that draw — and since multiple renderObjects can share the same
-	// node-builder state (cached by cacheKey), the second+ object in a
-	// frame would re-use the FIRST object's UBO contents. That's why a
-	// scene with 200 sprites of the same material would render every
-	// sprite at the first sprite's position.
-	//
-	// Stock NodeMaterialObserver gates this with a per-render-object
-	// equality check; we don't have the bandwidth for that yet, so just
-	// always refresh. The cost is one DataView write + one writeBuffer
-	// per object per frame, which is what stock three.js does for
-	// non-bundled scenes anyway.
+	// Three gates updateBefore, geometry, uniforms, bindings and updateAfter
+	// together. Replay must run live callbacks even when object matrices are
+	// unchanged; individual bindings skip repeated writes and unchanged uploads.
 	return { needsRefresh() { return true; } };
 
 }

@@ -17,10 +17,10 @@ export interface SetupPrecompileOptions {
 }
 
 export interface SetupPrecompileResult {
-	/** Resolves after dev marker registration; already resolved in production. */
+	/** Resolves after marker and real-render observer readiness; already resolved in production. */
 	ready: Promise<void>;
 	/** Captures auxiliary artifacts in development and resolves to `[]` in production. */
-	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<unknown[]>;
+	captureAux: ( extraOpts?: Record<string, unknown> ) => Promise<import('./index.js').AuxCaptureResult[]>;
 	/** Return a synchronous snapshot of development capture activity. */
 	captureStatus: () => import('./index.js').DevCaptureStatus;
 	/** Resolve when a new capture wave has completed and remained idle. */

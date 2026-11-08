@@ -1,5 +1,8 @@
 export { __applyPrecompiled } from './index.js';
 
+/** @internal Build-validated call-site application; rejects ordinary graph-validated modules. */
+export function __applyPrecompiledCallsite( material: unknown, artifactModule: unknown, expectedHash: string ): unknown;
+
 /** @internal Development validation bridge. */
 export function __applyPrecompiledWithValidation(
 	material: unknown,
